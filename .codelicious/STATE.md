@@ -1,7 +1,7 @@
 # Invariant — Build State
 
 ## Current Status
-Phase 1, Step 3a complete and reviewed. **Quality review identified 5 P1, 12 P2, and 9 P3 new/residual findings.** Most are profile/model validation gaps deferred to Step 20. 84 tests passing, clippy clean. Ready for Step 4 (authority validation).
+Phase 1, Step 3a complete and reviewed. **Quality review identified 7 P1, 14 P2, and 13 P3 new/residual findings.** Most are profile/model validation gaps deferred to Step 20. 84 tests passing, clippy clean. Ready for Step 4 (authority validation).
 
 ## Completed Tasks
 
@@ -45,6 +45,8 @@ Build: PASS. Tests: 84/84 PASS. Clippy: PASS.
 | S3a-P1-03 | `models/profile.rs:182-216` | **NaN/Inf not rejected in `JointDefinition` f64 fields**: `min`, `max`, `max_velocity`, `max_torque`, `max_acceleration` not checked for finiteness. `NaN >= NaN` is false → validation passes. NaN in joint limits would bypass all physics checks despite NaN guards on command data. |
 | S3a-P1-04 | `models/profile.rs:147,82` | **NaN bypass in `global_velocity_scale`**: `NaN <= 0.0` is false, `NaN > 1.0` is false → NaN passes range check. `max_delta_time` has no validation at all. Both can poison downstream physics checks. |
 | S3a-P1-05 | `models/command.rs:7-48` | **`Command` has no `Validate` impl**: the primary ingress type (crosses network boundary) has no defensive validation. `joint_states`/`end_effector_positions` unbounded, `delta_time` not checked, `metadata` key/value lengths unbounded, `pca_chain` length unbounded. |
+| S3a-P1-06 | `exclusion_zones.rs:90`, `proximity.rs:162` | **Squared-distance overflow in `point_in_sphere`**: `dx*dx + dy*dy + dz*dz` overflows to `+Inf` for coordinate differences > ~1.34e154. `+Inf <= radius*radius` is false → point treated as outside sphere → exclusion zone bypassed. Affects P6 and P10. |
+| S3a-P1-07 | `self_collision.rs:93` | **Same overflow in `euclidean_distance`**: `(+Inf).sqrt()` yields `+Inf`, `+Inf < min_collision_distance` is false → collision check passes for extreme coordinates. |
 
 ### New P2 — Important / Correctness
 
@@ -62,6 +64,8 @@ Build: PASS. Tests: 84/84 PASS. Clippy: PASS.
 | S3a-P2-10 | `models/audit.rs:9-16` | `AuditEntry` hash fields `previous_hash`/`entry_hash` can be empty strings — would corrupt hash-chain integrity. |
 | S3a-P2-11 | `models/authority.rs:45` | Bare `*` is a valid `Operation` — could grant universal authority. Should restrict `*` to trailing segment only. |
 | S3a-P2-12 | `physics/self_collision.rs:53`, `physics/exclusion_zones.rs:31` | NaN guard inconsistency: `self_collision.rs` uses `pos.iter().all()` while `exclusion_zones.rs` uses explicit index checks. Both correct, but inconsistent. |
+| S3a-P2-13 | `physics/acceleration.rs:14-17` | Doc comment says missing previous joint is "skipped (treated as first observation)" but implementation now flags as violation (R2-02 fix). Stale documentation. |
+| S3a-P2-14 | `physics/stability.rs:102` | CoM exactly on polygon edge has undocumented, untested classification. Half-open interval technique may return either true or false depending on edge orientation. |
 
 ### New P3 — Quality / Future-Proofing
 
@@ -76,6 +80,10 @@ Build: PASS. Tests: 84/84 PASS. Clippy: PASS.
 | S3a-P3-07 | `models/verdict.rs:37`, `models/audit.rs:18` | `#[serde(flatten)]` used for signed types — signing byte canonicalization undocumented. Different serializers may produce different key orderings. |
 | S3a-P3-08 | `models/trace.rs:16,31` | `Trace::metadata` uses `serde_json::Value` (arbitrary nesting, stack-overflow DoS). `TraceStep::simulation_state` same risk. (Carry-forward from R2-09.) |
 | S3a-P3-09 | `models/profile.rs:33` | Extra blank line after removed `impl Default for SafeStopStrategy` — cosmetic. |
+| S3a-P3-10 | `physics/joint_limits.rs:19` et al. | O(n*m) linear scan joint lookup in all 5 per-joint checks. With MAX_JOINTS=256 at 1kHz, wasteful. Should build a HashMap once. |
+| S3a-P3-11 | `physics/delta_time.rs:17` | Error message "not finite and positive" is misleading when delta_time is zero (zero is finite). Should say "must be strictly positive and finite". |
+| S3a-P3-12 | `physics/tests.rs` | Missing tests: NEG_INFINITY delta_time, max_delta_time=0.0, self-referential CollisionPair (link_a==link_b), empty definitions slice, CoM on polygon vertex/edge. |
+| S3a-P3-13 | `physics/stability.rs:45-52` | Degenerate polygon (< 3 vertices) passes silently instead of flagging as a config error. Should be a failed result, not a silent pass. |
 
 ---
 
