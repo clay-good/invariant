@@ -1,7 +1,7 @@
 # Invariant — Build State
 
 ## Current Status
-Phase 1, Step 3a complete and reviewed. **Quality review identified 2 P1, 5 P2, and 5 P3 new/residual findings.** 84 tests passing, clippy clean. Ready for Step 4 (authority validation).
+Phase 1, Step 3a complete and reviewed. **Quality review identified 5 P1, 12 P2, and 9 P3 new/residual findings.** Most are profile/model validation gaps deferred to Step 20. 84 tests passing, clippy clean. Ready for Step 4 (authority validation).
 
 ## Completed Tasks
 
@@ -41,17 +41,27 @@ Build: PASS. Tests: 84/84 PASS. Clippy: PASS.
 | ID | File:Line | Issue |
 |----|-----------|-------|
 | S3a-P1-01 | `models/profile.rs:82-84` | **`min_collision_distance` not validated**: no finiteness or positivity check in `validate()`. If profile sets `min_collision_distance: NaN`, then `dist < NaN` is always false (IEEE 754) — P7 collision check silently passes for ALL pairs. If negative or zero, same effect. New field added by R2-04 fix but missing validation. |
-| S3a-P1-02 | `models/profile.rs:244-258` | **`ExclusionZone` geometry not validated**: sphere `radius` can be NaN, 0, or negative; AABB min/max can be NaN. `point_in_sphere` with NaN radius returns false — zone never triggers. `point_in_aabb` with NaN bounds returns false — zone bypassed. Untrusted profile data could disable all exclusion zone protection (P6). |
+| S3a-P1-02 | `models/profile.rs:244-258` | **`ExclusionZone` geometry not validated**: sphere `radius` can be NaN, 0, or negative; AABB min/max can be NaN. `point_in_sphere` with NaN radius returns false — zone never triggers. `point_in_aabb` with NaN bounds returns false — zone bypassed. Same applies to `ProximityZone::Sphere` radius. |
+| S3a-P1-03 | `models/profile.rs:182-216` | **NaN/Inf not rejected in `JointDefinition` f64 fields**: `min`, `max`, `max_velocity`, `max_torque`, `max_acceleration` not checked for finiteness. `NaN >= NaN` is false → validation passes. NaN in joint limits would bypass all physics checks despite NaN guards on command data. |
+| S3a-P1-04 | `models/profile.rs:147,82` | **NaN bypass in `global_velocity_scale`**: `NaN <= 0.0` is false, `NaN > 1.0` is false → NaN passes range check. `max_delta_time` has no validation at all. Both can poison downstream physics checks. |
+| S3a-P1-05 | `models/command.rs:7-48` | **`Command` has no `Validate` impl**: the primary ingress type (crosses network boundary) has no defensive validation. `joint_states`/`end_effector_positions` unbounded, `delta_time` not checked, `metadata` key/value lengths unbounded, `pca_chain` length unbounded. |
 
 ### New P2 — Important / Correctness
 
 | ID | File:Line | Issue |
 |----|-----------|-------|
-| S3a-P2-01 | `models/profile.rs:82` | `max_delta_time` not validated for finiteness or positivity. Zero/negative causes delta_time check to reject ALL commands (overly restrictive, not unsafe). NaN is caught at runtime by `delta_time.rs:23`. Should validate `max_delta_time > 0.0 && is_finite()` in `validate()`. |
-| S3a-P2-02 | `models/profile.rs:228-235` | `WorkspaceBounds::validate()` does not check min/max for NaN/Inf. `NaN >= NaN` is false → validation passes. Workspace bounds with NaN allow `p[0] < NaN` → false → all positions "pass" even if outside intended workspace. (Carry-forward from R2-18, still unfixed.) |
-| S3a-P2-03 | `models/profile.rs:170-180` | `JointDefinition` fields `min`, `max`, `max_velocity`, `max_torque`, `max_acceleration` not checked for finiteness. `validate()` checks `min >= max` and `max_velocity <= 0.0` but NaN passes both: `NaN >= NaN` is false, `NaN <= 0.0` is false. NaN in joint limits would bypass all physics checks despite NaN guards on command data. |
-| S3a-P2-04 | `models/profile.rs:298-300` | `StabilityConfig.support_polygon` vertices not validated for finiteness. NaN in polygon vertices causes `point_in_polygon` to produce undefined behavior (intersection math with NaN). P9 stability check has NaN guard on CoM but not on polygon geometry. |
-| S3a-P2-05 | `physics/self_collision.rs:53`, `physics/exclusion_zones.rs:31` | NaN guard inconsistency: `self_collision.rs` uses `pos.iter().all(|v| v.is_finite())` while `exclusion_zones.rs` uses `!ee.position[0].is_finite() || !ee.position[1].is_finite() || ...`. Both correct, but inconsistent style across the codebase. |
+| S3a-P2-01 | `models/profile.rs:228-235` | `WorkspaceBounds::validate()` does not check min/max for NaN/Inf. Workspace bounds with NaN allow all positions to pass. (Carry-forward from R2-18.) |
+| S3a-P2-02 | `models/profile.rs:298-308` | `StabilityConfig` has no `Validate` impl. `support_polygon` vertices not validated for finiteness. `com_height_estimate` can be NaN/negative. |
+| S3a-P2-03 | `models/profile.rs:310-333` | `SafeStopProfile` has no `Validate` impl. `max_deceleration` can be 0/negative/NaN. `target_joint_positions` unbounded and values not checked for finiteness. |
+| S3a-P2-04 | `models/profile.rs:70-71` | `RobotProfile::name`/`version` not validated as non-empty. Empty `name` breaks audit log correlation. (Carry-forward from R2-15.) |
+| S3a-P2-05 | `models/profile.rs:40-64` | `CollisionPair` link names unvalidated — can be empty or identical (self-pair makes no physical sense). |
+| S3a-P2-06 | `models/authority.rs:120-128` | `AuthorityChain` has no `Validate` impl. Empty `hops` vec accepted. `hops` length unbounded. `EmptyAuthorityChain` error variant exists but is unused. |
+| S3a-P2-07 | `models/authority.rs:91-102` | `Pca::p_0` and `kid` not validated as non-empty. Empty `p_0` breaks A1 cross-hop origin invariant. |
+| S3a-P2-08 | `models/verdict.rs:4-42` | `Verdict`/`SignedVerdict` have no `Validate` impl. `command_hash`, `profile_hash` can be empty. `checks` Vec unbounded. |
+| S3a-P2-09 | `models/actuation.rs:9-17` | `SignedActuationCommand` has no `Validate` impl. `joint_states` unbounded. Hash/signature fields can be empty. |
+| S3a-P2-10 | `models/audit.rs:9-16` | `AuditEntry` hash fields `previous_hash`/`entry_hash` can be empty strings — would corrupt hash-chain integrity. |
+| S3a-P2-11 | `models/authority.rs:45` | Bare `*` is a valid `Operation` — could grant universal authority. Should restrict `*` to trailing segment only. |
+| S3a-P2-12 | `physics/self_collision.rs:53`, `physics/exclusion_zones.rs:31` | NaN guard inconsistency: `self_collision.rs` uses `pos.iter().all()` while `exclusion_zones.rs` uses explicit index checks. Both correct, but inconsistent. |
 
 ### New P3 — Quality / Future-Proofing
 
@@ -61,7 +71,11 @@ Build: PASS. Tests: 84/84 PASS. Clippy: PASS.
 | S3a-P3-02 | `physics/tests.rs` | No test for `min_collision_distance: 0.0` or `min_collision_distance: NaN` — the new configurable parameter has no validation test coverage. |
 | S3a-P3-03 | `exclusion_zones.rs:84-91`, `proximity.rs:157-163` | `point_in_sphere` still copy-pasted in two modules (carry-forward from R3-05). Should extract to shared utility. |
 | S3a-P3-04 | `physics/tests.rs` | `run_all_checks` integration tests still do not trigger P4 (acceleration) or P10 (proximity) failures (carry-forward from R3-03). |
-| S3a-P3-05 | `models/profile.rs:33` | Extra blank line after removed `impl Default for SafeStopStrategy` — cosmetic. |
+| S3a-P3-05 | `models/profile.rs:17-21` | `BoundsType` enum is defined but never used — dead code hidden by `#![allow(dead_code)]`. |
+| S3a-P3-06 | `models/verdict.rs:32-33` | `AuthoritySummary::operations_granted/required` are `Vec<String>` not `Vec<Operation>` — newtypes lost at verdict boundary. (Carry-forward from R2-12.) |
+| S3a-P3-07 | `models/verdict.rs:37`, `models/audit.rs:18` | `#[serde(flatten)]` used for signed types — signing byte canonicalization undocumented. Different serializers may produce different key orderings. |
+| S3a-P3-08 | `models/trace.rs:16,31` | `Trace::metadata` uses `serde_json::Value` (arbitrary nesting, stack-overflow DoS). `TraceStep::simulation_state` same risk. (Carry-forward from R2-09.) |
+| S3a-P3-09 | `models/profile.rs:33` | Extra blank line after removed `impl Default for SafeStopStrategy` — cosmetic. |
 
 ---
 
