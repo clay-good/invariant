@@ -1,0 +1,63 @@
+{
+  "name": "franka_panda",
+  "version": "1.0.0",
+  "joints": [
+    {"name": "panda_joint1", "type": "revolute", "min": -2.8973, "max": 2.8973,  "max_velocity": 2.1750, "max_torque": 87.0,  "max_acceleration": 15.0},
+    {"name": "panda_joint2", "type": "revolute", "min": -1.7628, "max": 1.7628,  "max_velocity": 2.1750, "max_torque": 87.0,  "max_acceleration": 7.5},
+    {"name": "panda_joint3", "type": "revolute", "min": -2.8973, "max": 2.8973,  "max_velocity": 2.1750, "max_torque": 87.0,  "max_acceleration": 10.0},
+    {"name": "panda_joint4", "type": "revolute", "min": -3.0718, "max": -0.0698, "max_velocity": 2.1750, "max_torque": 87.0,  "max_acceleration": 12.5},
+    {"name": "panda_joint5", "type": "revolute", "min": -2.8973, "max": 2.8973,  "max_velocity": 2.6100, "max_torque": 12.0,  "max_acceleration": 15.0},
+    {"name": "panda_joint6", "type": "revolute", "min": -0.0175, "max": 3.7525,  "max_velocity": 2.6100, "max_torque": 12.0,  "max_acceleration": 20.0},
+    {"name": "panda_joint7", "type": "revolute", "min": -2.8973, "max": 2.8973,  "max_velocity": 2.6100, "max_torque": 12.0,  "max_acceleration": 20.0}
+  ],
+  "workspace": {
+    "type": "aabb",
+    "min": [-0.9, -0.9, -0.1],
+    "max": [0.9, 0.9, 1.2]
+  },
+  "exclusion_zones": [
+    {
+      "type": "aabb",
+      "name": "table_surface",
+      "min": [-1.0, -1.0, -0.2],
+      "max": [1.0, 1.0, 0.0]
+    },
+    {
+      "type": "sphere",
+      "name": "operator_head",
+      "center": [0.0, -0.6, 1.5],
+      "radius": 0.2
+    }
+  ],
+  "proximity_zones": [
+    {
+      "name": "human_warning",
+      "type": "sphere",
+      "center": [0.0, -0.6, 1.0],
+      "radius": 0.8,
+      "velocity_scale": 0.5,
+      "dynamic": true
+    }
+  ],
+  "collision_pairs": [
+    ["panda_link7", "panda_link0"],
+    ["panda_link7", "panda_link1"]
+  ],
+  "stability": null,
+  "max_delta_time": 0.005,
+  "global_velocity_scale": 1.0,
+  "watchdog_timeout_ms": 100,
+  "safe_stop_profile": {
+    "strategy": "controlled_crouch",
+    "max_deceleration": 10.0,
+    "target_joint_positions": {
+      "panda_joint1": 0.0,
+      "panda_joint2": -0.785,
+      "panda_joint3": 0.0,
+      "panda_joint4": -2.356,
+      "panda_joint5": 0.0,
+      "panda_joint6": 1.571,
+      "panda_joint7": 0.785
+    }
+  }
+}

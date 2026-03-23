@@ -1,0 +1,35 @@
+[workspace]
+members = [
+    "crates/invariant-core",
+    "crates/invariant-cli",
+    "crates/invariant-sim",
+    "crates/invariant-eval",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/clay-good/invariant"
+
+[workspace.dependencies]
+# Core crypto + serialization
+ed25519-dalek = { version = "2.1", features = ["rand_core"] }
+coset = "0.3"
+sha2 = "0.10"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+chrono = { version = "0.4", features = ["serde"] }
+base64 = "0.22"
+rand = "0.8"
+thiserror = "2.0"
+# CLI
+clap = { version = "4.5", features = ["derive"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tokio = { version = "1.0", features = ["full"] }
+# Sim + eval
+reqwest = { version = "0.12", features = ["json"] }
+serde_yaml = "0.9"
+regex = "1.11"
