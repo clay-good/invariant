@@ -7,9 +7,9 @@ description = "Simulation harness for Invariant (Isaac Lab integration and dry-r
 
 [dependencies]
 invariant-core = { path = "../invariant-core" }
-tokio.workspace = true
+# Unix socket + async I/O for Isaac Lab IPC bridge; no HTTP client needed (P2-13).
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net", "io-util", "sync", "time"] }
 serde.workspace = true
 serde_json.workspace = true
 serde_yaml.workspace = true
-reqwest.workspace = true
 thiserror.workspace = true
