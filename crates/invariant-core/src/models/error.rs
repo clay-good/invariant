@@ -1,5 +1,40 @@
 use thiserror::Error;
 
+/// Errors produced during PCA chain verification (A1, A2, A3).
+#[derive(Debug, Error)]
+pub enum AuthorityError {
+    #[error("authority chain must have at least one hop")]
+    EmptyChain,
+
+    #[error("A1 provenance violation: p_0 differs at hop {hop} (expected {expected:?}, got {got:?})")]
+    ProvenanceMismatch {
+        hop: usize,
+        expected: String,
+        got: String,
+    },
+
+    #[error("A2 monotonicity violation: hop {hop} operation {op:?} is not covered by parent ops")]
+    MonotonicityViolation { hop: usize, op: String },
+
+    #[error("A3 continuity: signature verification failed at hop {hop}: {reason}")]
+    SignatureInvalid { hop: usize, reason: String },
+
+    #[error("A3 continuity: unknown key id {kid:?} at hop {hop}")]
+    UnknownKeyId { hop: usize, kid: String },
+
+    #[error("PCA at hop {hop} has expired (exp={exp})")]
+    Expired { hop: usize, exp: String },
+
+    #[error("PCA at hop {hop} is not yet valid (nbf={nbf})")]
+    NotYetValid { hop: usize, nbf: String },
+
+    #[error("COSE decoding error at hop {hop}: {reason}")]
+    CoseError { hop: usize, reason: String },
+
+    #[error("required operation {op:?} is not covered by granted ops")]
+    InsufficientOps { op: String },
+}
+
 /// Errors produced when validating model types.
 #[derive(Debug, Error, PartialEq)]
 pub enum ValidationError {
