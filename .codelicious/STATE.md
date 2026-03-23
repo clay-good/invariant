@@ -1,7 +1,7 @@
 # Invariant — Build State
 
 ## Current Status
-Phase 1, Step 3a complete. All 12 P1 and R2-01..R2-07 findings fixed. 84 tests passing, clippy clean. Ready for Step 4 (authority validation).
+Phase 1, Step 3a complete and reviewed. **Quality review identified 2 P1, 5 P2, and 5 P3 new/residual findings.** 84 tests passing, clippy clean. Ready for Step 4 (authority validation).
 
 ## Completed Tasks
 
@@ -10,6 +10,58 @@ Phase 1, Step 3a complete. All 12 P1 and R2-01..R2-07 findings fixed. 84 tests p
 - [x] **Step 2 — Core types**: All model structs with serde + validation. Newtypes for safety. Fixed all 6 P1 and all 15 P2 findings from Step 2 review.
 - [x] **Step 3 — Physics checks (10)**: All 10 pure functions (P1-P10) implemented in `physics/` with `run_all_checks()` orchestrator and 64 passing tests.
 - [x] **Step 3a — Fix P1 review findings**: NaN/Inf guards in all 10 physics checks, clippy fix, unbounded collection caps, reqwest removed, R2-01..R2-07 silent-skip fixes. 20 new tests (84 total).
+
+---
+
+## Review Findings — Step 3a Quality Review (2026-03-23)
+
+Reviewed: all physics modules (10 checks + orchestrator + tests), all model types, CLI/sim/eval crates, workspace config, 4 robot profiles, test suite (84 tests), clippy, build.
+
+Build: PASS. Tests: 84/84 PASS. Clippy: PASS.
+
+### Step 3 Review Findings — Resolution Status
+
+| Prior ID | Status | Notes |
+|----------|--------|-------|
+| R1-01..R1-09 | **FIXED** | NaN/Inf guards added to all 10 physics checks with `is_finite()` |
+| R1-10 | **FIXED** | `SafeStopStrategy` uses `#[derive(Default)]` + `#[default]` |
+| R1-11 | **FIXED** | Collection caps: joints 256, zones 256, collision_pairs 1024 |
+| R1-12 | **FIXED** | `reqwest` removed from workspace `[dependencies]` |
+| R2-01 | **FIXED** | Self-collision flags missing links as violations |
+| R2-02 | **FIXED** | Acceleration flags missing previous joints as violations |
+| R2-03 | **FIXED** | Proximity flags unknown joints as violations |
+| R2-04 | **FIXED** | `min_collision_distance` configurable per-profile (default 0.01m) |
+| R2-05..R2-07 | **FIXED** | Addressed by R2-01 — missing links no longer silent |
+| R2-08..R2-18 | Deferred | To be addressed in Steps 9, 20 |
+| R3-01 | **FIXED** | 20 NaN/Inf tests added (84 total) |
+| R3-02..R3-14 | Deferred | To be addressed in Steps 20, 21 |
+
+### New P1 — Blocking / Security
+
+| ID | File:Line | Issue |
+|----|-----------|-------|
+| S3a-P1-01 | `models/profile.rs:82-84` | **`min_collision_distance` not validated**: no finiteness or positivity check in `validate()`. If profile sets `min_collision_distance: NaN`, then `dist < NaN` is always false (IEEE 754) — P7 collision check silently passes for ALL pairs. If negative or zero, same effect. New field added by R2-04 fix but missing validation. |
+| S3a-P1-02 | `models/profile.rs:244-258` | **`ExclusionZone` geometry not validated**: sphere `radius` can be NaN, 0, or negative; AABB min/max can be NaN. `point_in_sphere` with NaN radius returns false — zone never triggers. `point_in_aabb` with NaN bounds returns false — zone bypassed. Untrusted profile data could disable all exclusion zone protection (P6). |
+
+### New P2 — Important / Correctness
+
+| ID | File:Line | Issue |
+|----|-----------|-------|
+| S3a-P2-01 | `models/profile.rs:82` | `max_delta_time` not validated for finiteness or positivity. Zero/negative causes delta_time check to reject ALL commands (overly restrictive, not unsafe). NaN is caught at runtime by `delta_time.rs:23`. Should validate `max_delta_time > 0.0 && is_finite()` in `validate()`. |
+| S3a-P2-02 | `models/profile.rs:228-235` | `WorkspaceBounds::validate()` does not check min/max for NaN/Inf. `NaN >= NaN` is false → validation passes. Workspace bounds with NaN allow `p[0] < NaN` → false → all positions "pass" even if outside intended workspace. (Carry-forward from R2-18, still unfixed.) |
+| S3a-P2-03 | `models/profile.rs:170-180` | `JointDefinition` fields `min`, `max`, `max_velocity`, `max_torque`, `max_acceleration` not checked for finiteness. `validate()` checks `min >= max` and `max_velocity <= 0.0` but NaN passes both: `NaN >= NaN` is false, `NaN <= 0.0` is false. NaN in joint limits would bypass all physics checks despite NaN guards on command data. |
+| S3a-P2-04 | `models/profile.rs:298-300` | `StabilityConfig.support_polygon` vertices not validated for finiteness. NaN in polygon vertices causes `point_in_polygon` to produce undefined behavior (intersection math with NaN). P9 stability check has NaN guard on CoM but not on polygon geometry. |
+| S3a-P2-05 | `physics/self_collision.rs:53`, `physics/exclusion_zones.rs:31` | NaN guard inconsistency: `self_collision.rs` uses `pos.iter().all(|v| v.is_finite())` while `exclusion_zones.rs` uses `!ee.position[0].is_finite() || !ee.position[1].is_finite() || ...`. Both correct, but inconsistent style across the codebase. |
+
+### New P3 — Quality / Future-Proofing
+
+| ID | File:Line | Issue |
+|----|-----------|-------|
+| S3a-P3-01 | `physics/tests.rs` | No test for NaN/Inf in profile definitions (as opposed to command data). Tests only verify NaN in joint states and end-effector positions, not in joint limits or zone geometry. |
+| S3a-P3-02 | `physics/tests.rs` | No test for `min_collision_distance: 0.0` or `min_collision_distance: NaN` — the new configurable parameter has no validation test coverage. |
+| S3a-P3-03 | `exclusion_zones.rs:84-91`, `proximity.rs:157-163` | `point_in_sphere` still copy-pasted in two modules (carry-forward from R3-05). Should extract to shared utility. |
+| S3a-P3-04 | `physics/tests.rs` | `run_all_checks` integration tests still do not trigger P4 (acceleration) or P10 (proximity) failures (carry-forward from R3-03). |
+| S3a-P3-05 | `models/profile.rs:33` | Extra blank line after removed `impl Default for SafeStopStrategy` — cosmetic. |
 
 ---
 
