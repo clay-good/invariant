@@ -1,7 +1,7 @@
 # Invariant — Build State
 
 ## Current Status
-Phase 1, Step 5a complete. **All 5 P1 findings fixed**: signer_kid in actuation signature (P1-01), PCA chain base64 size cap (P1-02), empty required_ops rejection (P1-03), canonical operation ordering in verdict (P1-04), origin extraction after hop 0 verification (P1-05). 155 tests passing, clippy clean. Ready for Step 6 (signed audit logger).
+Phase 1, Step 6 complete. **Signed audit logger** implemented: `AuditLogger<W: Write>` with append-only hash-chained Ed25519-signed JSONL output. Enforces L1 (completeness), L2 (ordering via SHA-256 hash chain), L3 (authenticity via Ed25519 signatures), L4 (immutability via O_APPEND). `verify_log()` function validates hash chain + signatures + sequence monotonicity. 169 tests passing, clippy clean. Ready for Step 7 (watchdog).
 
 ## Completed Tasks
 
@@ -14,6 +14,7 @@ Phase 1, Step 5a complete. **All 5 P1 findings fixed**: signer_kid in actuation 
 - [x] **Step 4a — Fix P1 review findings**: Use decoded COSE payload (P1-01), verify_strict (P1-02), private AuthorityChain (P1-03), Operation structural validation (P1-04), sign_pca returns Result (P1-05), wildcard prefix fix (P1-06). Also ChainTooLong variant (P2-04), pub(crate) decode_pca_payload (P2-05), PartialEq on AuthorityError (P2-08). 16 new tests (138 total).
 - [x] **Step 5 — Validator orchestrator**: Full validation pipeline in `validator.rs` (ValidatorConfig, validate(), signed verdicts with 11 checks) and signed actuation command generator in `actuator.rs` (ActuationPayload signing, M1 invariant). Fail-closed, deterministic, SHA-256 hashing. 12 new tests (150 total).
 - [x] **Step 5a — Fix P1 review findings**: signer_kid in ActuationPayload (P1-01), MAX_PCA_CHAIN_B64_BYTES size cap (P1-02), empty required_ops rejection (P1-03), canonical operation ordering in verdict (P1-04), origin extraction after hop 0 verification (P1-05). 5 new tests (155 total).
+- [x] **Step 6 — Signed audit logger**: `AuditLogger<W: Write>` append-only hash-chained Ed25519-signed JSONL logger. L1 completeness (command+verdict stored), L2 ordering (SHA-256 hash chain), L3 authenticity (Ed25519 entry signatures), L4 immutability (O_APPEND file mode). `new()`/`resume()`/`open_file()` constructors, `log()` method, `verify_log()` verifier. 14 new tests (169 total).
 
 ---
 
