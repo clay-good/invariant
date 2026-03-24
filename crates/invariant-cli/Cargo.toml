@@ -1,0 +1,20 @@
+[package]
+name = "invariant-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Command-line interface for Invariant."
+
+[[bin]]
+name = "invariant"
+path = "src/main.rs"
+
+[dependencies]
+invariant-core = { path = "../invariant-core" }
+clap.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+# Minimal tokio feature set: rt-multi-thread + macros for serve mode (P2-14).
+tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
+serde.workspace = true
+serde_json.workspace = true

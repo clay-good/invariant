@@ -688,8 +688,8 @@ Exit codes: 0 = approved/pass, 1 = rejected/fail, 2 = error.
 ### Phase 1: Core (Steps 1-8)
 
 1. **Workspace init**: Cargo workspace, 4 crates, profile JSON files.
-2. **Core types**: All model structs with serde + validation. Newtypes for safety.
-3. **Physics checks (10)**: Pure functions, zero allocation, extensively tested.
+2. ~~**Core types**: All model structs with serde + validation. Newtypes for safety.~~ ✓
+3. ~~**Physics checks (10)**: Pure functions, zero allocation, extensively tested.~~ ✓
 4. **Authority validation**: Ed25519 COSE_Sign1 chain verification, monotonicity, provenance.
 5. **Validator orchestrator**: Authority + physics -> signed verdict + optional signed actuation.
 6. **Signed audit logger**: Append-only, hash-chained, Ed25519-signed JSONL.
