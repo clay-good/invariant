@@ -195,6 +195,20 @@ impl ValidatorConfig {
         required_ops: &[Operation],
         now: DateTime<Utc>,
     ) -> (CheckResult, Option<AuthorityChain>) {
+        // Reject empty required_ops — vacuous truth would bypass all operation
+        // authorization, allowing a command with no declared intent.
+        if required_ops.is_empty() {
+            return (
+                CheckResult {
+                    name: "authority".into(),
+                    category: "authority".into(),
+                    passed: false,
+                    details: "required_ops must not be empty".into(),
+                },
+                None,
+            );
+        }
+
         // Decode base64 -> JSON -> Vec<SignedPca>.
         let hops = match decode_pca_chain(pca_chain_b64) {
             Ok(h) => h,
@@ -273,7 +287,17 @@ impl ValidatorConfig {
 // Helpers
 // ---------------------------------------------------------------------------
 
+/// Maximum size of a base64-encoded PCA chain (64 KiB). Reject before decode
+/// to prevent memory DoS from megabyte-scale input.
+const MAX_PCA_CHAIN_B64_BYTES: usize = 65_536;
+
 fn decode_pca_chain(pca_chain_b64: &str) -> Result<Vec<SignedPca>, String> {
+    if pca_chain_b64.len() > MAX_PCA_CHAIN_B64_BYTES {
+        return Err(format!(
+            "PCA chain too large: {} bytes exceeds {MAX_PCA_CHAIN_B64_BYTES} byte limit",
+            pca_chain_b64.len()
+        ));
+    }
     let bytes = STANDARD
         .decode(pca_chain_b64)
         .map_err(|e| format!("base64 decode failed: {e}"))?;
@@ -290,15 +314,24 @@ fn build_authority_summary(
     chain: Option<&AuthorityChain>,
     required_ops: &[Operation],
 ) -> AuthoritySummary {
-    let operations_required: Vec<String> = required_ops.iter().map(|op| op.to_string()).collect();
+    // Sort operations for canonical ordering — ensures deterministic verdict
+    // signatures regardless of caller-supplied ordering.
+    let mut operations_required: Vec<String> =
+        required_ops.iter().map(|op| op.to_string()).collect();
+    operations_required.sort();
 
     match chain {
-        Some(c) => AuthoritySummary {
-            origin_principal: c.origin_principal().to_string(),
-            hop_count: c.hops().len(),
-            operations_granted: c.final_ops().iter().map(|op| op.to_string()).collect(),
-            operations_required,
-        },
+        Some(c) => {
+            let mut operations_granted: Vec<String> =
+                c.final_ops().iter().map(|op| op.to_string()).collect();
+            operations_granted.sort();
+            AuthoritySummary {
+                origin_principal: c.origin_principal().to_string(),
+                hop_count: c.hops().len(),
+                operations_granted,
+                operations_required,
+            }
+        }
         None => AuthoritySummary {
             origin_principal: String::new(),
             hop_count: 0,
@@ -659,6 +692,94 @@ mod tests {
         assert_eq!(
             result.signed_verdict.verdict.authority_summary.hop_count,
             2
+        );
+    }
+
+    #[test]
+    fn oversized_pca_chain_rejected() {
+        // P1-02: PCA chain larger than MAX_PCA_CHAIN_B64_BYTES must be rejected
+        // before base64 decode.
+        let (sign_sk, _) = make_keypair();
+        let config = make_config(HashMap::new(), sign_sk);
+
+        let huge_chain = "A".repeat(MAX_PCA_CHAIN_B64_BYTES + 1);
+        let cmd = make_command(&huge_chain, vec![op("actuate:j1")]);
+        let result = config.validate(&cmd, Utc::now(), None).unwrap();
+
+        assert!(!result.signed_verdict.verdict.approved);
+        assert!(result.signed_verdict.verdict.checks[0]
+            .details
+            .contains("too large"));
+    }
+
+    #[test]
+    fn empty_required_ops_rejected() {
+        // P1-03: Empty required_ops must not bypass authority via vacuous truth.
+        let (pca_sk, pca_vk) = make_keypair();
+        let (sign_sk, _) = make_keypair();
+
+        let claim = Pca {
+            p_0: "alice".into(),
+            ops: ops(&["actuate:*"]),
+            kid: "key-1".into(),
+            exp: None,
+            nbf: None,
+        };
+        let signed_pca = sign_pca(&claim, &pca_sk).unwrap();
+        let chain_b64 = encode_chain(&[signed_pca]);
+
+        let mut trusted = HashMap::new();
+        trusted.insert("key-1".to_string(), pca_vk);
+        let config = make_config(trusted, sign_sk);
+
+        // Empty required_ops.
+        let cmd = make_command(&chain_b64, vec![]);
+        let result = config.validate(&cmd, Utc::now(), None).unwrap();
+
+        assert!(!result.signed_verdict.verdict.approved);
+        assert!(!result.signed_verdict.verdict.checks[0].passed);
+        assert!(result.signed_verdict.verdict.checks[0]
+            .details
+            .contains("must not be empty"));
+    }
+
+    #[test]
+    fn canonical_ops_ordering_in_verdict() {
+        // P1-04: Different required_ops ordering must produce identical
+        // verdict signatures.
+        let (pca_sk, pca_vk) = make_keypair();
+        let (sign_sk, _) = make_keypair();
+
+        let claim = Pca {
+            p_0: "alice".into(),
+            ops: ops(&["actuate:*"]),
+            kid: "key-1".into(),
+            exp: None,
+            nbf: None,
+        };
+        let signed_pca = sign_pca(&claim, &pca_sk).unwrap();
+        let chain_b64 = encode_chain(&[signed_pca]);
+
+        let mut trusted = HashMap::new();
+        trusted.insert("key-1".to_string(), pca_vk);
+        let config = make_config(trusted, sign_sk);
+        let now = Utc::now();
+
+        // Two commands with the same ops in different order.
+        let cmd_a = make_command(&chain_b64, vec![op("actuate:j1"), op("actuate:arm")]);
+        let cmd_b = make_command(&chain_b64, vec![op("actuate:arm"), op("actuate:j1")]);
+
+        let r_a = config.validate(&cmd_a, now, None).unwrap();
+        let r_b = config.validate(&cmd_b, now, None).unwrap();
+
+        // Both approved (authority grants actuate:*).
+        assert!(r_a.signed_verdict.verdict.approved);
+        assert!(r_b.signed_verdict.verdict.approved);
+
+        // Authority summary ops must be sorted identically.
+        assert_eq!(
+            r_a.signed_verdict.verdict.authority_summary.operations_required,
+            r_b.signed_verdict.verdict.authority_summary.operations_required,
         );
     }
 }

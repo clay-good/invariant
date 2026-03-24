@@ -20,6 +20,7 @@ struct ActuationPayload<'a> {
     command_sequence: u64,
     joint_states: &'a [JointState],
     timestamp: DateTime<Utc>,
+    signer_kid: &'a str,
 }
 
 /// Build and sign an actuation command for an approved command.
@@ -41,6 +42,7 @@ pub fn build_signed_actuation_command(
         command_sequence,
         joint_states,
         timestamp,
+        signer_kid,
     };
 
     let payload_json = serde_json::to_vec(&payload).map_err(|e| {
@@ -97,6 +99,7 @@ mod tests {
             command_sequence: cmd.command_sequence,
             joint_states: &cmd.joint_states,
             timestamp: cmd.timestamp,
+            signer_kid: &cmd.signer_kid,
         };
         let payload_json = serde_json::to_vec(&payload).unwrap();
         let sig_bytes = STANDARD.decode(&cmd.actuation_signature).unwrap();
@@ -121,5 +124,38 @@ mod tests {
             build_signed_actuation_command("sha256:x", 1, &joints, now, &sk, "k").unwrap();
 
         assert_eq!(cmd1.actuation_signature, cmd2.actuation_signature);
+    }
+
+    #[test]
+    fn signer_kid_covered_by_signature() {
+        // P1-01: Changing signer_kid must invalidate the signature.
+        let sk = generate_keypair(&mut OsRng);
+        let vk = sk.verifying_key();
+
+        let joints = vec![JointState {
+            name: "j1".into(),
+            position: 0.5,
+            velocity: 1.0,
+            effort: 10.0,
+        }];
+        let now = Utc::now();
+        let cmd =
+            build_signed_actuation_command("sha256:abc", 1, &joints, now, &sk, "real-kid")
+                .unwrap();
+
+        // Reconstruct payload with the WRONG signer_kid.
+        let tampered_payload = ActuationPayload {
+            command_hash: &cmd.command_hash,
+            command_sequence: cmd.command_sequence,
+            joint_states: &cmd.joint_states,
+            timestamp: cmd.timestamp,
+            signer_kid: "attacker-kid",
+        };
+        let tampered_json = serde_json::to_vec(&tampered_payload).unwrap();
+        let sig_bytes = STANDARD.decode(&cmd.actuation_signature).unwrap();
+        let signature = ed25519_dalek::Signature::from_slice(&sig_bytes).unwrap();
+
+        // Verification with tampered kid must fail.
+        assert!(vk.verify(&tampered_json, &signature).is_err());
     }
 }
