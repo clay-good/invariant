@@ -42,18 +42,14 @@ pub fn verify_chain(
         });
     }
 
-    // Decode origin from the first hop's COSE payload (pre-verification decode
-    // for the origin principal; the signature is verified inside the loop).
-    let origin_claim = decode_pca_payload(&hops[0].raw, 0)?;
-    let origin = origin_claim.p_0.clone();
-
     let mut decoded_claims: Vec<Pca> = Vec::with_capacity(hops.len());
+    let mut origin: Option<String> = None;
 
     for (i, signed) in hops.iter().enumerate() {
         // Extract kid from the COSE protected header (covered by signature).
         let kid = extract_kid(&signed.raw, i)?;
 
-        // A3: Signature verification.
+        // A3: Signature verification — must complete before we trust the payload.
         let key = trusted_keys.get(&kid).ok_or_else(|| {
             AuthorityError::UnknownKeyId {
                 hop: i,
@@ -66,12 +62,20 @@ pub fn verify_chain(
         let claim = decode_pca_payload(&signed.raw, i)?;
 
         // A1: Provenance — p_0 must be immutable across all hops.
-        if claim.p_0 != origin {
-            return Err(AuthorityError::ProvenanceMismatch {
-                hop: i,
-                expected: origin.clone(),
-                got: claim.p_0.clone(),
-            });
+        // Extract origin from the first verified hop.
+        match &origin {
+            None => {
+                origin = Some(claim.p_0.clone());
+            }
+            Some(expected) => {
+                if claim.p_0 != *expected {
+                    return Err(AuthorityError::ProvenanceMismatch {
+                        hop: i,
+                        expected: expected.clone(),
+                        got: claim.p_0.clone(),
+                    });
+                }
+            }
         }
 
         // A2: Monotonicity — ops must narrow (be a subset of parent).
@@ -112,6 +116,10 @@ pub fn verify_chain(
 
         decoded_claims.push(claim);
     }
+
+    // origin is guaranteed to be Some because hops is non-empty and we set it
+    // on the first iteration.
+    let origin = origin.unwrap();
 
     let final_ops = decoded_claims.last().unwrap().ops.clone();
 

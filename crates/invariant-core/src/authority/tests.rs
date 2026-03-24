@@ -702,6 +702,28 @@ mod tests {
     }
 
     #[test]
+    fn origin_not_extracted_before_verification() {
+        // S5-P1-05: verify_chain must not extract origin from hop 0 before
+        // its signature is verified. We test this by providing a hop 0 with
+        // an unknown kid — the error should be UnknownKeyId, not some origin
+        // error derived from the unverified payload.
+        let (sk, _vk) = make_keypair();
+        let claim = make_pca("attacker-origin", "unknown-key", &["actuate:*"]);
+        let signed = sign_pca(&claim, &sk).unwrap();
+
+        // trusted_keys doesn't contain "unknown-key".
+        let keys: HashMap<String, ed25519_dalek::VerifyingKey> = HashMap::new();
+        let result = verify_chain(&[signed], &keys, Utc::now());
+
+        // Should fail with UnknownKeyId — origin must not have been extracted
+        // from the unverified hop.
+        assert!(matches!(
+            result,
+            Err(AuthorityError::UnknownKeyId { hop: 0, .. })
+        ));
+    }
+
+    #[test]
     fn exactly_max_hops_succeeds() {
         let (sk, vk) = make_keypair();
         let mut hops = Vec::new();
