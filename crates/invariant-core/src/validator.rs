@@ -377,8 +377,8 @@ mod tests {
             joints: vec![JointDefinition {
                 name: "j1".into(),
                 joint_type: JointType::Revolute,
-                min: -3.14,
-                max: 3.14,
+                min: -3.15,
+                max: 3.15,
                 max_velocity: 5.0,
                 max_torque: 100.0,
                 max_acceleration: 50.0,
