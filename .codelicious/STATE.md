@@ -1,7 +1,7 @@
 # Invariant — Build State
 
 ## Current Status
-Phase 1, Step 4 complete and reviewed. **Quality review identified 6 P1, 10 P2, and 12 P3 findings.** Most critical: chain validation reads unverified `claim` field instead of decoded COSE payload — nullifies all three invariants. 122 tests passing, clippy clean. Needs Step 4a fix pass before Step 5.
+Phase 1, Step 4a complete. **All 6 P1 findings fixed**, plus 3 P2 findings (P2-04, P2-05, P2-08). 138 tests passing, clippy clean. Ready for Step 5 (validator orchestrator).
 
 ## Completed Tasks
 
@@ -11,6 +11,7 @@ Phase 1, Step 4 complete and reviewed. **Quality review identified 6 P1, 10 P2, 
 - [x] **Step 3 — Physics checks (10)**: All 10 pure functions (P1-P10) implemented in `physics/` with `run_all_checks()` orchestrator and 64 passing tests.
 - [x] **Step 3a — Fix P1 review findings**: NaN/Inf guards in all 10 physics checks, clippy fix, unbounded collection caps, reqwest removed, R2-01..R2-07 silent-skip fixes. 20 new tests (84 total).
 - [x] **Step 4 — Authority validation**: Ed25519 COSE_Sign1 chain verification (crypto.rs), wildcard operation matching + subset checks (operations.rs), full PCA chain verification with A1/A2/A3 invariants + temporal constraints (chain.rs). AuthorityError enum with typed variants. 38 new tests (122 total).
+- [x] **Step 4a — Fix P1 review findings**: Use decoded COSE payload (P1-01), verify_strict (P1-02), private AuthorityChain (P1-03), Operation structural validation (P1-04), sign_pca returns Result (P1-05), wildcard prefix fix (P1-06). Also ChainTooLong variant (P2-04), pub(crate) decode_pca_payload (P2-05), PartialEq on AuthorityError (P2-08). 16 new tests (138 total).
 
 ---
 
@@ -233,7 +234,7 @@ Build: PASS. Tests: 64/64 PASS. Clippy: FAIL (1 lint error).
 - [x] **Step 3 — Physics checks (10)**: Pure functions, zero allocation, extensively tested.
 - [x] **Step 3a — Fix P1 review findings**: NaN/Inf guards in all physics checks, clippy fix, unbounded collection caps. All R1-* and R2-01 through R2-07 fixed.
 - [x] **Step 4 — Authority validation**: Ed25519 COSE_Sign1 chain verification, monotonicity, provenance.
-- [ ] **Step 4a — Fix P1 review findings**: Use decoded COSE payload instead of `claim` field, `verify_strict`, private `AuthorityChain` fields, `Operation::new` structural validation, remove `expect` panics, wildcard prefix semantics. **Fix S4-P1-01 through S4-P1-06.**
+- [x] **Step 4a — Fix P1 review findings**: Use decoded COSE payload instead of `claim` field, `verify_strict`, private `AuthorityChain` fields, `Operation::new` structural validation, remove `expect` panics, wildcard prefix semantics. **Fixed S4-P1-01 through S4-P1-06.**
 - [ ] **Step 5 — Validator orchestrator**: Authority + physics -> signed verdict + optional signed actuation.
 - [ ] **Step 6 — Signed audit logger**: Append-only, hash-chained, Ed25519-signed JSONL.
 - [ ] **Step 7 — Watchdog**: Heartbeat monitor, safe-stop command generation.
