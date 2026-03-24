@@ -1,7 +1,7 @@
 # Invariant — Build State
 
 ## Current Status
-Phase 1, Step 5a complete. All **5 P1 findings fixed**: signer_kid in actuation signature (P1-01), PCA chain size cap (P1-02), empty required_ops rejection (P1-03), canonical operation ordering in verdict (P1-04), origin extraction after signature verification (P1-05). 154 tests passing, clippy clean. Ready for Step 6 (signed audit logger).
+Phase 1, Step 6 complete. Signed audit logger implemented in `crates/invariant-core/src/audit.rs`. Enforces all 4 invariants: L1 Completeness, L2 Ordering (SHA-256 hash chain), L3 Authenticity (Ed25519 per-entry signatures), L4 Immutability (O_APPEND). `verify_audit_log()` verifies the full chain. 161 tests passing, clippy clean (7 new audit tests).
 
 ## Completed Tasks
 
@@ -14,6 +14,7 @@ Phase 1, Step 5a complete. All **5 P1 findings fixed**: signer_kid in actuation 
 - [x] **Step 4a — Fix P1 review findings**: Use decoded COSE payload (P1-01), verify_strict (P1-02), private AuthorityChain (P1-03), Operation structural validation (P1-04), sign_pca returns Result (P1-05), wildcard prefix fix (P1-06). Also ChainTooLong variant (P2-04), pub(crate) decode_pca_payload (P2-05), PartialEq on AuthorityError (P2-08). 16 new tests (138 total).
 - [x] **Step 5 — Validator orchestrator**: Full validation pipeline in `validator.rs` (ValidatorConfig, validate(), signed verdicts with 11 checks) and signed actuation command generator in `actuator.rs` (ActuationPayload signing, M1 invariant). Fail-closed, deterministic, SHA-256 hashing. 12 new tests (150 total).
 - [x] **Step 5a — Fix P1 review findings**: signer_kid covered by actuation signature (P1-01), 64 KiB PCA chain size cap before decode (P1-02), empty required_ops rejection (P1-03), canonical operation ordering in verdict signature (P1-04), origin extraction after hop 0 signature verification (P1-05). 4 new tests (154 total).
+- [x] **Step 6 — Signed audit logger**: `AuditLogger` (append-only JSONL, hash chain, Ed25519 per-entry signatures), `AuditError` (thiserror), `verify_audit_log()` (full chain + signature verification). `AuditEntryPayload` helper for circularity-free hashing. `tempfile` dev-dependency added. 7 new tests (161 total).
 
 ---
 
