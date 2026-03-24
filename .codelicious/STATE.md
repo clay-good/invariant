@@ -1,7 +1,7 @@
 # Invariant — Build State
 
 ## Current Status
-Phase 1, Step 4a complete and reviewed. **All 6 Step 4 P1 findings fixed.** Post-fix review identified **2 new P1, 13 P2, 14 P3 findings** — predominantly carry-forward profile validation gaps (NaN in profile fields) and test coverage gaps. 138 tests passing, clippy clean. Ready for Step 5 (validator orchestrator).
+Phase 1, Step 5 complete. **Validator orchestrator and signed actuation command generator implemented.** ValidatorConfig (profile-validated, pre-hashed), full pipeline (authority + physics -> signed verdict + optional actuation), fail-closed design, deterministic (caller-supplied `now`), 12 new tests. 150 tests passing, clippy clean. Ready for Step 5a (quality review) or Step 6 (signed audit logger).
 
 ## Completed Tasks
 
@@ -12,6 +12,7 @@ Phase 1, Step 4a complete and reviewed. **All 6 Step 4 P1 findings fixed.** Post
 - [x] **Step 3a — Fix P1 review findings**: NaN/Inf guards in all 10 physics checks, clippy fix, unbounded collection caps, reqwest removed, R2-01..R2-07 silent-skip fixes. 20 new tests (84 total).
 - [x] **Step 4 — Authority validation**: Ed25519 COSE_Sign1 chain verification (crypto.rs), wildcard operation matching + subset checks (operations.rs), full PCA chain verification with A1/A2/A3 invariants + temporal constraints (chain.rs). AuthorityError enum with typed variants. 38 new tests (122 total).
 - [x] **Step 4a — Fix P1 review findings**: Use decoded COSE payload (P1-01), verify_strict (P1-02), private AuthorityChain (P1-03), Operation structural validation (P1-04), sign_pca returns Result (P1-05), wildcard prefix fix (P1-06). Also ChainTooLong variant (P2-04), pub(crate) decode_pca_payload (P2-05), PartialEq on AuthorityError (P2-08). 16 new tests (138 total).
+- [x] **Step 5 — Validator orchestrator**: Full validation pipeline in `validator.rs` (ValidatorConfig, validate(), signed verdicts with 11 checks) and signed actuation command generator in `actuator.rs` (ActuationPayload signing, M1 invariant). Fail-closed, deterministic, SHA-256 hashing. 12 new tests (150 total).
 
 ---
 
