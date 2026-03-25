@@ -1,7 +1,7 @@
 # Invariant — Build State
 
 ## Current Status
-Phase 1 complete (Steps 1-8). Profile library implemented in `crates/invariant-core/src/profiles.rs`. Embeds all 4 robot profiles at compile time with `load_builtin()`, `list_builtins()`, `load_from_json()`, `load_from_bytes()` APIs. 256 KiB size cap on custom profiles. `ProfileError` enum with typed variants. 187 tests passing, clippy clean (13 new profile library tests).
+Phase 2 in progress (Step 9 complete). CLI layer implemented in `crates/invariant-cli/` with 5 working subcommands (validate, keygen, audit, verify, inspect). Forge mode enables self-signed PCA for development/testing. Key file module with JSON format (kid, public_key, secret_key). 203 tests passing, clippy clean (16 new CLI tests).
 
 ## Completed Tasks
 
@@ -17,6 +17,9 @@ Phase 1 complete (Steps 1-8). Profile library implemented in `crates/invariant-c
 - [x] **Step 6 — Signed audit logger**: `AuditLogger` (append-only JSONL, hash chain, Ed25519 per-entry signatures), `AuditError` (thiserror), `verify_audit_log()` (full chain + signature verification). `AuditEntryPayload` helper for circularity-free hashing. `tempfile` dev-dependency added. 7 new tests (161 total).
 - [x] **Step 7 — Watchdog**: `Watchdog` struct (heartbeat monitor, safe-stop trigger), `WatchdogState` enum (Armed/Triggered one-way latch), `WatchdogError` (thiserror). Deterministic design — caller-supplied monotonic timestamps, no I/O. `check()` generates `SignedActuationCommand` on timeout via `build_signed_actuation_command`. Supports `ControlledCrouch`, `ParkPosition`, `ImmediateStop` strategies. Deterministic joint ordering (sorted by name). `reset()` for operator recovery. 13 new tests (174 total).
 - [x] **Step 8 — Profile library**: `profiles` module in `invariant-core` embeds all 4 robot profile JSON files (humanoid_28dof, franka_panda, quadruped_12dof, ur10) at compile time. `load_builtin(name)` parses + validates by name. `list_builtins()` enumerates available profiles. `load_from_json()` / `load_from_bytes()` for custom profiles with 256 KiB size cap. `ProfileError` enum. Round-trip serialization verified. 13 new tests (187 total).
+
+### Phase 2: CLI
+- [x] **Step 9 — CLI**: Full clap CLI with 5 working subcommands. `validate` supports single/batch/stdin input, guardian/shadow/forge modes, writes audit log. `keygen` generates Ed25519 keypairs to JSON. `audit` displays JSONL entries with --last N. `verify` checks hash chain + signatures. `inspect` shows profile summary. Key file module (`key_file.rs`) with load/write/decode helpers. eval/diff/campaign/serve remain stubs for later steps. 16 new tests (203 total).
 
 ---
 
