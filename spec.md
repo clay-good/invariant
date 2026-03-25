@@ -704,7 +704,7 @@ Exit codes: 0 = approved/pass, 1 = rejected/fail, 2 = error.
 
 ### Phase 3: Eval (Steps 12-15)
 
-12. **Eval presets**: safety-check, completeness-check, regression-check.
+12. ~~**Eval presets**: safety-check, completeness-check, regression-check.~~ ✓
 13. **Custom rubrics**: YAML/JSON loader with pattern matching.
 14. **Guardrail engine**: Policy-based pattern matching with actions.
 15. **Trace differ**: Step-by-step comparison with divergence detection.

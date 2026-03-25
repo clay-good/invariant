@@ -1,7 +1,7 @@
 # Invariant — Build State
 
 ## Current Status
-Phase 2 complete (Step 11 complete). Key management system hardened with KID validation, SHA-256 fingerprints, public key export, overwrite protection, and secure Unix permissions. 242 tests passing, clippy clean (31 new key management tests).
+Phase 3 in progress (Step 12 complete). Eval presets implemented with safety-check, completeness-check, and regression-check. CLI `invariant eval` wired up. 264 tests passing, clippy clean (23 new eval tests).
 
 ## Completed Tasks
 
@@ -22,6 +22,9 @@ Phase 2 complete (Step 11 complete). Key management system hardened with KID val
 - [x] **Step 9 — CLI**: Full clap CLI with 5 working subcommands. `validate` supports single/batch/stdin input, guardian/shadow/forge modes, writes audit log. `keygen` generates Ed25519 keypairs to JSON. `audit` displays JSONL entries with --last N. `verify` checks hash chain + signatures. `inspect` shows profile summary. Key file module (`key_file.rs`) with load/write/decode helpers. eval/diff/campaign/serve remain stubs for later steps. 16 new tests (203 total).
 - [x] **Step 10 — Embedded Trust Plane**: `invariant serve` mode using axum. POST /validate (full validation pipeline with JSON request/response), POST /heartbeat (watchdog timer feed), GET /health (server status). Trust-plane mode (--trust-plane) auto-issues self-signed PCA chains. Watchdog configurable via --watchdog-timeout-ms (default 500ms, 0 disables). Shared state via Arc + tokio::sync::Mutex. Dependencies: axum 0.8, tower 0.5 (dev). 8 new tests (211 total).
 - [x] **Step 11 — Key management**: Production-quality key management system. `validate_kid()` rejects empty, >128 byte, or unsafe-character KIDs. SHA-256 `fingerprint()` for out-of-band key verification. `export_public_key()` creates public-key-only files. `--export-pub` flag on `keygen` writes shareable public key file. `--force` flag for overwrite protection. `write_key_file_secure()` sets 0600 permissions on Unix for secret-containing files. KID validation on all key file loads. `sha2` dependency added to CLI crate. 31 new tests (242 total).
+
+### Phase 3: Eval
+- [x] **Step 12 — Eval presets**: Three deterministic eval presets in `invariant-eval/src/presets.rs`: `safety-check` (verifies all physics/authority checks pass per step), `completeness-check` (step sequencing, timestamp ordering, 11 expected checks per verdict), `regression-check` (single-trace consistency + two-trace verdict comparison). `EvalReport` + `EvalFinding` + `Severity` types with serde. CLI `invariant eval --preset <name> <trace.json>` reads traces, runs presets, outputs JSON reports. `--list-presets` flag. Exit codes 0/1/2. `invariant-eval` added as CLI dependency. `chrono` dev-dependency for eval tests. 23 new tests (264 total).
 
 ---
 
