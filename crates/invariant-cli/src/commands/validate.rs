@@ -1,12 +1,9 @@
-use base64::{engine::general_purpose::STANDARD, Engine};
 use clap::{Args, ValueEnum};
-use ed25519_dalek::{SigningKey, VerifyingKey};
-use serde::Deserialize;
-use std::collections::HashMap;
 use std::io::{self, Read};
 use std::path::PathBuf;
 
 use chrono::Utc;
+use invariant_core::keys::KeyFile;
 use invariant_core::models::command::Command;
 use invariant_core::validator::ValidatorConfig;
 
@@ -38,49 +35,15 @@ pub struct ValidateArgs {
     pub mode: ValidationMode,
 }
 
-#[derive(Deserialize)]
-struct KeyFile {
-    kid: String,
-    signing_key: String,
-    verifying_key: String,
-}
-
 pub fn run(args: &ValidateArgs) -> i32 {
-    // Load key file.
-    let key_data = match std::fs::read_to_string(&args.key) {
-        Ok(s) => s,
-        Err(e) => {
-            eprintln!("invariant validate: failed to read key file: {e}");
-            return 2;
-        }
-    };
-    let key_file: KeyFile = match serde_json::from_str(&key_data) {
-        Ok(k) => k,
-        Err(e) => {
-            eprintln!("invariant validate: failed to parse key file: {e}");
-            return 2;
-        }
-    };
-
-    let signing_key = match decode_signing_key(&key_file.signing_key) {
-        Ok(k) => k,
+    // Load and decode key file.
+    let decoded = match KeyFile::load_and_decode(&args.key) {
+        Ok(d) => d,
         Err(e) => {
             eprintln!("invariant validate: {e}");
             return 2;
         }
     };
-    let verifying_key = match decode_verifying_key(&key_file.verifying_key) {
-        Ok(k) => k,
-        Err(e) => {
-            eprintln!("invariant validate: {e}");
-            return 2;
-        }
-    };
-
-    // The key file's key is used both as the signing key and as a trusted
-    // key for authority chain verification (the validator's own key).
-    let mut trusted_keys = HashMap::new();
-    trusted_keys.insert(key_file.kid.clone(), verifying_key);
 
     // Load profile.
     let profile = match invariant_core::profiles::load_from_file(&args.profile) {
@@ -92,7 +55,12 @@ pub fn run(args: &ValidateArgs) -> i32 {
     };
 
     // Build validator config.
-    let config = match ValidatorConfig::new(profile, trusted_keys, signing_key, key_file.kid) {
+    let config = match ValidatorConfig::new(
+        profile,
+        decoded.trusted_keys(),
+        decoded.signing_key,
+        decoded.kid,
+    ) {
         Ok(c) => c,
         Err(e) => {
             eprintln!("invariant validate: {e}");
@@ -221,24 +189,4 @@ fn parse_jsonl_commands(data: &str) -> Result<Vec<Command>, String> {
         commands.push(cmd);
     }
     Ok(commands)
-}
-
-fn decode_signing_key(b64: &str) -> Result<SigningKey, String> {
-    let bytes = STANDARD
-        .decode(b64)
-        .map_err(|e| format!("failed to base64-decode signing_key: {e}"))?;
-    let array: [u8; 32] = bytes
-        .try_into()
-        .map_err(|_| "signing_key must be exactly 32 bytes".to_string())?;
-    Ok(SigningKey::from_bytes(&array))
-}
-
-fn decode_verifying_key(b64: &str) -> Result<VerifyingKey, String> {
-    let bytes = STANDARD
-        .decode(b64)
-        .map_err(|e| format!("failed to base64-decode verifying_key: {e}"))?;
-    let array: [u8; 32] = bytes
-        .try_into()
-        .map_err(|_| "verifying_key must be exactly 32 bytes".to_string())?;
-    VerifyingKey::from_bytes(&array).map_err(|e| format!("invalid verifying key: {e}"))
 }

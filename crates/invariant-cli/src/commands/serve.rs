@@ -4,16 +4,15 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
-use base64::{engine::general_purpose::STANDARD, Engine};
 use chrono::Utc;
 use clap::Args;
-use ed25519_dalek::{SigningKey, VerifyingKey};
+use ed25519_dalek::SigningKey;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use invariant_core::keys::KeyFile;
 use invariant_core::models::actuation::SignedActuationCommand;
 use invariant_core::models::command::{Command, JointState};
 use invariant_core::models::profile::RobotProfile;
@@ -75,37 +74,6 @@ struct HealthResponse {
 #[derive(Serialize)]
 struct ErrorResponse {
     error: String,
-}
-
-// ---------------------------------------------------------------------------
-// Key file
-// ---------------------------------------------------------------------------
-
-#[derive(Deserialize)]
-struct KeyFile {
-    kid: String,
-    signing_key: String,
-    verifying_key: String,
-}
-
-fn decode_signing_key(b64: &str) -> Result<SigningKey, String> {
-    let bytes = STANDARD
-        .decode(b64)
-        .map_err(|e| format!("failed to base64-decode signing_key: {e}"))?;
-    let array: [u8; 32] = bytes
-        .try_into()
-        .map_err(|_| "signing_key must be exactly 32 bytes".to_string())?;
-    Ok(SigningKey::from_bytes(&array))
-}
-
-fn decode_verifying_key(b64: &str) -> Result<VerifyingKey, String> {
-    let bytes = STANDARD
-        .decode(b64)
-        .map_err(|e| format!("failed to base64-decode verifying_key: {e}"))?;
-    let array: [u8; 32] = bytes
-        .try_into()
-        .map_err(|_| "verifying_key must be exactly 32 bytes".to_string())?;
-    VerifyingKey::from_bytes(&array).map_err(|e| format!("invalid verifying key: {e}"))
 }
 
 // ---------------------------------------------------------------------------
@@ -228,39 +196,14 @@ struct WatchdogStatusResponse {
 // ---------------------------------------------------------------------------
 
 pub fn run(args: &ServeArgs) -> i32 {
-    // Load key file.
-    let key_data = match std::fs::read_to_string(&args.key) {
-        Ok(s) => s,
-        Err(e) => {
-            eprintln!("invariant serve: failed to read key file: {e}");
-            return 2;
-        }
-    };
-    let key_file: KeyFile = match serde_json::from_str(&key_data) {
-        Ok(k) => k,
-        Err(e) => {
-            eprintln!("invariant serve: failed to parse key file: {e}");
-            return 2;
-        }
-    };
-
-    let signing_key = match decode_signing_key(&key_file.signing_key) {
-        Ok(k) => k,
+    // Load and decode key file.
+    let decoded = match KeyFile::load_and_decode(&args.key) {
+        Ok(d) => d,
         Err(e) => {
             eprintln!("invariant serve: {e}");
             return 2;
         }
     };
-    let verifying_key = match decode_verifying_key(&key_file.verifying_key) {
-        Ok(k) => k,
-        Err(e) => {
-            eprintln!("invariant serve: {e}");
-            return 2;
-        }
-    };
-
-    let mut trusted_keys = HashMap::new();
-    trusted_keys.insert(key_file.kid.clone(), verifying_key);
 
     // Load profile.
     let profile: RobotProfile = match invariant_core::profiles::load_from_file(&args.profile) {
@@ -278,21 +221,25 @@ pub fn run(args: &ServeArgs) -> i32 {
     };
 
     // Build validator config.
-    let signer_kid = key_file.kid.clone();
-    let config =
-        match ValidatorConfig::new(profile, trusted_keys, signing_key.clone(), signer_kid.clone()) {
-            Ok(c) => c,
-            Err(e) => {
-                eprintln!("invariant serve: {e}");
-                return 2;
-            }
-        };
+    let signer_kid = decoded.kid.clone();
+    let config = match ValidatorConfig::new(
+        profile,
+        decoded.trusted_keys(),
+        decoded.signing_key.clone(),
+        signer_kid.clone(),
+    ) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("invariant serve: {e}");
+            return 2;
+        }
+    };
 
     let state = Arc::new(ServerState {
         config,
         watchdog: Mutex::new(Watchdog::new(watchdog_config)),
         previous_joints: Mutex::new(None),
-        signing_key,
+        signing_key: decoded.signing_key,
         signer_kid,
     });
 

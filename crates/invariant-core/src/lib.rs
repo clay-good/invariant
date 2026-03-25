@@ -12,3 +12,4 @@ pub mod actuator;
 pub mod audit;
 pub mod watchdog;
 pub mod profiles;
+pub mod keys;
