@@ -1,7 +1,4 @@
-use base64::{engine::general_purpose::STANDARD, Engine};
 use clap::Args;
-use ed25519_dalek::VerifyingKey;
-use serde::Deserialize;
 use std::path::PathBuf;
 
 #[derive(Args)]

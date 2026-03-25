@@ -1,6 +1,4 @@
 use clap::Args;
-use std::fs;
-use std::io::{self, BufRead};
 use std::path::PathBuf;
 
 use invariant_core::models::audit::SignedAuditEntry;

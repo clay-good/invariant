@@ -2,8 +2,6 @@ use clap::Args;
 use invariant_core::models::profile::{JointType, SafeStopStrategy, WorkspaceBounds};
 use std::path::PathBuf;
 
-use invariant_core::models::profile::{JointType, SafeStopStrategy, WorkspaceBounds};
-
 #[derive(Args)]
 pub struct InspectArgs {
     #[arg(long, value_name = "PROFILE_FILE")]

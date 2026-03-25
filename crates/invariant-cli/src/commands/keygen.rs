@@ -3,8 +3,6 @@ use clap::Args;
 use rand::rngs::OsRng;
 use std::path::PathBuf;
 
-use invariant_core::keys::KeyFile;
-
 #[derive(Args)]
 pub struct KeygenArgs {
     #[arg(long)]
