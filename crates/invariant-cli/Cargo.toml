@@ -11,6 +11,7 @@ path = "src/main.rs"
 
 [dependencies]
 invariant-core = { path = "../invariant-core" }
+invariant-eval = { path = "../invariant-eval" }
 clap.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true

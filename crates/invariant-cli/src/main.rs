@@ -41,7 +41,7 @@ fn main() {
         Commands::Audit(ref args) => commands::audit::run(args),
         Commands::Verify(ref args) => commands::verify::run(args),
         Commands::Inspect(ref args) => commands::inspect::run(args),
-        Commands::Eval(_) => commands::eval::run_stub(),
+        Commands::Eval(ref args) => commands::eval::run(args),
         Commands::Diff(_) => commands::diff::run_stub(),
         Commands::Campaign(_) => commands::campaign::run_stub(),
         Commands::Keygen(ref args) => commands::keygen::run(args),
