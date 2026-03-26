@@ -9,7 +9,7 @@ use crate::models::verdict::CheckResult;
 /// Currently supports [`WorkspaceBounds::Aabb`]. For each end-effector, all three
 /// coordinates must satisfy `min[i] <= position[i] <= max[i]`.
 ///
-/// If `end_effectors` is empty the check passes trivially — there is nothing to verify.
+/// If `end_effectors` is empty the check fails — positions are required to verify workspace bounds.
 pub fn check_workspace_bounds(
     end_effectors: &[EndEffectorPosition],
     workspace: &WorkspaceBounds,
@@ -18,8 +18,8 @@ pub fn check_workspace_bounds(
         return CheckResult {
             name: "workspace_bounds".to_string(),
             category: "physics".to_string(),
-            passed: true,
-            details: "no end-effectors to check".to_string(),
+            passed: false,
+            details: "end_effector_positions required for workspace bounds check".to_string(),
         };
     }
 
@@ -27,6 +27,14 @@ pub fn check_workspace_bounds(
 
     match workspace {
         WorkspaceBounds::Aabb { min, max } => {
+            // Invariant: min[i] <= max[i] for all axes. ValidatorConfig rejects
+            // profiles that violate this (WorkspaceBounds::validate), so this
+            // should never fire in production. The debug_assert catches any
+            // path that bypasses validation in tests or future refactors.
+            debug_assert!(
+                min[0] <= max[0] && min[1] <= max[1] && min[2] <= max[2],
+                "workspace AABB min must be <= max on all axes: min={min:?} max={max:?}"
+            );
             for ee in end_effectors {
                 let p = &ee.position;
                 if !p[0].is_finite() || !p[1].is_finite() || !p[2].is_finite() {
@@ -34,17 +42,17 @@ pub fn check_workspace_bounds(
                         "'{}': position contains NaN or infinite value",
                         ee.name
                     ));
-                } else if p[0] < min[0] || p[0] > max[0]
-                    || p[1] < min[1] || p[1] > max[1]
-                    || p[2] < min[2] || p[2] > max[2]
+                } else if p[0] < min[0]
+                    || p[0] > max[0]
+                    || p[1] < min[1]
+                    || p[1] > max[1]
+                    || p[2] < min[2]
+                    || p[2] > max[2]
                 {
                     violations.push(format!(
                         "'{}': position [{:.6}, {:.6}, {:.6}] outside AABB \
                          min [{:.6}, {:.6}, {:.6}] max [{:.6}, {:.6}, {:.6}]",
-                        ee.name,
-                        p[0], p[1], p[2],
-                        min[0], min[1], min[2],
-                        max[0], max[1], max[2]
+                        ee.name, p[0], p[1], p[2], min[0], min[1], min[2], max[0], max[1], max[2]
                     ));
                 }
             }

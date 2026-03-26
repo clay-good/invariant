@@ -1,5 +1,6 @@
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::collections::HashMap;
+use std::collections::HashSet;
 
 use super::error::{Validate, ValidationError};
 
@@ -29,7 +30,6 @@ pub enum SafeStopStrategy {
     ImmediateStop,
     ParkPosition,
 }
-
 
 // --- CollisionPair (P3-6): named struct instead of positional [String; 2] ---
 
@@ -150,6 +150,25 @@ impl Validate for RobotProfile {
             ));
         }
 
+        // min_collision_distance must be strictly positive when collision_pairs
+        // are defined; a value of 0.0 (or negative) would never flag any
+        // collision and silently disable the self-collision check.
+        if !self.collision_pairs.is_empty() && self.min_collision_distance <= 0.0 {
+            return Err(ValidationError::InvalidMinCollisionDistance {
+                value: self.min_collision_distance,
+            });
+        }
+
+        // Reject duplicate joint names before per-joint validation.
+        let mut joint_names: HashSet<&str> = HashSet::new();
+        for joint in &self.joints {
+            if !joint_names.insert(joint.name.as_str()) {
+                return Err(ValidationError::DuplicateJointName {
+                    name: joint.name.clone(),
+                });
+            }
+        }
+
         // Validate workspace bounds
         self.workspace.validate()?;
 
@@ -211,6 +230,31 @@ impl Validate for JointDefinition {
                 value: self.max_acceleration,
             });
         }
+        // Reject NaN/infinite values which would vacuously pass all comparisons.
+        if !self.min.is_finite() || !self.max.is_finite() {
+            return Err(ValidationError::JointLimitNotFinite {
+                name: self.name.clone(),
+                field: "min/max",
+            });
+        }
+        if !self.max_velocity.is_finite() {
+            return Err(ValidationError::JointLimitNotFinite {
+                name: self.name.clone(),
+                field: "max_velocity",
+            });
+        }
+        if !self.max_torque.is_finite() {
+            return Err(ValidationError::JointLimitNotFinite {
+                name: self.name.clone(),
+                field: "max_torque",
+            });
+        }
+        if !self.max_acceleration.is_finite() {
+            return Err(ValidationError::JointLimitNotFinite {
+                name: self.name.clone(),
+                field: "max_acceleration",
+            });
+        }
         Ok(())
     }
 }
@@ -227,6 +271,11 @@ impl Validate for WorkspaceBounds {
     fn validate(&self) -> Result<(), ValidationError> {
         match self {
             WorkspaceBounds::Aabb { min, max } => {
+                for (i, (lo, hi)) in min.iter().zip(max.iter()).enumerate() {
+                    if !lo.is_finite() || !hi.is_finite() {
+                        return Err(ValidationError::WorkspaceBoundsNotFinite { axis: i });
+                    }
+                }
                 if min[0] >= max[0] || min[1] >= max[1] || min[2] >= max[2] {
                     return Err(ValidationError::WorkspaceBoundsInverted {
                         min: *min,
@@ -280,9 +329,16 @@ impl Validate for ProximityZone {
         match self {
             ProximityZone::Sphere {
                 name,
+                radius,
                 velocity_scale,
                 ..
             } => {
+                if !radius.is_finite() || *radius <= 0.0 {
+                    return Err(ValidationError::ProximityRadiusInvalid {
+                        name: name.clone(),
+                        radius: *radius,
+                    });
+                }
                 if *velocity_scale <= 0.0 || *velocity_scale > 1.0 {
                     return Err(ValidationError::ProximityVelocityScaleOutOfRange {
                         name: name.clone(),

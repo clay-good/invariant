@@ -12,7 +12,10 @@ pub fn run(args: &InspectArgs) -> i32 {
     let json = match std::fs::read_to_string(&args.profile) {
         Ok(s) => s,
         Err(e) => {
-            eprintln!("invariant inspect: failed to read {:?}: {}", args.profile, e);
+            eprintln!(
+                "invariant inspect: failed to read {:?}: {}",
+                args.profile, e
+            );
             return 2;
         }
     };
@@ -81,3 +84,68 @@ pub fn run(args: &InspectArgs) -> i32 {
     0
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+    use tempfile::NamedTempFile;
+
+    // A minimal valid profile JSON understood by `invariant_core::profiles::load_from_json`.
+    const MINIMAL_PROFILE_JSON: &str = r#"{
+        "name": "test_robot",
+        "version": "1.0.0",
+        "joints": [
+            {
+                "name": "j1",
+                "type": "revolute",
+                "min": -1.57,
+                "max": 1.57,
+                "max_velocity": 2.0,
+                "max_torque": 50.0,
+                "max_acceleration": 10.0
+            }
+        ],
+        "workspace": {
+            "type": "aabb",
+            "min": [-1.0, -1.0, 0.0],
+            "max": [1.0, 1.0, 2.0]
+        },
+        "max_delta_time": 0.01,
+        "global_velocity_scale": 1.0
+    }"#;
+
+    fn write_tempfile(content: &str) -> NamedTempFile {
+        let mut tmp = NamedTempFile::new().unwrap();
+        tmp.write_all(content.as_bytes()).unwrap();
+        tmp.flush().unwrap();
+        tmp
+    }
+
+    fn args_for(path: &std::path::Path) -> InspectArgs {
+        InspectArgs {
+            profile: path.to_path_buf(),
+        }
+    }
+
+    #[test]
+    fn valid_profile_returns_0() {
+        let tmp = write_tempfile(MINIMAL_PROFILE_JSON);
+        let args = args_for(tmp.path());
+        assert_eq!(run(&args), 0);
+    }
+
+    #[test]
+    fn invalid_json_returns_2() {
+        let tmp = write_tempfile("this is not { valid } json");
+        let args = args_for(tmp.path());
+        assert_eq!(run(&args), 2);
+    }
+
+    #[test]
+    fn nonexistent_path_returns_2() {
+        let args = InspectArgs {
+            profile: std::path::PathBuf::from("/nonexistent/path/profile.json"),
+        };
+        assert_eq!(run(&args), 2);
+    }
+}

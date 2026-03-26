@@ -15,7 +15,6 @@ use std::collections::HashMap;
 use base64::{engine::general_purpose::STANDARD, Engine};
 use chrono::{DateTime, Utc};
 use ed25519_dalek::{SigningKey, VerifyingKey};
-use sha2::{Digest, Sha256};
 use thiserror::Error;
 
 use crate::actuator;
@@ -72,12 +71,11 @@ impl ValidatorConfig {
         signer_kid: String,
     ) -> Result<Self, ValidatorError> {
         profile.validate()?;
-        let profile_json = serde_json::to_vec(&profile).map_err(|e| {
-            ValidatorError::Serialization {
+        let profile_json =
+            serde_json::to_vec(&profile).map_err(|e| ValidatorError::Serialization {
                 reason: e.to_string(),
-            }
-        })?;
-        let profile_hash = sha256_hex(&profile_json);
+            })?;
+        let profile_hash = crate::util::sha256_hex(&profile_json);
         Ok(Self {
             profile,
             trusted_keys,
@@ -126,12 +124,11 @@ impl ValidatorConfig {
         previous_joints: Option<&[JointState]>,
     ) -> Result<ValidationResult, ValidatorError> {
         // Compute command hash.
-        let command_json = serde_json::to_vec(command).map_err(|e| {
-            ValidatorError::Serialization {
+        let command_json =
+            serde_json::to_vec(command).map_err(|e| ValidatorError::Serialization {
                 reason: e.to_string(),
-            }
-        })?;
-        let command_hash = sha256_hex(&command_json);
+            })?;
+        let command_hash = crate::util::sha256_hex(&command_json);
 
         // Decode PCA chain and run authority verification.
         let (authority_result, verified_chain) = self.run_authority(
@@ -243,6 +240,9 @@ impl ValidatorConfig {
         };
 
         // Check required ops coverage.
+        // Return None for the chain: the granted ops were insufficient, so the
+        // chain must not be forwarded to the authority summary where it could
+        // leak origin_principal or hop information into a rejection verdict.
         if let Err(e) = check_required_ops(&chain, required_ops) {
             return (
                 CheckResult {
@@ -251,7 +251,7 @@ impl ValidatorConfig {
                     passed: false,
                     details: e.to_string(),
                 },
-                Some(chain),
+                None,
             );
         }
 
@@ -267,11 +267,10 @@ impl ValidatorConfig {
     }
 
     fn sign_verdict(&self, verdict: &Verdict) -> Result<SignedVerdict, ValidatorError> {
-        let verdict_json = serde_json::to_vec(verdict).map_err(|e| {
-            ValidatorError::Serialization {
+        let verdict_json =
+            serde_json::to_vec(verdict).map_err(|e| ValidatorError::Serialization {
                 reason: e.to_string(),
-            }
-        })?;
+            })?;
 
         use ed25519_dalek::Signer;
         let signature = self.signing_key.sign(&verdict_json);
@@ -302,12 +301,6 @@ fn decode_pca_chain(pca_chain_b64: &str) -> Result<Vec<SignedPca>, String> {
         .decode(pca_chain_b64)
         .map_err(|e| format!("base64 decode failed: {e}"))?;
     serde_json::from_slice(&bytes).map_err(|e| format!("JSON parse failed: {e}"))
-}
-
-fn sha256_hex(data: &[u8]) -> String {
-    let hash = Sha256::digest(data);
-    let hex: String = hash.iter().map(|b| format!("{b:02x}")).collect();
-    format!("sha256:{hex}")
 }
 
 fn build_authority_summary(
@@ -350,7 +343,7 @@ mod tests {
     use super::*;
     use crate::authority::crypto::{generate_keypair, sign_pca};
     use crate::models::authority::{Operation, Pca};
-    use crate::models::command::{CommandAuthority, JointState};
+    use crate::models::command::{CommandAuthority, EndEffectorPosition, JointState};
     use crate::models::profile::*;
     use chrono::Utc;
     use rand::rngs::OsRng;
@@ -416,7 +409,13 @@ mod tests {
                 effort: 10.0,
             }],
             delta_time: 0.01,
-            end_effector_positions: vec![],
+            // Provide a position inside the test_profile workspace AABB
+            // (min [-2,-2,0] max [2,2,3]) so that the workspace bounds check
+            // does not reject commands that are otherwise valid.
+            end_effector_positions: vec![EndEffectorPosition {
+                name: "end_effector".into(),
+                position: [0.0, 0.0, 1.0],
+            }],
             center_of_mass: None,
             authority: CommandAuthority {
                 pca_chain: chain_b64.to_string(),
@@ -426,10 +425,7 @@ mod tests {
         }
     }
 
-    fn make_config(
-        trusted: HashMap<String, VerifyingKey>,
-        sign_sk: SigningKey,
-    ) -> ValidatorConfig {
+    fn make_config(trusted: HashMap<String, VerifyingKey>, sign_sk: SigningKey) -> ValidatorConfig {
         ValidatorConfig::new(test_profile(), trusted, sign_sk, "invariant-test".into()).unwrap()
     }
 
@@ -559,12 +555,18 @@ mod tests {
         assert!(!auth.passed);
         assert!(auth.details.contains("not covered"));
 
-        // Even though authority ops were insufficient, the chain was verified,
-        // so the summary should have the origin principal.
+        // Finding 76: when check_required_ops fails, the chain is not forwarded
+        // to the authority summary. origin_principal must be empty to avoid
+        // leaking chain metadata in a rejection verdict.
         assert_eq!(
-            result.signed_verdict.verdict.authority_summary.origin_principal,
-            "alice"
+            result
+                .signed_verdict
+                .verdict
+                .authority_summary
+                .origin_principal,
+            ""
         );
+        assert_eq!(result.signed_verdict.verdict.authority_summary.hop_count, 0);
     }
 
     #[test]
@@ -597,8 +599,12 @@ mod tests {
             r2.signed_verdict.verdict_signature
         );
         assert_eq!(
-            r1.actuation_command.as_ref().map(|a| &a.actuation_signature),
-            r2.actuation_command.as_ref().map(|a| &a.actuation_signature),
+            r1.actuation_command
+                .as_ref()
+                .map(|a| &a.actuation_signature),
+            r2.actuation_command
+                .as_ref()
+                .map(|a| &a.actuation_signature),
         );
     }
 
@@ -637,7 +643,7 @@ mod tests {
 
     #[test]
     fn command_hash_format() {
-        let hash = sha256_hex(b"hello world");
+        let hash = crate::util::sha256_hex(b"hello world");
         assert!(hash.starts_with("sha256:"));
         assert_eq!(hash.len(), 7 + 64); // "sha256:" + 64 hex chars
     }
@@ -731,15 +737,127 @@ mod tests {
 
         // Both should produce the same sorted operations_required.
         assert_eq!(
-            r1.signed_verdict.verdict.authority_summary.operations_required,
-            r2.signed_verdict.verdict.authority_summary.operations_required,
+            r1.signed_verdict
+                .verdict
+                .authority_summary
+                .operations_required,
+            r2.signed_verdict
+                .verdict
+                .authority_summary
+                .operations_required,
         );
 
         // Verify they're actually sorted.
-        let ops_req = &r1.signed_verdict.verdict.authority_summary.operations_required;
+        let ops_req = &r1
+            .signed_verdict
+            .verdict
+            .authority_summary
+            .operations_required;
         let mut sorted = ops_req.clone();
         sorted.sort();
         assert_eq!(ops_req, &sorted);
+    }
+
+    #[test]
+    fn pca_chain_exact_boundary_fails_base64_decode_not_size_limit() {
+        // Finding 18: a string of exactly MAX_PCA_CHAIN_B64_BYTES bytes passes
+        // the size guard but must then fail with a base64 decode error (because
+        // the payload is not valid base64-encoded JSON), NOT a "too large" error.
+        let (sign_sk, _) = make_keypair();
+        let config = make_config(HashMap::new(), sign_sk);
+
+        // A string of exactly MAX_PCA_CHAIN_B64_BYTES '!' characters is not
+        // valid base64, so it should hit the decode path, not the size guard.
+        let at_limit = "!".repeat(MAX_PCA_CHAIN_B64_BYTES);
+        assert_eq!(at_limit.len(), MAX_PCA_CHAIN_B64_BYTES);
+
+        let cmd = make_command(&at_limit, vec![op("actuate:j1")]);
+        let result = config.validate(&cmd, Utc::now(), None).unwrap();
+
+        assert!(!result.signed_verdict.verdict.approved);
+        let auth = &result.signed_verdict.verdict.checks[0];
+        assert!(!auth.passed);
+        // Must be a decode failure, not a size-limit rejection.
+        assert!(
+            auth.details.contains("decode failed"),
+            "expected 'decode failed' in details, got: {}",
+            auth.details
+        );
+        assert!(
+            !auth.details.contains("too large"),
+            "must not be rejected by the size guard at the boundary"
+        );
+    }
+
+    #[test]
+    fn acceleration_limit_exceeded_with_previous_joints_produces_rejection() {
+        // Finding 72: validate() with previous_joints must run the acceleration
+        // check end-to-end.  When the velocity delta divided by delta_time
+        // exceeds max_acceleration the verdict must be rejected and the
+        // acceleration_limits check must be the failing one.
+        //
+        // test_profile: j1 has max_acceleration = 50.0 rad/s²
+        // delta_time = 0.01 s
+        // previous velocity = 0.0 rad/s, new velocity = 10.0 rad/s
+        // estimated acceleration = |10.0 - 0.0| / 0.01 = 1000 rad/s²  >> 50
+        let (pca_sk, pca_vk) = make_keypair();
+        let (sign_sk, _) = make_keypair();
+
+        let claim = Pca {
+            p_0: "alice".into(),
+            ops: ops(&["actuate:*"]),
+            kid: "key-1".into(),
+            exp: None,
+            nbf: None,
+        };
+        let signed_pca = sign_pca(&claim, &pca_sk).unwrap();
+        let chain_b64 = encode_chain(&[signed_pca]);
+
+        let mut trusted = HashMap::new();
+        trusted.insert("key-1".to_string(), pca_vk);
+        let config = make_config(trusted, sign_sk);
+
+        // Command: j1 velocity = 10.0 rad/s.
+        let mut cmd = make_command(&chain_b64, vec![op("actuate:j1")]);
+        cmd.joint_states[0].velocity = 10.0;
+        cmd.delta_time = 0.01;
+
+        // Previous joints: j1 velocity = 0.0 rad/s.
+        let prev_joints = vec![JointState {
+            name: "j1".into(),
+            position: 0.0,
+            velocity: 0.0,
+            effort: 0.0,
+        }];
+
+        let result = config
+            .validate(&cmd, Utc::now(), Some(&prev_joints))
+            .unwrap();
+
+        assert!(
+            !result.signed_verdict.verdict.approved,
+            "verdict must be rejected when acceleration exceeds limit"
+        );
+        assert!(result.actuation_command.is_none());
+
+        // Find the acceleration_limits check and confirm it failed.
+        let accel_check = result
+            .signed_verdict
+            .verdict
+            .checks
+            .iter()
+            .find(|c| c.name == "acceleration_limits")
+            .expect("acceleration_limits check must be present");
+        assert!(
+            !accel_check.passed,
+            "acceleration_limits check must fail: {}",
+            accel_check.details
+        );
+        assert!(
+            accel_check.details.contains("exceeds max_acceleration"),
+            "details should mention the violation: {}",
+            accel_check.details
+        );
     }
 
     #[test]
@@ -778,10 +896,6 @@ mod tests {
         let result = config.validate(&cmd, Utc::now(), None).unwrap();
 
         assert!(result.signed_verdict.verdict.approved);
-        assert_eq!(
-            result.signed_verdict.verdict.authority_summary.hop_count,
-            2
-        );
+        assert_eq!(result.signed_verdict.verdict.authority_summary.hop_count, 2);
     }
-
 }

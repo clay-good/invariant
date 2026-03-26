@@ -3,6 +3,8 @@
 //! Provides 4 validated profiles: humanoid_28dof, franka_panda, quadruped_12dof, ur10.
 //! Custom profiles can be loaded from JSON strings or file bytes.
 
+use std::sync::OnceLock;
+
 use crate::models::error::{Validate, ValidationError};
 use crate::models::profile::RobotProfile;
 use thiserror::Error;
@@ -13,13 +15,41 @@ const FRANKA_PANDA_JSON: &str = include_str!("../../../profiles/franka_panda.jso
 const QUADRUPED_12DOF_JSON: &str = include_str!("../../../profiles/quadruped_12dof.json");
 const UR10_JSON: &str = include_str!("../../../profiles/ur10.json");
 
+// Process-lifetime caches for parsed and validated built-in profiles.
+// Populated on first access; subsequent calls clone the cached value.
+static CACHED_HUMANOID_28DOF: OnceLock<RobotProfile> = OnceLock::new();
+static CACHED_FRANKA_PANDA: OnceLock<RobotProfile> = OnceLock::new();
+static CACHED_QUADRUPED_12DOF: OnceLock<RobotProfile> = OnceLock::new();
+static CACHED_UR10: OnceLock<RobotProfile> = OnceLock::new();
+
+/// Parse and validate a built-in profile from its embedded JSON constant.
+///
+/// # Why `expect()` is acceptable here
+///
+/// The JSON strings passed to this function are compile-time constants
+/// (`include_str!` embeds the file bytes at build time). They are not
+/// caller-supplied input. The CI suite exercises all four built-in profiles
+/// in their own integration tests (`load_humanoid_28dof`, `load_franka_panda`,
+/// etc.), so a malformed built-in profile would cause test failures before it
+/// ever reaches production. Using `expect()` here converts a programmer error
+/// (invalid built-in JSON) into an explicit, immediately actionable panic
+/// rather than silently returning a half-constructed default or propagating an
+/// obscure error. If you are adding a new built-in profile, validate the JSON
+/// with `cargo test` before merging.
+///
+/// This function must NOT be called with untrusted or caller-supplied JSON.
+/// Use `load_from_json` / `load_from_bytes` for that.
+fn parse_and_validate(json: &str) -> RobotProfile {
+    let profile: RobotProfile = serde_json::from_str(json)
+        .expect("built-in profile JSON must be valid — see parse_and_validate doc comment");
+    profile
+        .validate()
+        .expect("built-in profile must pass validation — see parse_and_validate doc comment");
+    profile
+}
+
 /// Names of all built-in profiles.
-const BUILTIN_NAMES: &[&str] = &[
-    "humanoid_28dof",
-    "franka_panda",
-    "quadruped_12dof",
-    "ur10",
-];
+const BUILTIN_NAMES: &[&str] = &["humanoid_28dof", "franka_panda", "quadruped_12dof", "ur10"];
 
 /// Maximum JSON input size for custom profiles (256 KiB).
 const MAX_PROFILE_JSON_BYTES: usize = 256 * 1024;
@@ -46,17 +76,25 @@ pub fn list_builtins() -> &'static [&'static str] {
 
 /// Loads a built-in profile by name.
 ///
-/// The profile is parsed from the embedded JSON and validated before returning.
+/// The profile is parsed and validated on first access, then cached for the
+/// lifetime of the process. Subsequent calls clone the cached value, avoiding
+/// repeated JSON parsing and validation.
 pub fn load_builtin(name: &str) -> Result<RobotProfile, ProfileError> {
-    let json = match name {
-        "humanoid_28dof" => HUMANOID_28DOF_JSON,
-        "franka_panda" => FRANKA_PANDA_JSON,
-        "quadruped_12dof" => QUADRUPED_12DOF_JSON,
-        "ur10" => UR10_JSON,
+    let profile = match name {
+        "humanoid_28dof" => CACHED_HUMANOID_28DOF
+            .get_or_init(|| parse_and_validate(HUMANOID_28DOF_JSON))
+            .clone(),
+        "franka_panda" => CACHED_FRANKA_PANDA
+            .get_or_init(|| parse_and_validate(FRANKA_PANDA_JSON))
+            .clone(),
+        "quadruped_12dof" => CACHED_QUADRUPED_12DOF
+            .get_or_init(|| parse_and_validate(QUADRUPED_12DOF_JSON))
+            .clone(),
+        "ur10" => CACHED_UR10
+            .get_or_init(|| parse_and_validate(UR10_JSON))
+            .clone(),
         _ => return Err(ProfileError::UnknownProfile(name.to_string())),
     };
-    let profile: RobotProfile = serde_json::from_str(json)?;
-    profile.validate()?;
     Ok(profile)
 }
 
@@ -107,7 +145,10 @@ mod tests {
         assert_eq!(p.proximity_zones.len(), 2);
         assert_eq!(p.collision_pairs.len(), 5);
         assert!(p.stability.is_some());
-        assert_eq!(p.safe_stop_profile.strategy, SafeStopStrategy::ControlledCrouch);
+        assert_eq!(
+            p.safe_stop_profile.strategy,
+            SafeStopStrategy::ControlledCrouch
+        );
         assert_eq!(p.watchdog_timeout_ms, 50);
         // All joints are revolute
         assert!(p.joints.iter().all(|j| j.joint_type == JointType::Revolute));
@@ -221,6 +262,12 @@ mod tests {
         let huge = vec![b'x'; MAX_PROFILE_JSON_BYTES + 1];
         let err = load_from_bytes(&huge).unwrap_err();
         assert!(matches!(err, ProfileError::InputTooLarge { .. }));
+    }
+
+    #[test]
+    fn load_from_bytes_invalid_json() {
+        let err = load_from_bytes(b"{ not valid json }").unwrap_err();
+        assert!(matches!(err, ProfileError::ParseError(_)));
     }
 
     // --- Round-trip: all builtins serialize and re-parse identically ---

@@ -8,7 +8,9 @@ use ed25519_dalek::VerifyingKey;
 use crate::models::authority::{AuthorityChain, Operation, Pca, SignedPca};
 use crate::models::error::AuthorityError;
 
-use super::crypto::{decode_pca_payload, extract_kid, verify_signed_pca};
+use super::crypto::{
+    decode_pca_payload_from_parsed, extract_kid_from_parsed, parse_cose, verify_signed_pca_parsed,
+};
 use super::operations::ops_are_subset;
 
 /// Maximum number of hops allowed in a chain (DoS guard).
@@ -46,20 +48,24 @@ pub fn verify_chain(
     let mut origin: Option<String> = None;
 
     for (i, signed) in hops.iter().enumerate() {
+        // Parse the COSE_Sign1 envelope once; all subsequent operations reuse
+        // the same parsed struct to avoid redundant CBOR decoding (Finding 26).
+        let cose = parse_cose(&signed.raw, i)?;
+
         // Extract kid from the COSE protected header (covered by signature).
-        let kid = extract_kid(&signed.raw, i)?;
+        let kid = extract_kid_from_parsed(&cose, i)?;
 
         // A3: Signature verification — must complete before we trust the payload.
-        let key = trusted_keys.get(&kid).ok_or_else(|| {
-            AuthorityError::UnknownKeyId {
+        let key = trusted_keys
+            .get(&kid)
+            .ok_or_else(|| AuthorityError::UnknownKeyId {
                 hop: i,
                 kid: kid.clone(),
-            }
-        })?;
-        verify_signed_pca(signed, key, i)?;
+            })?;
+        verify_signed_pca_parsed(&cose, key, i)?;
 
         // Decode the verified COSE payload — this is the trusted claim.
-        let claim = decode_pca_payload(&signed.raw, i)?;
+        let claim = decode_pca_payload_from_parsed(&cose, i)?;
 
         // A1: Provenance — p_0 must be immutable across all hops.
         // Extract origin from the first verified hop.
@@ -117,16 +123,18 @@ pub fn verify_chain(
         decoded_claims.push(claim);
     }
 
-    // origin is guaranteed to be Some because hops is non-empty and we set it
-    // on the first iteration.
-    let origin = origin.unwrap();
-    let final_ops = decoded_claims.last().unwrap().ops.clone();
+    // origin and final_ops are guaranteed to be Some/non-empty because hops is
+    // non-empty (checked above) and we set origin on the first iteration. We
+    // use ok_or instead of unwrap so that a logic regression produces a clear
+    // AuthorityError rather than a panic.
+    let origin = origin.ok_or(AuthorityError::EmptyChain)?;
+    let final_ops = decoded_claims
+        .last()
+        .ok_or(AuthorityError::EmptyChain)?
+        .ops
+        .clone();
 
-    Ok(AuthorityChain::new(
-        hops.to_vec(),
-        origin,
-        final_ops,
-    ))
+    Ok(AuthorityChain::new(hops.to_vec(), origin, final_ops))
 }
 
 /// Verify that the chain's final ops cover all required operations.

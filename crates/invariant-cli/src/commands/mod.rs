@@ -1,9 +1,9 @@
-pub mod validate;
 pub mod audit;
-pub mod verify;
-pub mod inspect;
-pub mod eval;
-pub mod diff;
 pub mod campaign;
+pub mod diff;
+pub mod eval;
+pub mod inspect;
 pub mod keygen;
 pub mod serve;
+pub mod validate;
+pub mod verify;

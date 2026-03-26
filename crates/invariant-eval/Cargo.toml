@@ -9,8 +9,6 @@ description = "Trace evaluation engine for Invariant (presets, rubrics, guardrai
 invariant-core = { path = "../invariant-core" }
 serde.workspace = true
 serde_json.workspace = true
-serde_yaml.workspace = true
-regex.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]

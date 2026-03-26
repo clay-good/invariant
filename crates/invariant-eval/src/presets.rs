@@ -3,6 +3,8 @@
 // Each preset evaluates a Trace and returns an EvalReport containing per-step
 // findings and an overall pass/fail verdict. Presets are pure functions — no I/O.
 
+use std::collections::{HashMap, HashSet};
+
 use invariant_core::models::trace::Trace;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -98,8 +100,10 @@ pub fn run_regression(baseline: &Trace, candidate: &Trace) -> EvalReport {
 fn safety_check(trace: &Trace) -> EvalReport {
     let mut findings = Vec::new();
     let mut all_passed = true;
+    let mut rejected: usize = 0;
 
     if trace.steps.is_empty() {
+        all_passed = false;
         findings.push(EvalFinding {
             step: 0,
             severity: Severity::Warning,
@@ -120,15 +124,12 @@ fn safety_check(trace: &Trace) -> EvalReport {
 
         if !verdict.approved {
             all_passed = false;
-            // Collect failed check names
-            let failed: Vec<&str> = verdict
-                .checks
-                .iter()
-                .filter(|c| !c.passed)
-                .map(|c| c.name.as_str())
-                .collect();
+            rejected += 1;
 
-            if failed.is_empty() {
+            // Use .any() instead of collecting a Vec to check for failed checks.
+            let has_failed = verdict.checks.iter().any(|c| !c.passed);
+
+            if !has_failed {
                 findings.push(EvalFinding {
                     step: step.step,
                     severity: Severity::Error,
@@ -152,11 +153,6 @@ fn safety_check(trace: &Trace) -> EvalReport {
     }
 
     let total = trace.steps.len();
-    let rejected = trace
-        .steps
-        .iter()
-        .filter(|s| !s.verdict.verdict.approved)
-        .count();
 
     EvalReport {
         preset: PRESET_SAFETY_CHECK.into(),
@@ -199,6 +195,10 @@ fn completeness_check(trace: &Trace) -> EvalReport {
 
     let mut findings = Vec::new();
     let mut all_passed = true;
+    // Counters incremented inline to avoid two O(n) post-loop filter passes
+    // over the findings Vec.
+    let mut gap_count: usize = 0;
+    let mut missing_count: usize = 0;
 
     if trace.steps.is_empty() {
         findings.push(EvalFinding {
@@ -235,6 +235,7 @@ fn completeness_check(trace: &Trace) -> EvalReport {
 
         if curr.step != prev.step + 1 {
             all_passed = false;
+            gap_count += 1;
             findings.push(EvalFinding {
                 step: curr.step,
                 severity: Severity::Error,
@@ -263,7 +264,7 @@ fn completeness_check(trace: &Trace) -> EvalReport {
 
     // Check that every verdict has the expected 11 checks
     for step in &trace.steps {
-        let check_names: Vec<&str> = step
+        let check_names: HashSet<&str> = step
             .verdict
             .verdict
             .checks
@@ -272,8 +273,9 @@ fn completeness_check(trace: &Trace) -> EvalReport {
             .collect();
 
         for &expected in EXPECTED_CHECKS {
-            if !check_names.contains(&expected) {
+            if !check_names.contains(expected) {
                 all_passed = false;
+                missing_count += 1;
                 findings.push(EvalFinding {
                     step: step.step,
                     severity: Severity::Error,
@@ -282,15 +284,6 @@ fn completeness_check(trace: &Trace) -> EvalReport {
             }
         }
     }
-
-    let gap_count = findings
-        .iter()
-        .filter(|f| f.message.starts_with("step sequence gap"))
-        .count();
-    let missing_count = findings
-        .iter()
-        .filter(|f| f.message.starts_with("missing check"))
-        .count();
 
     EvalReport {
         preset: PRESET_COMPLETENESS_CHECK.into(),
@@ -334,9 +327,10 @@ fn regression_check_single(trace: &Trace) -> EvalReport {
         }
 
         if verdict.command_sequence != step.step {
+            all_passed = false;
             findings.push(EvalFinding {
                 step: step.step,
-                severity: Severity::Warning,
+                severity: Severity::Error,
                 message: format!(
                     "command_sequence ({}) does not match step ({})",
                     verdict.command_sequence, step.step,
@@ -350,7 +344,43 @@ fn regression_check_single(trace: &Trace) -> EvalReport {
         trace_id: trace.id.clone(),
         passed: all_passed,
         findings,
-        summary: format!("{} steps checked for internal consistency", trace.steps.len()),
+        summary: format!(
+            "{} steps checked for internal consistency",
+            trace.steps.len()
+        ),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Trace ID validation helpers
+// ---------------------------------------------------------------------------
+
+/// Maximum allowed length for a trace ID.
+const TRACE_ID_MAX_LEN: usize = 128;
+
+/// Checks whether every character in `id` is alphanumeric or one of `-_.`.
+fn is_valid_trace_id(id: &str) -> bool {
+    !id.is_empty()
+        && id.len() <= TRACE_ID_MAX_LEN
+        && id
+            .chars()
+            .all(|c| c.is_alphanumeric() || c == '-' || c == '_' || c == '.')
+}
+
+/// Returns the trace ID as-is if it is valid, otherwise returns a sanitized
+/// fallback that strips disallowed characters and truncates to the maximum
+/// allowed length. A `<sanitized>` suffix is appended to the fallback so
+/// callers can detect that the original value was untrusted.
+fn sanitize_trace_id(id: &str) -> String {
+    if is_valid_trace_id(id) {
+        id.to_string()
+    } else {
+        let cleaned: String = id
+            .chars()
+            .filter(|c| c.is_alphanumeric() || *c == '-' || *c == '_' || *c == '.')
+            .take(TRACE_ID_MAX_LEN.saturating_sub("<sanitized>".len()))
+            .collect();
+        format!("{}<sanitized>", cleaned)
     }
 }
 
@@ -364,9 +394,10 @@ fn regression_check(baseline: &Trace, candidate: &Trace) -> EvalReport {
     let mut findings = Vec::new();
     let mut all_passed = true;
 
-    let max_steps = baseline.steps.len().max(candidate.steps.len());
+    let min_steps = baseline.steps.len().min(candidate.steps.len());
 
     if baseline.steps.len() != candidate.steps.len() {
+        all_passed = false;
         findings.push(EvalFinding {
             step: 0,
             severity: Severity::Warning,
@@ -376,9 +407,34 @@ fn regression_check(baseline: &Trace, candidate: &Trace) -> EvalReport {
                 candidate.steps.len()
             ),
         });
+
+        // Report the extra steps in the longer trace as individual findings.
+        if baseline.steps.len() > candidate.steps.len() {
+            for extra in &baseline.steps[min_steps..] {
+                findings.push(EvalFinding {
+                    step: extra.step,
+                    severity: Severity::Error,
+                    message: format!(
+                        "step {} present in baseline but missing from candidate",
+                        extra.step
+                    ),
+                });
+            }
+        } else {
+            for extra in &candidate.steps[min_steps..] {
+                findings.push(EvalFinding {
+                    step: extra.step,
+                    severity: Severity::Error,
+                    message: format!(
+                        "step {} present in candidate but missing from baseline",
+                        extra.step
+                    ),
+                });
+            }
+        }
     }
 
-    for i in 0..baseline.steps.len().min(candidate.steps.len()) {
+    for i in 0..min_steps {
         let base_step = &baseline.steps[i];
         let cand_step = &candidate.steps[i];
         let base_approved = base_step.verdict.verdict.approved;
@@ -396,15 +452,8 @@ fn regression_check(baseline: &Trace, candidate: &Trace) -> EvalReport {
             });
         }
 
-        // Check per-check result differences
-        let base_checks: Vec<(&str, bool)> = base_step
-            .verdict
-            .verdict
-            .checks
-            .iter()
-            .map(|c| (c.name.as_str(), c.passed))
-            .collect();
-        let cand_checks: Vec<(&str, bool)> = cand_step
+        // Check per-check result differences using a HashMap for O(n) lookup.
+        let cand_checks: HashMap<&str, bool> = cand_step
             .verdict
             .verdict
             .checks
@@ -412,15 +461,16 @@ fn regression_check(baseline: &Trace, candidate: &Trace) -> EvalReport {
             .map(|c| (c.name.as_str(), c.passed))
             .collect();
 
-        for (name, base_pass) in &base_checks {
-            if let Some((_, cand_pass)) = cand_checks.iter().find(|(n, _)| n == name) {
-                if base_pass != cand_pass {
+        for base_check in &base_step.verdict.verdict.checks {
+            if let Some(&cand_pass) = cand_checks.get(base_check.name.as_str()) {
+                if base_check.passed != cand_pass {
+                    all_passed = false;
                     findings.push(EvalFinding {
                         step: base_step.step,
                         severity: Severity::Error,
                         message: format!(
                             "check '{}' changed: baseline={}, candidate={}",
-                            name, base_pass, cand_pass
+                            base_check.name, base_check.passed, cand_pass
                         ),
                     });
                 }
@@ -433,14 +483,19 @@ fn regression_check(baseline: &Trace, candidate: &Trace) -> EvalReport {
         .filter(|f| f.severity == Severity::Error)
         .count();
 
+    // Validate trace IDs before concatenation to avoid embedding untrusted
+    // content in the composite trace_id field.
+    let safe_baseline_id = sanitize_trace_id(&baseline.id);
+    let safe_candidate_id = sanitize_trace_id(&candidate.id);
+
     EvalReport {
         preset: PRESET_REGRESSION_CHECK.into(),
-        trace_id: format!("{}..{}", baseline.id, candidate.id),
+        trace_id: format!("{}..{}", safe_baseline_id, safe_candidate_id),
         passed: all_passed,
         findings,
         summary: format!(
             "compared {} steps, {} regressions found",
-            max_steps, regressions,
+            min_steps, regressions,
         ),
     }
 }
@@ -452,13 +507,20 @@ fn regression_check(baseline: &Trace, candidate: &Trace) -> EvalReport {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::Utc;
+    use chrono::{DateTime, TimeZone, Utc};
     use invariant_core::models::command::{Command, CommandAuthority, JointState};
     use invariant_core::models::trace::{Trace, TraceStep};
-    use invariant_core::models::verdict::{
-        AuthoritySummary, CheckResult, SignedVerdict, Verdict,
-    };
+    use invariant_core::models::verdict::{AuthoritySummary, CheckResult, SignedVerdict, Verdict};
     use std::collections::HashMap;
+
+    /// Returns a fixed, deterministic UTC timestamp for use in tests.
+    ///
+    /// Using a constant avoids non-determinism from `Utc::now()` and makes
+    /// timestamp-ordering tests reproducible.
+    fn fixed_ts() -> DateTime<Utc> {
+        // 2023-11-14 22:13:20 UTC — an arbitrary but stable reference point.
+        Utc.timestamp_opt(1_700_000_000, 0).unwrap()
+    }
 
     fn make_check(name: &str, category: &str, passed: bool) -> CheckResult {
         CheckResult {
@@ -491,7 +553,7 @@ mod tests {
 
     fn make_command(seq: u64) -> Command {
         Command {
-            timestamp: Utc::now(),
+            timestamp: fixed_ts(),
             source: "test".into(),
             sequence: seq,
             joint_states: vec![JointState {
@@ -517,7 +579,7 @@ mod tests {
                 approved,
                 command_hash: format!("hash_{}", seq),
                 command_sequence: seq,
-                timestamp: Utc::now(),
+                timestamp: fixed_ts(),
                 checks: all_checks(approved),
                 profile_name: "test_profile".into(),
                 profile_hash: "profile_hash".into(),
@@ -536,7 +598,7 @@ mod tests {
     fn make_step(seq: u64, approved: bool) -> TraceStep {
         TraceStep {
             step: seq,
-            timestamp: Utc::now(),
+            timestamp: fixed_ts(),
             command: make_command(seq),
             verdict: make_verdict(seq, approved),
             simulation_state: None,
@@ -621,7 +683,8 @@ mod tests {
     fn test_safety_empty_trace() {
         let trace = make_trace(vec![]);
         let report = safety_check(&trace);
-        assert!(report.passed); // no rejections
+        // An empty trace is treated as a failure: there is nothing to verify.
+        assert!(!report.passed);
         assert_eq!(report.findings.len(), 1);
         assert_eq!(report.findings[0].severity, Severity::Warning);
     }
@@ -638,6 +701,53 @@ mod tests {
             .collect();
         assert_eq!(error_findings.len(), 11);
         assert!(error_findings[0].message.contains("authority"));
+    }
+
+    // Finding 90: approved=false but all individual checks passed — the
+    // "rejected but no individual check failed" branch must produce an Error.
+    #[test]
+    fn test_safety_approved_false_no_failed_checks() {
+        let mut step = make_step(0, true); // start with a fully-passing step
+                                           // Override: approved=false while all checks remain passed=true
+        step.verdict.verdict.approved = false;
+        // Confirm the checks are all still passing
+        assert!(step.verdict.verdict.checks.iter().all(|c| c.passed));
+        let trace = make_trace(vec![step]);
+        let report = safety_check(&trace);
+        assert!(!report.passed);
+        let err_findings: Vec<_> = report
+            .findings
+            .iter()
+            .filter(|f| f.severity == Severity::Error)
+            .collect();
+        assert_eq!(err_findings.len(), 1);
+        assert!(
+            err_findings[0]
+                .message
+                .contains("verdict rejected but no individual check failed"),
+            "unexpected message: {}",
+            err_findings[0].message
+        );
+    }
+
+    // Finding 91: empty checks vector on a step that is also approved — the
+    // "verdict has no checks" Warning branch must fire without causing failure.
+    #[test]
+    fn test_safety_empty_checks_vector_warning() {
+        let mut step = make_step(0, true);
+        // Clear all checks; verdict.approved remains true
+        step.verdict.verdict.checks.clear();
+        let trace = make_trace(vec![step]);
+        let report = safety_check(&trace);
+        // approved=true with empty checks should not mark the report as failed
+        assert!(report.passed);
+        assert_eq!(report.findings.len(), 1);
+        assert_eq!(report.findings[0].severity, Severity::Warning);
+        assert!(
+            report.findings[0].message.contains("verdict has no checks"),
+            "unexpected message: {}",
+            report.findings[0].message
+        );
     }
 
     // --- completeness-check ---
@@ -730,8 +840,9 @@ mod tests {
         let mut trace = make_trace(vec![make_step(0, true)]);
         trace.steps[0].verdict.verdict.command_sequence = 99;
         let report = regression_check_single(&trace);
-        assert!(report.passed); // warnings don't cause failure
-        assert_eq!(report.findings[0].severity, Severity::Warning);
+        // Sequence mismatch is an error: it indicates a structural inconsistency.
+        assert!(!report.passed);
+        assert_eq!(report.findings[0].severity, Severity::Error);
     }
 
     // --- regression-check (two traces) ---
@@ -762,11 +873,17 @@ mod tests {
         let baseline = make_trace(vec![make_step(0, true)]);
         let candidate = make_trace(vec![make_step(0, true), make_step(1, true)]);
         let report = run_regression(&baseline, &candidate);
-        assert!(report.passed); // length mismatch is a warning, not failure
+        // Length mismatch now sets all_passed = false.
+        assert!(!report.passed);
         assert!(report
             .findings
             .iter()
             .any(|f| f.message.contains("length mismatch")));
+        // The extra step in the candidate should produce an error finding.
+        assert!(report
+            .findings
+            .iter()
+            .any(|f| f.message.contains("missing from baseline")));
     }
 
     #[test]
@@ -782,6 +899,107 @@ mod tests {
             .findings
             .iter()
             .any(|f| f.message.contains("check 'joint_limits' changed")));
+    }
+
+    // Finding 92: both traces approved=true overall, but candidate has one
+    // check flipped to passed=false while approved remains true.  The per-check
+    // diff logic must surface an Error finding even though the top-level approval
+    // outcome is the same on both sides.
+    #[test]
+    fn test_regression_check_level_diff_both_approved() {
+        let baseline = make_trace(vec![make_step(0, true)]);
+        let mut candidate = make_trace(vec![make_step(0, true)]);
+        // Flip joint_limits to failed in candidate, keep overall approved=true
+        candidate.steps[0].verdict.verdict.checks[1].passed = false;
+        // approved intentionally left as true — only the check result diverges
+        assert!(candidate.steps[0].verdict.verdict.approved);
+        let report = run_regression(&baseline, &candidate);
+        assert!(!report.passed, "check-level diff should cause failure");
+        // There should be no top-level verdict regression finding
+        assert!(
+            !report
+                .findings
+                .iter()
+                .any(|f| f.message.contains("verdict regression")),
+            "should not have a top-level verdict regression"
+        );
+        // There should be a check-level Error finding for joint_limits
+        let check_findings: Vec<_> = report
+            .findings
+            .iter()
+            .filter(|f| f.severity == Severity::Error && f.message.contains("joint_limits"))
+            .collect();
+        assert_eq!(
+            check_findings.len(),
+            1,
+            "expected exactly one check-level error for joint_limits"
+        );
+        assert!(check_findings[0]
+            .message
+            .contains("check 'joint_limits' changed"));
+    }
+
+    // --- trace ID validation helpers ---
+
+    #[test]
+    fn test_is_valid_trace_id_accepts_clean_ids() {
+        assert!(is_valid_trace_id("trace-001"));
+        assert!(is_valid_trace_id("abc123"));
+        assert!(is_valid_trace_id("my.trace_id-v2"));
+    }
+
+    #[test]
+    fn test_is_valid_trace_id_rejects_empty() {
+        assert!(!is_valid_trace_id(""));
+    }
+
+    #[test]
+    fn test_is_valid_trace_id_rejects_too_long() {
+        let long = "a".repeat(129);
+        assert!(!is_valid_trace_id(&long));
+    }
+
+    #[test]
+    fn test_is_valid_trace_id_rejects_special_chars() {
+        assert!(!is_valid_trace_id("trace/001"));
+        assert!(!is_valid_trace_id("trace\x00id"));
+        assert!(!is_valid_trace_id("trace id"));
+    }
+
+    #[test]
+    fn test_sanitize_trace_id_passthrough_valid() {
+        let id = "trace-001";
+        assert_eq!(sanitize_trace_id(id), "trace-001");
+    }
+
+    #[test]
+    fn test_sanitize_trace_id_strips_invalid_chars() {
+        let result = sanitize_trace_id("trace/001 bad");
+        assert!(result.ends_with("<sanitized>"));
+        assert!(result.contains("trace001bad") || result.starts_with("trace"));
+    }
+
+    #[test]
+    fn test_sanitize_trace_id_truncates_long_ids() {
+        let long = "a".repeat(200);
+        let result = sanitize_trace_id(&long);
+        assert!(result.len() <= TRACE_ID_MAX_LEN);
+        assert!(result.ends_with("<sanitized>"));
+    }
+
+    #[test]
+    fn test_regression_sanitizes_trace_ids_in_report() {
+        // Trace IDs with invalid characters must be sanitized in the output.
+        let mut baseline = make_trace(vec![make_step(0, true)]);
+        let mut candidate = make_trace(vec![make_step(0, true)]);
+        baseline.id = "trace/bad<id>".into();
+        candidate.id = "cand id".into();
+        let report = run_regression(&baseline, &candidate);
+        assert!(
+            report.trace_id.contains("<sanitized>"),
+            "expected sanitized trace_id, got: {}",
+            report.trace_id
+        );
     }
 
     // --- EvalReport serialization ---

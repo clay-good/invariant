@@ -1,5 +1,7 @@
 // P10: Proximity-based velocity scaling check
 
+use std::collections::HashMap;
+
 use crate::models::command::{EndEffectorPosition, JointState};
 use crate::models::profile::{JointDefinition, ProximityZone};
 use crate::models::verdict::CheckResult;
@@ -31,7 +33,8 @@ pub fn check_proximity_velocity(
     // Reject non-finite end-effector positions before proximity determination.
     let mut ee_violations: Vec<String> = Vec::new();
     for ee in end_effectors {
-        if !ee.position[0].is_finite() || !ee.position[1].is_finite() || !ee.position[2].is_finite() {
+        if !ee.position[0].is_finite() || !ee.position[1].is_finite() || !ee.position[2].is_finite()
+        {
             ee_violations.push(format!(
                 "'{}': end-effector position contains NaN or infinite value",
                 ee.name
@@ -64,10 +67,13 @@ pub fn check_proximity_velocity(
         }
     };
 
+    let def_map: HashMap<&str, &JointDefinition> =
+        definitions.iter().map(|d| (d.name.as_str(), d)).collect();
+
     let mut violations: Vec<String> = Vec::new();
 
     for state in joints {
-        let def = match definitions.iter().find(|d| d.name == state.name) {
+        let def = match def_map.get(state.name.as_str()) {
             Some(d) => d,
             None => {
                 violations.push(format!(
@@ -79,10 +85,7 @@ pub fn check_proximity_velocity(
         };
 
         if !state.velocity.is_finite() {
-            violations.push(format!(
-                "'{}': velocity is NaN or infinite",
-                state.name
-            ));
+            violations.push(format!("'{}': velocity is NaN or infinite", state.name));
             continue;
         }
 
@@ -93,8 +96,12 @@ pub fn check_proximity_velocity(
             violations.push(format!(
                 "'{}': |velocity| {:.6} rad/s > limit {:.6} rad/s \
                  (max_vel={:.6}, proximity_scale={:.4}, global_scale={:.4})",
-                state.name, abs_vel, effective_limit,
-                def.max_velocity, min_scale, global_velocity_scale
+                state.name,
+                abs_vel,
+                effective_limit,
+                def.max_velocity,
+                min_scale,
+                global_velocity_scale
             ));
         }
     }

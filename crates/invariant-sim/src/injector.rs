@@ -170,19 +170,41 @@ fn inject_stability_violation(cmd: &mut Command, profile: &RobotProfile) {
     // Pick a point that is far outside the support polygon.  If the profile
     // has a stability config, jump to 10× the first polygon vertex; otherwise
     // use an arbitrary large offset.
+    //
+    // If the first vertex is at or near the origin, 10× of it is still near
+    // zero and would remain inside the polygon.  In that case fall back to a
+    // fixed large offset (100 m) to guarantee the point is well outside any
+    // realistic support polygon.
+    const NEAR_ZERO_THRESHOLD: f64 = 1e-6;
+    const FALLBACK_OFFSET: f64 = 100.0;
+
     let far_x = profile
         .stability
         .as_ref()
         .and_then(|s| s.support_polygon.first())
-        .map(|v| v[0] * 10.0)
-        .unwrap_or(100.0);
+        .map(|v| {
+            let scaled = v[0] * 10.0;
+            if scaled.abs() < NEAR_ZERO_THRESHOLD {
+                FALLBACK_OFFSET
+            } else {
+                scaled
+            }
+        })
+        .unwrap_or(FALLBACK_OFFSET);
 
     let far_y = profile
         .stability
         .as_ref()
         .and_then(|s| s.support_polygon.first())
-        .map(|v| v[1] * 10.0)
-        .unwrap_or(100.0);
+        .map(|v| {
+            let scaled = v[1] * 10.0;
+            if scaled.abs() < NEAR_ZERO_THRESHOLD {
+                FALLBACK_OFFSET
+            } else {
+                scaled
+            }
+        })
+        .unwrap_or(FALLBACK_OFFSET);
 
     cmd.center_of_mass = Some([far_x, far_y, 2.0]);
 }
@@ -300,7 +322,9 @@ mod tests {
             assert!(
                 js.velocity > limit,
                 "VelocityOvershoot: velocity {:.4} should exceed limit {:.4} for {}",
-                js.velocity, limit, jdef.name
+                js.velocity,
+                limit,
+                jdef.name
             );
         }
     }
@@ -317,7 +341,10 @@ mod tests {
             .iter()
             .zip(profile.joints.iter())
             .any(|(js, jdef)| js.position < jdef.min || js.position > jdef.max);
-        assert!(any_violation, "PositionViolation must produce out-of-limit positions");
+        assert!(
+            any_violation,
+            "PositionViolation must produce out-of-limit positions"
+        );
     }
 
     // --- TorqueSpike ---
@@ -331,7 +358,9 @@ mod tests {
             assert!(
                 js.effort > jdef.max_torque,
                 "TorqueSpike: effort {:.2} should exceed max_torque {:.2} for {}",
-                js.effort, jdef.max_torque, jdef.name
+                js.effort,
+                jdef.max_torque,
+                jdef.name
             );
         }
     }
@@ -343,17 +372,23 @@ mod tests {
         let profile = panda();
         let mut cmd = make_cmd(&profile);
         inject(&mut cmd, InjectionType::WorkspaceEscape, &profile);
-        let oob = cmd.end_effector_positions.iter().any(|ee| match &profile.workspace {
-            WorkspaceBounds::Aabb { min, max } => {
-                ee.position[0] > max[0]
-                    || ee.position[1] > max[1]
-                    || ee.position[2] > max[2]
-                    || ee.position[0] < min[0]
-                    || ee.position[1] < min[1]
-                    || ee.position[2] < min[2]
-            }
-        });
-        assert!(oob, "WorkspaceEscape must place end-effector outside workspace");
+        let oob = cmd
+            .end_effector_positions
+            .iter()
+            .any(|ee| match &profile.workspace {
+                WorkspaceBounds::Aabb { min, max } => {
+                    ee.position[0] > max[0]
+                        || ee.position[1] > max[1]
+                        || ee.position[2] > max[2]
+                        || ee.position[0] < min[0]
+                        || ee.position[1] < min[1]
+                        || ee.position[2] < min[2]
+                }
+            });
+        assert!(
+            oob,
+            "WorkspaceEscape must place end-effector outside workspace"
+        );
     }
 
     #[test]
@@ -375,7 +410,8 @@ mod tests {
         assert!(
             cmd.delta_time > profile.max_delta_time,
             "DeltaTimeViolation: delta_time {:.6} should exceed max {:.6}",
-            cmd.delta_time, profile.max_delta_time
+            cmd.delta_time,
+            profile.max_delta_time
         );
     }
 
@@ -449,7 +485,10 @@ mod tests {
         let has_non_finite = cmd.joint_states.iter().any(|js| {
             !js.position.is_finite() || !js.velocity.is_finite() || !js.effort.is_finite()
         });
-        assert!(has_non_finite, "NanInjection must produce non-finite joint values");
+        assert!(
+            has_non_finite,
+            "NanInjection must produce non-finite joint values"
+        );
 
         assert!(
             !cmd.delta_time.is_finite(),
@@ -466,7 +505,10 @@ mod tests {
             .end_effector_positions
             .iter()
             .any(|ee| ee.position.iter().any(|v| !v.is_finite()));
-        assert!(has_non_finite_ee, "NanInjection must produce non-finite EE positions");
+        assert!(
+            has_non_finite_ee,
+            "NanInjection must produce non-finite EE positions"
+        );
     }
 
     // --- Serde round-trip for InjectionType ---

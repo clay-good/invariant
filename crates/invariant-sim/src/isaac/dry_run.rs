@@ -60,6 +60,15 @@ pub enum DryRunError {
 /// 4. Each command is validated through `ValidatorConfig::validate`.
 /// 5. Results are recorded in `CampaignReporter`.
 pub fn run_dry_campaign(config: &CampaignConfig) -> Result<CampaignReport, DryRunError> {
+    // Guard against an empty scenarios slice that would cause select_scenario
+    // to panic.  This can happen when run_dry_campaign is called with a
+    // hand-constructed config that bypasses load_config validation.
+    if config.scenarios.is_empty() {
+        return Err(DryRunError::UnknownScenario(
+            "campaign config contains no scenarios".to_string(),
+        ));
+    }
+
     // --- Profile loading ---
     let profile = load_profile(&config.profile)?;
 
@@ -112,8 +121,7 @@ pub fn run_dry_campaign(config: &CampaignConfig) -> Result<CampaignReport, DryRu
         .collect();
 
     // --- Reporter ---
-    let mut reporter =
-        CampaignReporter::new(config.name.clone(), config.success_criteria.clone());
+    let mut reporter = CampaignReporter::new(config.name.clone(), config.success_criteria.clone());
 
     let profile_name = profile.name.clone();
 
@@ -138,7 +146,7 @@ pub fn run_dry_campaign(config: &CampaignConfig) -> Result<CampaignReport, DryRu
         let mut commands = gen.generate_commands(
             config.steps_per_episode as usize,
             &pca_chain_b64,
-            required_ops.clone(),
+            &required_ops,
         );
 
         // Apply fault injections (if any).
@@ -151,15 +159,26 @@ pub fn run_dry_campaign(config: &CampaignConfig) -> Result<CampaignReport, DryRu
         }
 
         // Validate each command and record results.
-        let now = Utc::now();
+        // Recompute `now` for each command so that timestamp-based checks
+        // (e.g. replay detection, expiry) use a fresh wall-clock value rather
+        // than a single frozen instant captured before the loop.
         for cmd in &commands {
+            let now = Utc::now();
             let result = match validator.validate(cmd, now, None) {
                 Ok(r) => r,
                 Err(e) => {
                     // Truly fatal validator error (serialization failure).
                     // Build a synthetic rejection verdict so we never drop a command.
-                    let sv = make_error_verdict(&profile_name, e.to_string(), now);
-                    reporter.record_result(&profile_name, &scenario_cfg.scenario_type, expected_reject, &sv);
+                    // Log the full error for debugging; expose only a generic
+                    // message in the verdict to avoid leaking internal details.
+                    eprintln!("[invariant-sim] validator error: {e}");
+                    let sv = make_error_verdict(&profile_name, String::new(), now);
+                    reporter.record_result(
+                        &profile_name,
+                        &scenario_cfg.scenario_type,
+                        expected_reject,
+                        &sv,
+                    );
                     continue;
                 }
             };
@@ -180,7 +199,9 @@ pub fn run_dry_campaign(config: &CampaignConfig) -> Result<CampaignReport, DryRu
 // ---------------------------------------------------------------------------
 
 /// Load a robot profile by name (built-in) or from a JSON file path.
-fn load_profile(profile_spec: &str) -> Result<invariant_core::models::profile::RobotProfile, DryRunError> {
+fn load_profile(
+    profile_spec: &str,
+) -> Result<invariant_core::models::profile::RobotProfile, DryRunError> {
     // Try built-in names first.
     match invariant_core::profiles::load_builtin(profile_spec) {
         Ok(p) => return Ok(p),
@@ -188,8 +209,29 @@ fn load_profile(profile_spec: &str) -> Result<invariant_core::models::profile::R
         Err(e) => return Err(DryRunError::ProfileLoad(e)),
     }
 
-    // Treat as a file path.
-    let bytes = std::fs::read(profile_spec).map_err(|_| {
+    // Treat as a file path.  Validate before reading to prevent path
+    // traversal: reject paths containing `..` components and require a
+    // `.json` extension.
+    let path = std::path::Path::new(profile_spec);
+    if path
+        .components()
+        .any(|c| c == std::path::Component::ParentDir)
+    {
+        return Err(DryRunError::ProfileLoad(
+            invariant_core::profiles::ProfileError::UnknownProfile(
+                "path traversal not allowed in profile path".to_string(),
+            ),
+        ));
+    }
+    if path.extension().and_then(|e| e.to_str()) != Some("json") {
+        return Err(DryRunError::ProfileLoad(
+            invariant_core::profiles::ProfileError::UnknownProfile(
+                "profile file path must end with .json".to_string(),
+            ),
+        ));
+    }
+
+    let bytes = std::fs::read(path).map_err(|_| {
         DryRunError::ProfileLoad(invariant_core::profiles::ProfileError::UnknownProfile(
             profile_spec.to_string(),
         ))
@@ -267,9 +309,12 @@ fn encode_pca_chain(hops: &[SignedPca]) -> Result<String, DryRunError> {
 ///
 /// Used so that every command contributes exactly one result to the reporter
 /// even when `ValidatorConfig::validate` returns `Err(...)`.
+///
+/// The `details` field is deliberately generic to avoid leaking internal
+/// error messages to callers.  Full error information is logged to stderr.
 fn make_error_verdict(
     profile_name: &str,
-    error_detail: String,
+    _error_detail: String,
     now: chrono::DateTime<Utc>,
 ) -> SignedVerdict {
     use invariant_core::models::verdict::{AuthoritySummary, CheckResult, Verdict};
@@ -283,7 +328,7 @@ fn make_error_verdict(
                 name: "validator_error".to_string(),
                 category: "system".to_string(),
                 passed: false,
-                details: error_detail,
+                details: "internal validation error".to_string(),
             }],
             profile_name: profile_name.to_string(),
             profile_hash: String::new(),
@@ -362,7 +407,10 @@ mod tests {
         let config = baseline_config(10);
         let report = run_dry_campaign(&config).expect("dry run must complete");
         // All baseline commands should be approved (valid PCA chain, valid physics).
-        assert_eq!(report.total_approved, 10, "all baseline commands must be approved");
+        assert_eq!(
+            report.total_approved, 10,
+            "all baseline commands must be approved"
+        );
         assert_eq!(report.total_rejected, 0);
         assert!((report.approval_rate - 1.0).abs() < f64::EPSILON);
     }
@@ -385,7 +433,10 @@ mod tests {
         let report = run_dry_campaign(&config).expect("dry run must complete");
         assert_eq!(report.total_commands, 4);
         // AuthorityEscalation commands have no PCA chain — must all be rejected.
-        assert_eq!(report.total_rejected, 4, "all authority-escalation commands must be rejected");
+        assert_eq!(
+            report.total_rejected, 4,
+            "all authority-escalation commands must be rejected"
+        );
         assert_eq!(report.violation_escape_count, 0);
     }
 
@@ -393,15 +444,20 @@ mod tests {
     fn dry_run_violation_escape_count_zero() {
         let config = violation_config();
         let report = run_dry_campaign(&config).expect("dry run must complete");
-        assert_eq!(report.violation_escape_count, 0,
-            "no violation should escape a correct validator");
+        assert_eq!(
+            report.violation_escape_count, 0,
+            "no violation should escape a correct validator"
+        );
     }
 
     #[test]
     fn dry_run_criteria_met_on_clean_run() {
         let config = baseline_config(20);
         let report = run_dry_campaign(&config).expect("dry run must complete");
-        assert!(report.criteria_met, "criteria must be met on a baseline-only campaign");
+        assert!(
+            report.criteria_met,
+            "criteria must be met on a baseline-only campaign"
+        );
     }
 
     // --- Multi-environment / multi-episode ---
@@ -464,6 +520,25 @@ mod tests {
         };
         let err = run_dry_campaign(&config).unwrap_err();
         assert!(matches!(err, DryRunError::UnknownInjection(_)));
+    }
+
+    // --- Empty scenarios ---
+
+    #[test]
+    fn empty_scenarios_returns_error_not_panic() {
+        // Build the config directly, bypassing load_config validation, to
+        // exercise the early guard inside run_dry_campaign.
+        let config = CampaignConfig {
+            name: "empty_sc".to_string(),
+            profile: "franka_panda".to_string(),
+            environments: 1,
+            episodes_per_env: 1,
+            steps_per_episode: 1,
+            scenarios: vec![],
+            success_criteria: SuccessCriteria::default(),
+        };
+        let err = run_dry_campaign(&config).unwrap_err();
+        assert!(matches!(err, DryRunError::UnknownScenario(_)));
     }
 
     // --- Unknown profile ---
@@ -531,7 +606,10 @@ mod tests {
             seen.insert(sc.scenario_type.clone());
         }
         assert!(seen.contains("Baseline"), "Baseline must be selected");
-        assert!(seen.contains("AuthorityEscalation"), "AuthorityEscalation must be selected");
+        assert!(
+            seen.contains("AuthorityEscalation"),
+            "AuthorityEscalation must be selected"
+        );
     }
 
     // --- Multiple profiles ---
@@ -581,75 +659,9 @@ mod tests {
         };
         let report = run_dry_campaign(&config).expect("dry run must complete");
         // Baseline + VelocityOvershoot -> all commands should be rejected.
-        assert_eq!(report.total_rejected, 5,
-            "VelocityOvershoot injection must cause all commands to be rejected");
-    }
-}
-
-#[cfg(test)]
-mod debug_tests {
-    use super::*;
-    use crate::campaign::{CampaignConfig, ScenarioConfig, SuccessCriteria};
-
-    #[test]
-    fn debug_why_baseline_fails() {
-        let config = CampaignConfig {
-            name: "test".to_string(),
-            profile: "franka_panda".to_string(),
-            environments: 1,
-            episodes_per_env: 1,
-            steps_per_episode: 1,
-            scenarios: vec![ScenarioConfig {
-                scenario_type: "Baseline".to_string(),
-                weight: 1.0,
-                injections: vec![],
-            }],
-            success_criteria: SuccessCriteria::default(),
-        };
-
-        // Reproduce what dry_run does but print the verdict
-        let profile = load_profile("franka_panda").unwrap();
-        let mut rng = OsRng;
-        let pca_sk = generate_keypair(&mut rng);
-        let pca_vk = pca_sk.verifying_key();
-        let validator_sk = generate_keypair(&mut rng);
-        let pca_kid = "dry-run-root".to_string();
-
-        let mut trusted_keys = HashMap::new();
-        trusted_keys.insert(pca_kid.clone(), pca_vk);
-
-        let validator = ValidatorConfig::new(
-            profile.clone(),
-            trusted_keys,
-            validator_sk,
-            "dry-run-validator".to_string(),
-        ).unwrap();
-
-        let required_ops = vec![Operation::new("actuate:*").unwrap()];
-        let pca_claim = Pca {
-            p_0: "dry-run-principal".to_string(),
-            ops: {
-                let mut s = BTreeSet::new();
-                s.insert(Operation::new("actuate:*").unwrap());
-                s
-            },
-            kid: pca_kid.clone(),
-            exp: None,
-            nbf: None,
-        };
-        let signed_pca = sign_pca(&pca_claim, &pca_sk).unwrap();
-        let pca_chain_b64 = encode_pca_chain(&[signed_pca]).unwrap();
-
-        let gen = crate::scenario::ScenarioGenerator::new(&profile, crate::scenario::ScenarioType::Baseline);
-        let commands = gen.generate_commands(1, &pca_chain_b64, required_ops);
-
-        let now = Utc::now();
-        let result = validator.validate(&commands[0], now, None).unwrap();
-        eprintln!("APPROVED: {}", result.signed_verdict.verdict.approved);
-        for check in &result.signed_verdict.verdict.checks {
-            eprintln!("  CHECK {}: passed={} details={}", check.name, check.passed, check.details);
-        }
-
-        assert!(result.signed_verdict.verdict.approved, "baseline command should be approved");
+        assert_eq!(
+            report.total_rejected, 5,
+            "VelocityOvershoot injection must cause all commands to be rejected"
+        );
     }
 }

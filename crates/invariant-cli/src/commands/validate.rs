@@ -1,6 +1,6 @@
 use clap::{Args, ValueEnum};
 use std::collections::HashMap;
-use std::io::Read;
+use std::io::{Read, Write};
 use std::path::PathBuf;
 
 use base64::{engine::general_purpose::STANDARD, Engine};
@@ -77,13 +77,18 @@ pub fn run(args: &ValidateArgs) -> i32 {
         }
     };
 
+    // Capture raw bytes before signing_key is consumed by ValidatorConfig::new.
+    // Both the validator config and the audit logger need independent SigningKey
+    // instances; constructing both from the same raw bytes avoids a redundant
+    // sign + encode round-trip.
+    let raw_key_bytes = signing_key.to_bytes();
+
     // Build trusted keys: in all modes, trust the Invariant instance's own key.
     let mut trusted_keys = HashMap::new();
     trusted_keys.insert(kid.clone(), verifying_key);
 
-    // Build validator config.
-    let config = match ValidatorConfig::new(profile, trusted_keys, signing_key.clone(), kid.clone())
-    {
+    // Build validator config (consumes signing_key).
+    let config = match ValidatorConfig::new(profile, trusted_keys, signing_key, kid.clone()) {
         Ok(c) => c,
         Err(e) => {
             eprintln!("error: {e}");
@@ -91,10 +96,15 @@ pub fn run(args: &ValidateArgs) -> i32 {
         }
     };
 
-    // Create audit logger (needs a second copy of the signing key since SigningKey doesn't Clone).
-    let audit_sk = SigningKey::from_bytes(&signing_key.to_bytes());
+    // Construct audit and forge signing keys from the same raw bytes.
+    // All three instances (config, audit, forge) derive from the same key
+    // material without any extra encoding/decoding round-trip.
+    let audit_sk = SigningKey::from_bytes(&raw_key_bytes);
+    // forge_sk is used in forge mode to self-sign PCA chains per command.
+    let forge_sk = SigningKey::from_bytes(&raw_key_bytes);
     let mut logger =
-        match invariant_core::audit::AuditLogger::open_file(&args.audit_log, audit_sk, kid.clone()) {
+        match invariant_core::audit::AuditLogger::open_file(&args.audit_log, audit_sk, kid.clone())
+        {
             Ok(l) => l,
             Err(e) => {
                 eprintln!("error: failed to open audit log: {e}");
@@ -117,11 +127,16 @@ pub fn run(args: &ValidateArgs) -> i32 {
     }
 
     // Validate each command.
+    // Lock stdout once before the loop: avoids repeated lock/unlock overhead
+    // on every iteration and allows direct writing via to_writer_pretty,
+    // eliminating the per-command intermediate String allocation.
+    let stdout = std::io::stdout();
+    let mut out = stdout.lock();
     let mut any_rejected = false;
     for mut cmd in commands {
         // In forge mode, auto-generate a self-signed PCA chain.
         if matches!(args.mode, ValidationMode::Forge) {
-            if let Err(e) = forge_authority(&mut cmd, &signing_key, &kid) {
+            if let Err(e) = forge_authority(&mut cmd, &forge_sk, &kid) {
                 eprintln!("error: forge mode PCA generation failed: {e}");
                 return 2;
             }
@@ -151,7 +166,14 @@ pub fn run(args: &ValidateArgs) -> i32 {
                     serde_json::json!({ "verdict": result.signed_verdict })
                 };
 
-                println!("{}", serde_json::to_string_pretty(&output).unwrap_or_default());
+                if let Err(e) = serde_json::to_writer_pretty(&mut out, &output) {
+                    eprintln!("error: failed to write output: {e}");
+                    return 2;
+                }
+                if let Err(e) = out.write_all(b"\n") {
+                    eprintln!("error: failed to write output: {e}");
+                    return 2;
+                }
             }
             Err(e) => {
                 eprintln!("error: validation failed: {e}");
@@ -160,9 +182,21 @@ pub fn run(args: &ValidateArgs) -> i32 {
         }
     }
 
+    // Flush audit log before exit (std::process::exit doesn't run destructors).
+    drop(logger);
+
     // Exit code depends on mode.
     match args.mode {
-        ValidationMode::Shadow => 0, // shadow never blocks
+        ValidationMode::Shadow => {
+            if any_rejected {
+                // Shadow mode logs-only but surfaces rejections via exit code 2
+                // so callers can detect policy violations without blocking.
+                eprintln!("shadow: one or more commands were rejected (see verdicts above)");
+                2
+            } else {
+                0
+            }
+        }
         _ => {
             if any_rejected {
                 1
@@ -182,10 +216,24 @@ fn read_commands(args: &ValidateArgs) -> Result<Vec<Command>, String> {
             serde_json::from_str(&data).map_err(|e| format!("parse command: {e}"))?;
         Ok(vec![cmd])
     } else if let Some(ref path) = args.batch {
-        let data =
-            std::fs::read_to_string(path).map_err(|e| format!("read {}: {e}", path.display()))?;
+        use std::io::BufRead;
+        // Reject batch files larger than 1 GiB to avoid OOM on malformed input.
+        const BATCH_SIZE_LIMIT: u64 = 1 << 30; // 1 GiB
+        let meta = std::fs::metadata(path).map_err(|e| format!("stat {}: {e}", path.display()))?;
+        if meta.len() > BATCH_SIZE_LIMIT {
+            return Err(format!(
+                "batch file {} is too large ({} bytes; limit is {} bytes)",
+                path.display(),
+                meta.len(),
+                BATCH_SIZE_LIMIT
+            ));
+        }
+        let file =
+            std::fs::File::open(path).map_err(|e| format!("read {}: {e}", path.display()))?;
+        let reader = std::io::BufReader::new(file);
         let mut commands = Vec::new();
-        for (i, line) in data.lines().enumerate() {
+        for (i, line) in reader.lines().enumerate() {
+            let line = line.map_err(|e| format!("read line {}: {e}", i + 1))?;
             let trimmed = line.trim();
             if trimmed.is_empty() {
                 continue;
@@ -196,9 +244,10 @@ fn read_commands(args: &ValidateArgs) -> Result<Vec<Command>, String> {
         }
         Ok(commands)
     } else {
-        // Read from stdin.
+        // Read from stdin with size limit (10 MiB).
         let mut buf = String::new();
         std::io::stdin()
+            .take(10_485_760)
             .read_to_string(&mut buf)
             .map_err(|e| format!("read stdin: {e}"))?;
         let cmd: Command = serde_json::from_str(&buf).map_err(|e| format!("parse stdin: {e}"))?;
@@ -227,4 +276,3 @@ fn forge_authority(cmd: &mut Command, signing_key: &SigningKey, kid: &str) -> Re
 
     Ok(())
 }
-

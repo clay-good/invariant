@@ -26,21 +26,54 @@ pub fn run(args: &KeygenArgs) -> i32 {
     }
 
     // 2. Refuse to overwrite existing files unless --force is set.
+    //    Use create_new(true) to atomically check-and-create, eliminating the
+    //    TOCTOU race between exists() and the subsequent open/write (P2-70).
     if !args.force {
-        if args.output.exists() {
-            eprintln!(
-                "error: output file already exists: {}. Use --force to overwrite.",
-                args.output.display()
-            );
-            return 2;
-        }
-        if let Some(pub_path) = &args.export_pub {
-            if pub_path.exists() {
+        match std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&args.output)
+        {
+            Ok(_) => {
+                // File didn't exist and was created; remove the placeholder so
+                // write_key_file_secure can create it with the right permissions.
+                let _ = std::fs::remove_file(&args.output);
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
                 eprintln!(
                     "error: output file already exists: {}. Use --force to overwrite.",
-                    pub_path.display()
+                    args.output.display()
                 );
                 return 2;
+            }
+            Err(e) => {
+                eprintln!(
+                    "error: cannot create output file {}: {e}",
+                    args.output.display()
+                );
+                return 2;
+            }
+        }
+        if let Some(pub_path) = &args.export_pub {
+            match std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(pub_path)
+            {
+                Ok(_) => {
+                    let _ = std::fs::remove_file(pub_path);
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                    eprintln!(
+                        "error: output file already exists: {}. Use --force to overwrite.",
+                        pub_path.display()
+                    );
+                    return 2;
+                }
+                Err(e) => {
+                    eprintln!("error: cannot create pub file {}: {e}", pub_path.display());
+                    return 2;
+                }
             }
         }
     }

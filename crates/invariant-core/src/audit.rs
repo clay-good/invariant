@@ -10,7 +10,6 @@ use std::io::Write;
 
 use base64::{engine::general_purpose::STANDARD, Engine};
 use ed25519_dalek::SigningKey;
-use sha2::{Digest, Sha256};
 use thiserror::Error;
 
 use crate::models::audit::{AuditEntry, SignedAuditEntry};
@@ -44,14 +43,18 @@ impl From<std::io::Error> for AuditError {
 
 #[derive(Debug, Error, PartialEq)]
 pub enum AuditVerifyError {
-    #[error("entry {sequence}: hash chain broken (expected previous_hash {expected:?}, got {got:?})")]
+    #[error(
+        "entry {sequence}: hash chain broken (expected previous_hash {expected:?}, got {got:?})"
+    )]
     HashChainBroken {
         sequence: u64,
         expected: String,
         got: String,
     },
 
-    #[error("entry {sequence}: entry_hash mismatch (expected {expected:?}, computed {computed:?})")]
+    #[error(
+        "entry {sequence}: entry_hash mismatch (expected {expected:?}, computed {computed:?})"
+    )]
     EntryHashMismatch {
         sequence: u64,
         expected: String,
@@ -131,16 +134,19 @@ impl<W: Write> AuditLogger<W> {
         command: &Command,
         signed_verdict: &SignedVerdict,
     ) -> Result<SignedAuditEntry, AuditError> {
-        let entry = self.build_entry(command, signed_verdict)?;
-        let signed = self.sign_entry(&entry)?;
+        let (entry, entry_bytes) = self.build_entry(command, signed_verdict)?;
+        let signed = self.sign_entry(&entry, &entry_bytes)?;
 
         // Write as a single JSONL line.
         let json = serde_json::to_string(&signed).map_err(|e| AuditError::Serialization {
             reason: e.to_string(),
         })?;
         writeln!(self.writer, "{json}")?;
+        // Flush to ensure the write is fully committed through any buffering
+        // layer before advancing hash chain state.
+        self.writer.flush()?;
 
-        // Advance hash chain state.
+        // Only advance hash chain state after confirmed write.
         self.previous_hash = entry.entry_hash.clone();
         self.sequence += 1;
 
@@ -157,11 +163,14 @@ impl<W: Write> AuditLogger<W> {
         &self.previous_hash
     }
 
+    // Returns the completed entry together with its serialized bytes (with the
+    // final entry_hash filled in). The caller passes those bytes to sign_entry
+    // so the entry is only serialized once per log() call instead of twice.
     fn build_entry(
         &self,
         command: &Command,
         signed_verdict: &SignedVerdict,
-    ) -> Result<AuditEntry, AuditError> {
+    ) -> Result<(AuditEntry, Vec<u8>), AuditError> {
         // Build the entry without the hash first.
         let mut entry = AuditEntry {
             sequence: self.sequence,
@@ -174,23 +183,29 @@ impl<W: Write> AuditLogger<W> {
         // Compute entry_hash over the canonical JSON of the entry (with
         // empty entry_hash). This makes the hash cover sequence,
         // previous_hash, command, and verdict — the full audit record.
-        let entry_json =
-            serde_json::to_vec(&entry).map_err(|e| AuditError::Serialization {
-                reason: e.to_string(),
-            })?;
-        entry.entry_hash = sha256_hex(&entry_json);
+        let pre_hash_bytes = serde_json::to_vec(&entry).map_err(|e| AuditError::Serialization {
+            reason: e.to_string(),
+        })?;
+        entry.entry_hash = crate::util::sha256_hex(&pre_hash_bytes);
 
-        Ok(entry)
+        // Serialize the final entry (with entry_hash set) so the caller can
+        // reuse these bytes for signing without a second serde_json::to_vec.
+        let entry_bytes = serde_json::to_vec(&entry).map_err(|e| AuditError::Serialization {
+            reason: e.to_string(),
+        })?;
+
+        Ok((entry, entry_bytes))
     }
 
-    fn sign_entry(&self, entry: &AuditEntry) -> Result<SignedAuditEntry, AuditError> {
-        let entry_json =
-            serde_json::to_vec(entry).map_err(|e| AuditError::Serialization {
-                reason: e.to_string(),
-            })?;
-
+    // Signs the entry using the already-serialized bytes produced by
+    // build_entry, avoiding a redundant serialization round-trip.
+    fn sign_entry(
+        &self,
+        entry: &AuditEntry,
+        entry_bytes: &[u8],
+    ) -> Result<SignedAuditEntry, AuditError> {
         use ed25519_dalek::Signer;
-        let signature = self.signing_key.sign(&entry_json);
+        let signature = self.signing_key.sign(entry_bytes);
 
         Ok(SignedAuditEntry {
             entry: entry.clone(),
@@ -209,18 +224,111 @@ impl AuditLogger<std::io::BufWriter<std::fs::File>> {
     /// Open a file in append-only mode and create an audit logger for it.
     ///
     /// The file is opened with `O_APPEND | O_CREATE | O_WRONLY` to enforce
-    /// immutability (L4). If the file already exists, new entries are
-    /// appended.
+    /// immutability (L4). If the file already exists and contains entries,
+    /// the logger resumes the hash chain from the last entry so that new
+    /// appended entries remain linked (L2).
+    ///
+    /// # RELIABILITY: BufWriter and partial-flush risk
+    ///
+    /// The writer is wrapped in `BufWriter` for performance. If the process
+    /// crashes between the point where a JSONL line is written into the
+    /// `BufWriter` internal buffer and the explicit `flush()` call in `log()`,
+    /// the line will be lost. The hash chain state in memory will have advanced
+    /// (the `sequence` and `previous_hash` fields) but the corresponding bytes
+    /// will not have reached the kernel page cache. On recovery the on-disk
+    /// file will be one or more entries behind the in-memory state.
+    ///
+    /// Mitigation: `log()` calls `flush()` immediately after every `writeln!`
+    /// and advances the in-memory chain state only after the flush succeeds.
+    /// The `BufWriter` is therefore drained after every single entry, making
+    /// the write-then-flush pair effectively atomic at the level of one log
+    /// entry.  A crash after `writeln!` but before `flush()` can still leave
+    /// a partial line; such a line will be rejected by `verify_log` because it
+    /// will fail JSON deserialization, which is the correct fail-safe behaviour.
     pub fn open_file(
         path: &std::path::Path,
         signing_key: SigningKey,
         signer_kid: String,
     ) -> Result<Self, AuditError> {
+        // Read existing content to determine chain state before opening for
+        // append.  We must read first because once the file is opened in
+        // append mode we cannot seek back.
+        let (next_sequence, last_entry_hash) = if path.exists() {
+            let content = std::fs::read_to_string(path).map_err(|e| AuditError::Io {
+                reason: e.to_string(),
+            })?;
+            parse_chain_state(&content)?
+        } else {
+            (0, String::new())
+        };
+
         let file = std::fs::OpenOptions::new()
             .create(true)
             .append(true)
             .open(path)?;
-        Ok(Self::new(std::io::BufWriter::new(file), signing_key, signer_kid))
+
+        if next_sequence == 0 {
+            Ok(Self::new(
+                std::io::BufWriter::new(file),
+                signing_key,
+                signer_kid,
+            ))
+        } else {
+            Ok(Self::resume(
+                std::io::BufWriter::new(file),
+                signing_key,
+                signer_kid,
+                next_sequence,
+                last_entry_hash,
+            ))
+        }
+    }
+}
+
+/// Parse existing audit log content to find the last entry's sequence and
+/// hash so that `open_file` can resume the chain.
+///
+/// Returns `(next_sequence, last_entry_hash)`.  If the content is empty or
+/// contains no parseable entries, returns `(0, "")`.
+///
+/// # SECURITY: chain state is recovered without re-verifying signatures
+///
+/// This function reads the raw on-disk content and trusts the sequence numbers
+/// and entry hashes it finds there. It does NOT call `verify_log` before
+/// resuming the chain. This is intentional for the open-for-append path (the
+/// full verification pass is a separate, operator-invoked operation), but it
+/// means that if the audit log file has been tampered with before this call the
+/// new appended entries will chain onto the tampered state.
+///
+/// Callers must ensure the audit log file path is protected by OS-level
+/// permissions (O_APPEND, mode 0o600) so that only the Invariant process can
+/// write to it. Concurrent writers are NOT supported: if two processes call
+/// `open_file` on the same path simultaneously, their independent chain states
+/// will diverge and subsequent `verify_log` calls will fail.
+#[cfg(not(target_os = "unknown"))]
+fn parse_chain_state(content: &str) -> Result<(u64, String), AuditError> {
+    let mut last_sequence = 0u64;
+    let mut last_hash = String::new();
+    let mut found_any = false;
+
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let signed: crate::models::audit::SignedAuditEntry = serde_json::from_str(trimmed)
+            .map_err(|e| AuditError::Serialization {
+                reason: format!("failed to parse existing audit log entry: {e}"),
+            })?;
+        last_sequence = signed.entry.sequence;
+        last_hash = signed.entry.entry_hash.clone();
+        found_any = true;
+    }
+
+    if found_any {
+        Ok((last_sequence + 1, last_hash))
+    } else {
+        Ok((0, String::new()))
     }
 }
 
@@ -274,16 +382,16 @@ pub fn verify_log(
             });
         }
 
-        // Recompute entry_hash and verify.
-        let mut recompute_entry = entry.clone();
-        recompute_entry.entry_hash = String::new();
-        let entry_json = serde_json::to_vec(&recompute_entry).map_err(|e| {
-            AuditVerifyError::Deserialization {
+        // Recompute entry_hash over the entry with entry_hash set to "".
+        let entry_json = {
+            let mut check = entry.clone();
+            check.entry_hash = String::new();
+            serde_json::to_vec(&check).map_err(|e| AuditVerifyError::Deserialization {
                 line: line_idx + 1,
                 reason: e.to_string(),
-            }
-        })?;
-        let computed_hash = sha256_hex(&entry_json);
+            })?
+        };
+        let computed_hash = crate::util::sha256_hex(&entry_json);
         if computed_hash != entry.entry_hash {
             return Err(AuditVerifyError::EntryHashMismatch {
                 sequence: entry.sequence,
@@ -293,25 +401,25 @@ pub fn verify_log(
         }
 
         // Verify Ed25519 signature (L3).
-        let signed_json = serde_json::to_vec(entry).map_err(|e| {
-            AuditVerifyError::Deserialization {
+        let signed_json =
+            serde_json::to_vec(entry).map_err(|e| AuditVerifyError::Deserialization {
                 line: line_idx + 1,
                 reason: e.to_string(),
+            })?;
+        let sig_bytes = STANDARD.decode(&signed.entry_signature).map_err(|_| {
+            AuditVerifyError::SignatureInvalid {
+                sequence: entry.sequence,
             }
         })?;
-        let sig_bytes = STANDARD
-            .decode(&signed.entry_signature)
-            .map_err(|_| AuditVerifyError::SignatureInvalid {
-                sequence: entry.sequence,
-            })?;
         let signature = ed25519_dalek::Signature::from_slice(&sig_bytes).map_err(|_| {
             AuditVerifyError::SignatureInvalid {
                 sequence: entry.sequence,
             }
         })?;
-        use ed25519_dalek::Verifier;
+        // Use verify_strict to reject small-order points and non-canonical
+        // signatures (cofactor attack mitigation, RFC 8032 §5.1.7).
         verifying_key
-            .verify(&signed_json, &signature)
+            .verify_strict(&signed_json, &signature)
             .map_err(|_| AuditVerifyError::SignatureInvalid {
                 sequence: entry.sequence,
             })?;
@@ -322,16 +430,6 @@ pub fn verify_log(
     }
 
     Ok(expected_sequence)
-}
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-fn sha256_hex(data: &[u8]) -> String {
-    let hash = Sha256::digest(data);
-    let hex: String = hash.iter().map(|b| format!("{b:02x}")).collect();
-    format!("sha256:{hex}")
 }
 
 // ---------------------------------------------------------------------------
@@ -422,9 +520,7 @@ mod tests {
         }
     }
 
-    fn make_approved_result(
-        command: &Command,
-    ) -> (SignedVerdict, ValidatorConfig, SigningKey) {
+    fn make_approved_result(command: &Command) -> (SignedVerdict, ValidatorConfig, SigningKey) {
         let (pca_sk, pca_vk) = make_keypair();
         let (sign_sk, _sign_vk) = make_keypair();
 
@@ -613,8 +709,7 @@ mod tests {
         let jsonl = String::from_utf8(buf).unwrap();
         let entry: serde_json::Value = serde_json::from_str(jsonl.trim()).unwrap();
         let mut tampered_entry = entry.clone();
-        tampered_entry["entry_signature"] =
-            serde_json::Value::String(STANDARD.encode([0u8; 64]));
+        tampered_entry["entry_signature"] = serde_json::Value::String(STANDARD.encode([0u8; 64]));
         let tampered_jsonl = serde_json::to_string(&tampered_entry).unwrap() + "\n";
 
         let result = verify_log(&tampered_jsonl, &sign_vk);
@@ -740,6 +835,14 @@ mod tests {
 
     #[test]
     fn entry_hash_is_deterministic() {
+        // `cmd` and `verdict` are constructed once and reused for both logger
+        // calls.  Because both objects carry identical timestamps (they are the
+        // same heap values), the JSON serialisation is byte-identical across
+        // both invocations, making the entry_hash and the Ed25519 signature
+        // deterministic.  If each call were to use a freshly-constructed
+        // command or verdict with Utc::now() inside, clock drift between the
+        // two calls could produce different hashes and this assertion would
+        // fail non-deterministically.
         let (sign_sk, _) = make_keypair();
         let cmd = make_simple_command();
         let (verdict, _) = make_simple_signed_verdict();
@@ -829,6 +932,60 @@ mod tests {
     }
 
     #[test]
+    fn open_file_resumes_hash_chain() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("audit.jsonl");
+
+        let (sign_sk, sign_vk) = make_keypair();
+        let cmd = make_simple_command();
+        let (verdict, _) = make_simple_signed_verdict();
+
+        // Phase 1: write two entries via open_file.
+        {
+            let mut logger =
+                AuditLogger::open_file(&path, sign_sk.clone(), "kid-1".into()).unwrap();
+            logger.log(&cmd, &verdict).unwrap();
+            logger.log(&cmd, &verdict).unwrap();
+            // BufWriter is flushed on drop.
+        }
+
+        // Phase 2: re-open the same file and append a third entry.
+        {
+            let mut logger =
+                AuditLogger::open_file(&path, sign_sk.clone(), "kid-1".into()).unwrap();
+            // The resumed logger must start at sequence 2.
+            assert_eq!(logger.sequence(), 2, "resumed sequence should be 2");
+            logger.log(&cmd, &verdict).unwrap();
+        }
+
+        // The combined file must form a valid 3-entry chain.
+        let jsonl = std::fs::read_to_string(&path).unwrap();
+        let count = verify_log(&jsonl, &sign_vk).unwrap();
+        assert_eq!(count, 3, "expected 3 verified entries");
+    }
+
+    #[test]
+    fn open_file_new_file_starts_at_genesis() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("new_audit.jsonl");
+
+        let (sign_sk, sign_vk) = make_keypair();
+        let cmd = make_simple_command();
+        let (verdict, _) = make_simple_signed_verdict();
+
+        {
+            let mut logger = AuditLogger::open_file(&path, sign_sk, "kid-1".into()).unwrap();
+            assert_eq!(logger.sequence(), 0);
+            logger.log(&cmd, &verdict).unwrap();
+            // BufWriter is flushed on drop at end of this block.
+        }
+
+        let jsonl = std::fs::read_to_string(&path).unwrap();
+        let count = verify_log(&jsonl, &sign_vk).unwrap();
+        assert_eq!(count, 1);
+    }
+
+    #[test]
     fn entry_contains_full_command_and_verdict() {
         let (sign_sk, _) = make_keypair();
         let mut buf = Vec::new();
@@ -841,10 +998,119 @@ mod tests {
         // L1: entry contains the full command and signed verdict.
         assert_eq!(entry.entry.command.source, "test");
         assert_eq!(entry.entry.command.sequence, 1);
-        assert_eq!(
-            entry.entry.verdict.verdict.command_hash,
-            "sha256:abc123"
-        );
+        assert_eq!(entry.entry.verdict.verdict.command_hash, "sha256:abc123");
         assert!(entry.entry.verdict.verdict.approved);
+    }
+
+    // -----------------------------------------------------------------------
+    // Finding 16: open_file tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn open_file_succeeds_and_entry_is_verifiable() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("audit_f16.jsonl");
+
+        let (sign_sk, sign_vk) = make_keypair();
+        let cmd = make_simple_command();
+        let (verdict, _) = make_simple_signed_verdict();
+
+        // Open a brand-new file, log one entry, then verify it.
+        {
+            let mut logger =
+                AuditLogger::open_file(&path, sign_sk.clone(), "f16-kid".into()).unwrap();
+            assert_eq!(logger.sequence(), 0, "new file must start at genesis");
+            let entry = logger.log(&cmd, &verdict).unwrap();
+            assert_eq!(entry.entry.sequence, 0);
+            assert!(entry.entry.entry_hash.starts_with("sha256:"));
+        }
+
+        let jsonl = std::fs::read_to_string(&path).unwrap();
+        let count = verify_log(&jsonl, &sign_vk).unwrap();
+        assert_eq!(count, 1, "exactly one entry must be verifiable");
+    }
+
+    #[test]
+    fn open_file_missing_parent_returns_io_error() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        // Construct a path whose parent does not exist.
+        let path = dir.path().join("nonexistent_dir").join("audit.jsonl");
+
+        let (sign_sk, _) = make_keypair();
+        let result = AuditLogger::open_file(&path, sign_sk, "kid".into());
+
+        match result {
+            Err(AuditError::Io { .. }) => {}
+            Err(other) => panic!("expected AuditError::Io, got {other:?}"),
+            Ok(_) => panic!("expected an error but got Ok"),
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Finding 17: verify_log NonEmptyGenesisPreviousHash
+    // -----------------------------------------------------------------------
+
+    // -----------------------------------------------------------------------
+    // Finding 53: truncated final entry is detected
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn verify_log_rejects_truncated_final_entry() {
+        // Build a two-entry log, then truncate the second JSONL line mid-way.
+        // verify_log must return a Deserialization error for the truncated line.
+        let (sign_sk, sign_vk) = make_keypair();
+        let mut buf = Vec::new();
+        let mut logger = AuditLogger::new(&mut buf, sign_sk, "test".into());
+
+        let cmd = make_simple_command();
+        let (verdict, _) = make_simple_signed_verdict();
+        logger.log(&cmd, &verdict).unwrap();
+        logger.log(&cmd, &verdict).unwrap();
+
+        let jsonl = String::from_utf8(buf).unwrap();
+        let lines: Vec<&str> = jsonl.lines().collect();
+        assert_eq!(lines.len(), 2, "expected 2 log lines");
+
+        // Truncate the second line to roughly half its length.
+        let truncated_line = &lines[1][..lines[1].len() / 2];
+        let truncated_jsonl = format!("{}\n{}\n", lines[0], truncated_line);
+
+        let result = verify_log(&truncated_jsonl, &sign_vk);
+        assert!(
+            result.is_err(),
+            "truncated entry must cause verify_log to fail"
+        );
+        match result.unwrap_err() {
+            AuditVerifyError::Deserialization { line, .. } => {
+                assert_eq!(line, 2, "error should be on line 2 (the truncated entry)");
+            }
+            other => panic!("expected Deserialization error, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn verify_log_rejects_genesis_with_non_empty_previous_hash() {
+        let (sign_sk, sign_vk) = make_keypair();
+
+        // Build a legitimate entry via the logger to get the correct JSON shape.
+        let cmd = make_simple_command();
+        let (verdict, _) = make_simple_signed_verdict();
+        let mut buf = Vec::new();
+        let mut logger = AuditLogger::new(&mut buf, sign_sk, "f17-kid".into());
+        let signed_entry = logger.log(&cmd, &verdict).unwrap();
+
+        // Surgically inject a non-empty previous_hash on sequence 0.
+        // verify_log checks previous_hash before it verifies entry_hash or
+        // the Ed25519 signature, so the patch will hit the right error first.
+        let mut entry_json: serde_json::Value = serde_json::to_value(&signed_entry).unwrap();
+        entry_json["previous_hash"] = serde_json::Value::String("sha256:not_empty_genesis".into());
+        let tampered_line = serde_json::to_string(&entry_json).unwrap();
+
+        let result = verify_log(&tampered_line, &sign_vk);
+        assert!(result.is_err(), "expected an error, got {:?}", result);
+        assert_eq!(
+            result.unwrap_err(),
+            AuditVerifyError::NonEmptyGenesisPreviousHash,
+        );
     }
 }

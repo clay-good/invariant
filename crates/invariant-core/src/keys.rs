@@ -17,7 +17,19 @@ use std::collections::HashMap;
 use std::path::Path;
 
 /// On-disk JSON key file format for Ed25519 keypairs.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+///
+/// # Security note
+/// The `signing_key` field is excluded from all normal serde serializations
+/// (`#[serde(skip_serializing)]`) to prevent the private key from being
+/// accidentally included in logs, API responses, or debug output.
+/// The only legitimate write path is [`KeyFile::save`], which uses
+/// [`KeyFile::to_disk_json`] to produce a JSON string that explicitly
+/// includes the signing key for on-disk storage.
+///
+/// `Clone` is intentionally NOT derived. `KeyFile` should be loaded,
+/// decoded, and saved — never cloned — to limit the number of in-memory
+/// copies of private key material.
+#[derive(Serialize, Deserialize)]
 pub struct KeyFile {
     /// Key identifier — used for key lookup in trusted key maps and audit trails.
     pub kid: String,
@@ -25,9 +37,24 @@ pub struct KeyFile {
     #[serde(default = "default_algorithm")]
     pub algorithm: String,
     /// Base64-encoded 32-byte Ed25519 signing (private) key.
+    ///
+    /// Excluded from normal serialization. Use [`KeyFile::to_disk_json`] for
+    /// the one legitimate path that needs to write this to persistent storage.
+    #[serde(skip_serializing)]
     pub signing_key: String,
     /// Base64-encoded 32-byte Ed25519 verifying (public) key.
     pub verifying_key: String,
+}
+
+impl std::fmt::Debug for KeyFile {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("KeyFile")
+            .field("kid", &self.kid)
+            .field("algorithm", &self.algorithm)
+            .field("signing_key", &"[REDACTED]")
+            .field("verifying_key", &self.verifying_key)
+            .finish()
+    }
 }
 
 fn default_algorithm() -> String {
@@ -121,16 +148,57 @@ impl KeyFile {
         Ok(key_file)
     }
 
+    /// Serialize this key file to a JSON string suitable for writing to disk.
+    ///
+    /// Unlike the standard [`serde_json::to_string`] path (which omits
+    /// `signing_key` due to `#[serde(skip_serializing)]`), this method
+    /// explicitly includes the signing key. It must only be called from
+    /// [`KeyFile::save`] or equivalent on-disk write paths.
+    pub fn to_disk_json(&self) -> Result<String, serde_json::Error> {
+        // Build a temporary value that captures all four fields explicitly,
+        // bypassing the skip_serializing attribute.
+        let map = serde_json::json!({
+            "kid": self.kid,
+            "algorithm": self.algorithm,
+            "signing_key": self.signing_key,
+            "verifying_key": self.verifying_key,
+        });
+        serde_json::to_string_pretty(&map)
+    }
+
     /// Save the key file to disk. Refuses to overwrite an existing file.
+    ///
+    /// Uses `create_new(true)` to atomically prevent overwriting an existing
+    /// file, eliminating the TOCTOU race that a separate exists()-then-write
+    /// pattern would introduce. On Unix the file is created with mode 0o600
+    /// so it is readable only by the owning user.
     pub fn save(&self, path: &Path) -> Result<(), KeyFileError> {
-        if path.exists() {
-            return Err(KeyFileError::WriteIo(std::io::Error::new(
-                std::io::ErrorKind::AlreadyExists,
-                format!("file already exists: {}", path.display()),
-            )));
+        let json = self.to_disk_json().map_err(KeyFileError::Serialization)?;
+
+        #[cfg(unix)]
+        {
+            use std::io::Write;
+            use std::os::unix::fs::OpenOptionsExt;
+            let mut file = std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .mode(0o600)
+                .open(path)
+                .map_err(KeyFileError::WriteIo)?;
+            file.write_all(json.as_bytes()).map_err(KeyFileError::WriteIo)?;
         }
-        let json = serde_json::to_string_pretty(self).map_err(KeyFileError::Serialization)?;
-        std::fs::write(path, json).map_err(KeyFileError::WriteIo)
+        #[cfg(not(unix))]
+        {
+            use std::io::Write;
+            let mut file = std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(path)
+                .map_err(KeyFileError::WriteIo)?;
+            file.write_all(json.as_bytes()).map_err(KeyFileError::WriteIo)?;
+        }
+
+        Ok(())
     }
 
     /// Validate the key file format and decode the key material.
@@ -271,13 +339,28 @@ mod tests {
 
     #[test]
     fn json_roundtrip() {
+        // Use to_disk_json() — the only serialization path that includes
+        // the private signing_key field.
         let kf = gen_key_file();
-        let json = serde_json::to_string_pretty(&kf).unwrap();
+        let json = kf.to_disk_json().unwrap();
         let parsed: KeyFile = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed.kid, kf.kid);
         assert_eq!(parsed.algorithm, kf.algorithm);
         assert_eq!(parsed.signing_key, kf.signing_key);
         assert_eq!(parsed.verifying_key, kf.verifying_key);
+    }
+
+    #[test]
+    fn normal_serialization_omits_signing_key() {
+        // Verify that the skip_serializing attribute works: a standard
+        // serde_json serialization must NOT include the signing_key field.
+        let kf = gen_key_file();
+        let json = serde_json::to_string(&kf).unwrap();
+        assert!(
+            !json.contains("signing_key"),
+            "signing_key must not appear in standard serde output: {json}"
+        );
+        assert!(json.contains("verifying_key"));
     }
 
     #[test]

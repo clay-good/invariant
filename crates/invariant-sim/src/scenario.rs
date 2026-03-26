@@ -4,7 +4,7 @@
 // designed to exercise a specific failure mode (or the happy path) of the
 // Invariant safety firewall.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use chrono::{DateTime, Duration, Utc};
 use invariant_core::models::authority::Operation;
@@ -56,35 +56,21 @@ impl<'a> ScenarioGenerator<'a> {
     ///
     /// * `pca_chain_b64` – base64 PCA chain string to embed in the authority
     ///   field (some scenarios override this deliberately).
-    /// * `ops` – operations list embedded in `CommandAuthority::required_ops`.
+    /// * `ops` – operations slice embedded in `CommandAuthority::required_ops`.
     pub fn generate_commands(
         &self,
         count: usize,
         pca_chain_b64: &str,
-        ops: Vec<Operation>,
+        ops: &[Operation],
     ) -> Vec<Command> {
         match self.scenario {
-            ScenarioType::Baseline => {
-                self.baseline(count, pca_chain_b64, ops)
-            }
-            ScenarioType::Aggressive => {
-                self.aggressive(count, pca_chain_b64, ops)
-            }
-            ScenarioType::ExclusionZone => {
-                self.exclusion_zone(count, pca_chain_b64, ops)
-            }
-            ScenarioType::AuthorityEscalation => {
-                self.authority_escalation(count, ops)
-            }
-            ScenarioType::ChainForgery => {
-                self.chain_forgery(count, ops)
-            }
-            ScenarioType::PromptInjection => {
-                self.prompt_injection(count, pca_chain_b64, ops)
-            }
-            ScenarioType::MultiAgentHandoff => {
-                self.multi_agent_handoff(count, pca_chain_b64, ops)
-            }
+            ScenarioType::Baseline => self.baseline(count, pca_chain_b64, ops),
+            ScenarioType::Aggressive => self.aggressive(count, pca_chain_b64, ops),
+            ScenarioType::ExclusionZone => self.exclusion_zone(count, pca_chain_b64, ops),
+            ScenarioType::AuthorityEscalation => self.authority_escalation(count, ops),
+            ScenarioType::ChainForgery => self.chain_forgery(count, ops),
+            ScenarioType::PromptInjection => self.prompt_injection(count, pca_chain_b64, ops),
+            ScenarioType::MultiAgentHandoff => self.multi_agent_handoff(count, pca_chain_b64, ops),
         }
     }
 
@@ -95,6 +81,15 @@ impl<'a> ScenarioGenerator<'a> {
     /// Midpoint of a joint's position range – safely inside limits.
     fn joint_mid(min: f64, max: f64) -> f64 {
         (min + max) / 2.0
+    }
+
+    /// Convert a floating-point millisecond offset to `i64`, clamping to
+    /// `[i64::MIN, i64::MAX]` to prevent undefined behaviour on overflow.
+    ///
+    /// For normal campaign parameters (< 10_000 steps at delta_time ≤ 0.1 s)
+    /// the value fits comfortably.  This guard handles pathological inputs.
+    fn ms_offset_to_i64(ms: f64) -> i64 {
+        ms.clamp(i64::MIN as f64, i64::MAX as f64) as i64
     }
 
     /// Centre of the workspace AABB.
@@ -117,13 +112,14 @@ impl<'a> ScenarioGenerator<'a> {
     fn safe_end_effectors(profile: &RobotProfile) -> Vec<EndEffectorPosition> {
         let base = Self::safe_end_effector(profile);
 
-        // Collect all unique link names from collision pairs.
+        // Collect all unique link names from collision pairs (O(n) deduplication).
+        let mut seen: HashSet<&str> = HashSet::new();
         let mut link_names: Vec<String> = Vec::new();
         for pair in &profile.collision_pairs {
-            if !link_names.contains(&pair.link_a) {
+            if seen.insert(pair.link_a.as_str()) {
                 link_names.push(pair.link_a.clone());
             }
-            if !link_names.contains(&pair.link_b) {
+            if seen.insert(pair.link_b.as_str()) {
                 link_names.push(pair.link_b.clone());
             }
         }
@@ -234,9 +230,7 @@ impl<'a> ScenarioGenerator<'a> {
         }
         // No exclusion zone defined: use a point outside workspace bounds.
         match &profile.workspace {
-            WorkspaceBounds::Aabb { max, .. } => {
-                [max[0] + 1.0, max[1] + 1.0, max[2] + 1.0]
-            }
+            WorkspaceBounds::Aabb { max, .. } => [max[0] + 1.0, max[1] + 1.0, max[2] + 1.0],
         }
     }
 
@@ -248,10 +242,20 @@ impl<'a> ScenarioGenerator<'a> {
         }
     }
 
-    /// Compose a minimal metadata map.
-    fn metadata(scenario: ScenarioType, index: usize) -> HashMap<String, String> {
-        let mut m = HashMap::new();
+    /// Build a metadata map template containing the scenario label.
+    ///
+    /// Call this once before a generation loop and then clone-and-stamp the
+    /// per-iteration index with `metadata_stamp`, avoiding a redundant
+    /// `format!("{scenario:?}")` allocation on every command.
+    fn metadata_template(scenario: ScenarioType) -> HashMap<String, String> {
+        let mut m = HashMap::with_capacity(2);
         m.insert("scenario".to_owned(), format!("{scenario:?}"));
+        m
+    }
+
+    /// Stamp `index` into a cloned copy of the pre-built template.
+    fn metadata_stamp(template: &HashMap<String, String>, index: usize) -> HashMap<String, String> {
+        let mut m = template.clone();
         m.insert("index".to_owned(), index.to_string());
         m
     }
@@ -260,41 +264,36 @@ impl<'a> ScenarioGenerator<'a> {
     // Scenario implementations
     // -----------------------------------------------------------------------
 
-    fn baseline(
-        &self,
-        count: usize,
-        pca_chain_b64: &str,
-        ops: Vec<Operation>,
-    ) -> Vec<Command> {
+    fn baseline(&self, count: usize, pca_chain_b64: &str, ops: &[Operation]) -> Vec<Command> {
         let base_ts: DateTime<Utc> = Utc::now();
         let end_effector_positions = Self::safe_end_effectors(self.profile);
         let delta_time = self.profile.max_delta_time * 0.5;
+        // Pre-compute once — identical for every command in this scenario.
+        let joint_states = self.baseline_joint_states();
+        let meta_template = Self::metadata_template(self.scenario);
 
         (0..count)
             .map(|i| {
-                let timestamp =
-                    base_ts + Duration::milliseconds((i as f64 * delta_time * 1_000.0) as i64);
+                let timestamp = base_ts
+                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                        i as f64 * delta_time * 1_000.0,
+                    ));
                 Command {
                     timestamp,
                     source: "baseline_agent".to_owned(),
                     sequence: i as u64,
-                    joint_states: self.baseline_joint_states(),
+                    joint_states: joint_states.clone(),
                     delta_time,
                     end_effector_positions: end_effector_positions.clone(),
                     center_of_mass: None,
-                    authority: Self::authority(pca_chain_b64, &ops),
-                    metadata: Self::metadata(self.scenario, i),
+                    authority: Self::authority(pca_chain_b64, ops),
+                    metadata: Self::metadata_stamp(&meta_template, i),
                 }
             })
             .collect()
     }
 
-    fn aggressive(
-        &self,
-        count: usize,
-        pca_chain_b64: &str,
-        ops: Vec<Operation>,
-    ) -> Vec<Command> {
+    fn aggressive(&self, count: usize, pca_chain_b64: &str, ops: &[Operation]) -> Vec<Command> {
         let base_ts: DateTime<Utc> = Utc::now();
         // Use delta_time at 98 % of the maximum.
         let delta_time = self.profile.max_delta_time * 0.98;
@@ -311,21 +310,27 @@ impl<'a> ScenarioGenerator<'a> {
 
         // Collect all unique link names from collision pairs and assign safe,
         // well-separated positions so the self-collision check passes.
+        // Use a HashSet for O(n) deduplication instead of O(n^2) Vec::contains.
+        let mut seen: HashSet<&str> = HashSet::new();
         let mut link_names: Vec<String> = Vec::new();
         for pair in &self.profile.collision_pairs {
-            if !link_names.contains(&pair.link_a) {
+            if seen.insert(pair.link_a.as_str()) {
                 link_names.push(pair.link_a.clone());
             }
-            if !link_names.contains(&pair.link_b) {
+            if seen.insert(pair.link_b.as_str()) {
                 link_names.push(pair.link_b.clone());
             }
         }
         let step = self.profile.min_collision_distance.max(0.01) * 20.0;
+        let safe_base = Self::safe_end_effector(self.profile);
+        let meta_template = Self::metadata_template(self.scenario);
 
         (0..count)
             .map(|i| {
-                let timestamp =
-                    base_ts + Duration::milliseconds((i as f64 * delta_time * 1_000.0) as i64);
+                let timestamp = base_ts
+                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                        i as f64 * delta_time * 1_000.0,
+                    ));
 
                 let mut end_effector_positions = vec![EndEffectorPosition {
                     name: "end_effector".to_owned(),
@@ -333,12 +338,13 @@ impl<'a> ScenarioGenerator<'a> {
                 }];
                 // Add collision-pair links at safe positions (relative to the
                 // safe-end-effector base, not the aggressive boundary position).
-                let safe_base = Self::safe_end_effector(self.profile);
                 for (k, name) in link_names.iter().enumerate() {
                     let offset = (k + 1) as f64 * step;
                     let link_pos = match &self.profile.workspace {
                         WorkspaceBounds::Aabb { min, max } => {
-                            let x = (safe_base[0] + offset).min(max[0] - 0.01).max(min[0] + 0.01);
+                            let x = (safe_base[0] + offset)
+                                .min(max[0] - 0.01)
+                                .max(min[0] + 0.01);
                             [x, safe_base[1], safe_base[2]]
                         }
                     };
@@ -356,60 +362,65 @@ impl<'a> ScenarioGenerator<'a> {
                     delta_time,
                     end_effector_positions,
                     center_of_mass: None,
-                    authority: Self::authority(pca_chain_b64, &ops),
-                    metadata: Self::metadata(self.scenario, i),
+                    authority: Self::authority(pca_chain_b64, ops),
+                    metadata: Self::metadata_stamp(&meta_template, i),
                 }
             })
             .collect()
     }
 
-    fn exclusion_zone(
-        &self,
-        count: usize,
-        pca_chain_b64: &str,
-        ops: Vec<Operation>,
-    ) -> Vec<Command> {
+    fn exclusion_zone(&self, count: usize, pca_chain_b64: &str, ops: &[Operation]) -> Vec<Command> {
         let base_ts: DateTime<Utc> = Utc::now();
         let delta_time = self.profile.max_delta_time * 0.5;
         let bad_pos = Self::exclusion_zone_point(self.profile);
+        // Pre-compute once — identical for every command in this scenario.
+        let joint_states = self.baseline_joint_states();
+        let meta_template = Self::metadata_template(self.scenario);
 
         (0..count)
             .map(|i| {
-                let timestamp =
-                    base_ts + Duration::milliseconds((i as f64 * delta_time * 1_000.0) as i64);
+                let timestamp = base_ts
+                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                        i as f64 * delta_time * 1_000.0,
+                    ));
                 Command {
                     timestamp,
                     source: "exclusion_zone_agent".to_owned(),
                     sequence: i as u64,
-                    joint_states: self.baseline_joint_states(),
+                    joint_states: joint_states.clone(),
                     delta_time,
                     end_effector_positions: vec![EndEffectorPosition {
                         name: "end_effector".to_owned(),
                         position: bad_pos,
                     }],
                     center_of_mass: None,
-                    authority: Self::authority(pca_chain_b64, &ops),
-                    metadata: Self::metadata(self.scenario, i),
+                    authority: Self::authority(pca_chain_b64, ops),
+                    metadata: Self::metadata_stamp(&meta_template, i),
                 }
             })
             .collect()
     }
 
     /// Valid physics, but empty `pca_chain` — triggers authority failure.
-    fn authority_escalation(&self, count: usize, ops: Vec<Operation>) -> Vec<Command> {
+    fn authority_escalation(&self, count: usize, ops: &[Operation]) -> Vec<Command> {
         let base_ts: DateTime<Utc> = Utc::now();
         let delta_time = self.profile.max_delta_time * 0.5;
         let ee_pos = Self::safe_end_effector(self.profile);
+        // Pre-compute once — identical for every command in this scenario.
+        let joint_states = self.baseline_joint_states();
+        let meta_template = Self::metadata_template(self.scenario);
 
         (0..count)
             .map(|i| {
-                let timestamp =
-                    base_ts + Duration::milliseconds((i as f64 * delta_time * 1_000.0) as i64);
+                let timestamp = base_ts
+                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                        i as f64 * delta_time * 1_000.0,
+                    ));
                 Command {
                     timestamp,
                     source: "authority_escalation_agent".to_owned(),
                     sequence: i as u64,
-                    joint_states: self.baseline_joint_states(),
+                    joint_states: joint_states.clone(),
                     delta_time,
                     end_effector_positions: vec![EndEffectorPosition {
                         name: "end_effector".to_owned(),
@@ -419,24 +430,29 @@ impl<'a> ScenarioGenerator<'a> {
                     // Empty chain — deliberately missing authority.
                     authority: CommandAuthority {
                         pca_chain: String::new(),
-                        required_ops: ops.clone(),
+                        required_ops: ops.to_vec(),
                     },
-                    metadata: Self::metadata(self.scenario, i),
+                    metadata: Self::metadata_stamp(&meta_template, i),
                 }
             })
             .collect()
     }
 
     /// Garbage base64 in `pca_chain` — triggers chain parse/verify failure.
-    fn chain_forgery(&self, count: usize, ops: Vec<Operation>) -> Vec<Command> {
+    fn chain_forgery(&self, count: usize, ops: &[Operation]) -> Vec<Command> {
         let base_ts: DateTime<Utc> = Utc::now();
         let delta_time = self.profile.max_delta_time * 0.5;
         let ee_pos = Self::safe_end_effector(self.profile);
+        // Pre-compute once — identical for every command in this scenario.
+        let joint_states = self.baseline_joint_states();
+        let meta_template = Self::metadata_template(self.scenario);
 
         (0..count)
             .map(|i| {
-                let timestamp =
-                    base_ts + Duration::milliseconds((i as f64 * delta_time * 1_000.0) as i64);
+                let timestamp = base_ts
+                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                        i as f64 * delta_time * 1_000.0,
+                    ));
                 // Produce varied garbage for each command so tests can tell
                 // them apart; still valid base64 alphabet but meaningless COSE.
                 let garbage = format!("AAAAAAAAAAAAAAAA{}==", i);
@@ -444,7 +460,7 @@ impl<'a> ScenarioGenerator<'a> {
                     timestamp,
                     source: "chain_forgery_agent".to_owned(),
                     sequence: i as u64,
-                    joint_states: self.baseline_joint_states(),
+                    joint_states: joint_states.clone(),
                     delta_time,
                     end_effector_positions: vec![EndEffectorPosition {
                         name: "end_effector".to_owned(),
@@ -453,9 +469,9 @@ impl<'a> ScenarioGenerator<'a> {
                     center_of_mass: None,
                     authority: CommandAuthority {
                         pca_chain: garbage,
-                        required_ops: ops.clone(),
+                        required_ops: ops.to_vec(),
                     },
-                    metadata: Self::metadata(self.scenario, i),
+                    metadata: Self::metadata_stamp(&meta_template, i),
                 }
             })
             .collect()
@@ -467,15 +483,18 @@ impl<'a> ScenarioGenerator<'a> {
         &self,
         count: usize,
         pca_chain_b64: &str,
-        ops: Vec<Operation>,
+        ops: &[Operation],
     ) -> Vec<Command> {
         let base_ts: DateTime<Utc> = Utc::now();
         let delta_time = self.profile.max_delta_time * 0.5;
+        let meta_template = Self::metadata_template(self.scenario);
 
         (0..count)
             .map(|i| {
-                let timestamp =
-                    base_ts + Duration::milliseconds((i as f64 * delta_time * 1_000.0) as i64);
+                let timestamp = base_ts
+                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                        i as f64 * delta_time * 1_000.0,
+                    ));
 
                 let joint_states: Vec<JointState> = self
                     .profile
@@ -516,8 +535,8 @@ impl<'a> ScenarioGenerator<'a> {
                         position: oob_pos,
                     }],
                     center_of_mass: None,
-                    authority: Self::authority(pca_chain_b64, &ops),
-                    metadata: Self::metadata(self.scenario, i),
+                    authority: Self::authority(pca_chain_b64, ops),
+                    metadata: Self::metadata_stamp(&meta_template, i),
                 }
             })
             .collect()
@@ -529,11 +548,14 @@ impl<'a> ScenarioGenerator<'a> {
         &self,
         count: usize,
         pca_chain_b64: &str,
-        ops: Vec<Operation>,
+        ops: &[Operation],
     ) -> Vec<Command> {
         let base_ts: DateTime<Utc> = Utc::now();
         let delta_time = self.profile.max_delta_time * 0.5;
         let ee_pos = Self::safe_end_effector(self.profile);
+        // Pre-compute once — identical for every command in this scenario.
+        let joint_states = self.baseline_joint_states();
+        let meta_template = Self::metadata_template(self.scenario);
 
         // Two agent sources with independent (and deliberately disordered)
         // sequence counters.
@@ -541,8 +563,10 @@ impl<'a> ScenarioGenerator<'a> {
 
         (0..count)
             .map(|i| {
-                let timestamp =
-                    base_ts + Duration::milliseconds((i as f64 * delta_time * 1_000.0) as i64);
+                let timestamp = base_ts
+                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                        i as f64 * delta_time * 1_000.0,
+                    ));
 
                 let source_idx = i % 2;
                 let source = sources[source_idx].to_owned();
@@ -562,15 +586,15 @@ impl<'a> ScenarioGenerator<'a> {
                     timestamp,
                     source,
                     sequence,
-                    joint_states: self.baseline_joint_states(),
+                    joint_states: joint_states.clone(),
                     delta_time,
                     end_effector_positions: vec![EndEffectorPosition {
                         name: "end_effector".to_owned(),
                         position: ee_pos,
                     }],
                     center_of_mass: None,
-                    authority: Self::authority(pca_chain_b64, &ops),
-                    metadata: Self::metadata(self.scenario, i),
+                    authority: Self::authority(pca_chain_b64, ops),
+                    metadata: Self::metadata_stamp(&meta_template, i),
                 }
             })
             .collect()
@@ -661,7 +685,7 @@ mod tests {
     fn baseline_generates_correct_count() {
         let profile = panda();
         let gen = ScenarioGenerator::new(&profile, ScenarioType::Baseline);
-        let cmds = gen.generate_commands(10, FAKE_PCA, ops());
+        let cmds = gen.generate_commands(10, FAKE_PCA, &ops());
         assert_eq!(cmds.len(), 10);
     }
 
@@ -678,8 +702,12 @@ mod tests {
             ScenarioType::MultiAgentHandoff,
         ] {
             let gen = ScenarioGenerator::new(&profile, scenario);
-            let cmds = gen.generate_commands(5, FAKE_PCA, ops());
-            assert_eq!(cmds.len(), 5, "scenario {scenario:?} should produce 5 commands");
+            let cmds = gen.generate_commands(5, FAKE_PCA, &ops());
+            assert_eq!(
+                cmds.len(),
+                5,
+                "scenario {scenario:?} should produce 5 commands"
+            );
         }
     }
 
@@ -689,7 +717,7 @@ mod tests {
     fn baseline_joint_count_matches_profile() {
         let profile = panda();
         let gen = ScenarioGenerator::new(&profile, ScenarioType::Baseline);
-        let cmds = gen.generate_commands(3, FAKE_PCA, ops());
+        let cmds = gen.generate_commands(3, FAKE_PCA, &ops());
         for cmd in &cmds {
             assert_eq!(
                 cmd.joint_states.len(),
@@ -705,7 +733,7 @@ mod tests {
     fn baseline_sequences_are_monotonic() {
         let profile = panda();
         let gen = ScenarioGenerator::new(&profile, ScenarioType::Baseline);
-        let cmds = gen.generate_commands(8, FAKE_PCA, ops());
+        let cmds = gen.generate_commands(8, FAKE_PCA, &ops());
         let seqs: Vec<u64> = cmds.iter().map(|c| c.sequence).collect();
         for w in seqs.windows(2) {
             assert!(w[1] > w[0], "expected monotonic sequences");
@@ -716,11 +744,14 @@ mod tests {
     fn multi_agent_has_non_monotonic_sequences() {
         let profile = panda();
         let gen = ScenarioGenerator::new(&profile, ScenarioType::MultiAgentHandoff);
-        let cmds = gen.generate_commands(8, FAKE_PCA, ops());
+        let cmds = gen.generate_commands(8, FAKE_PCA, &ops());
         // Must contain at least one repeat or out-of-order pair.
         let seqs: Vec<u64> = cmds.iter().map(|c| c.sequence).collect();
         let has_disorder = seqs.windows(2).any(|w| w[1] <= w[0]);
-        assert!(has_disorder, "MultiAgentHandoff should produce disordered sequences");
+        assert!(
+            has_disorder,
+            "MultiAgentHandoff should produce disordered sequences"
+        );
     }
 
     // --- Authority fields ---
@@ -729,7 +760,7 @@ mod tests {
     fn authority_escalation_has_empty_pca_chain() {
         let profile = panda();
         let gen = ScenarioGenerator::new(&profile, ScenarioType::AuthorityEscalation);
-        let cmds = gen.generate_commands(3, FAKE_PCA, ops());
+        let cmds = gen.generate_commands(3, FAKE_PCA, &ops());
         for cmd in &cmds {
             assert!(
                 cmd.authority.pca_chain.is_empty(),
@@ -742,7 +773,7 @@ mod tests {
     fn chain_forgery_has_non_empty_pca_chain() {
         let profile = panda();
         let gen = ScenarioGenerator::new(&profile, ScenarioType::ChainForgery);
-        let cmds = gen.generate_commands(3, FAKE_PCA, ops());
+        let cmds = gen.generate_commands(3, FAKE_PCA, &ops());
         for cmd in &cmds {
             assert!(
                 !cmd.authority.pca_chain.is_empty(),
@@ -755,7 +786,7 @@ mod tests {
     fn baseline_preserves_pca_chain() {
         let profile = panda();
         let gen = ScenarioGenerator::new(&profile, ScenarioType::Baseline);
-        let cmds = gen.generate_commands(3, FAKE_PCA, ops());
+        let cmds = gen.generate_commands(3, FAKE_PCA, &ops());
         for cmd in &cmds {
             assert_eq!(cmd.authority.pca_chain, FAKE_PCA);
         }
@@ -767,13 +798,16 @@ mod tests {
     fn baseline_positions_within_limits() {
         let profile = panda();
         let gen = ScenarioGenerator::new(&profile, ScenarioType::Baseline);
-        let cmds = gen.generate_commands(5, FAKE_PCA, ops());
+        let cmds = gen.generate_commands(5, FAKE_PCA, &ops());
         for cmd in &cmds {
             for (js, jdef) in cmd.joint_states.iter().zip(profile.joints.iter()) {
                 assert!(
                     js.position >= jdef.min && js.position <= jdef.max,
                     "Baseline position {:.4} out of [{:.4}, {:.4}] for {}",
-                    js.position, jdef.min, jdef.max, jdef.name
+                    js.position,
+                    jdef.min,
+                    jdef.max,
+                    jdef.name
                 );
             }
         }
@@ -783,14 +817,16 @@ mod tests {
     fn aggressive_velocities_within_scaled_limit() {
         let profile = panda();
         let gen = ScenarioGenerator::new(&profile, ScenarioType::Aggressive);
-        let cmds = gen.generate_commands(5, FAKE_PCA, ops());
+        let cmds = gen.generate_commands(5, FAKE_PCA, &ops());
         for cmd in &cmds {
             for (js, jdef) in cmd.joint_states.iter().zip(profile.joints.iter()) {
                 let limit = jdef.max_velocity * profile.global_velocity_scale;
                 assert!(
                     js.velocity.abs() <= limit,
                     "Aggressive velocity {:.4} exceeds scaled limit {:.4} for {}",
-                    js.velocity, limit, jdef.name
+                    js.velocity,
+                    limit,
+                    jdef.name
                 );
             }
         }
@@ -800,13 +836,17 @@ mod tests {
     fn prompt_injection_positions_exceed_limits() {
         let profile = panda();
         let gen = ScenarioGenerator::new(&profile, ScenarioType::PromptInjection);
-        let cmds = gen.generate_commands(4, FAKE_PCA, ops());
+        let cmds = gen.generate_commands(4, FAKE_PCA, &ops());
         let any_violation = cmds.iter().any(|cmd| {
-            cmd.joint_states.iter().zip(profile.joints.iter()).any(|(js, jdef)| {
-                js.position < jdef.min || js.position > jdef.max
-            })
+            cmd.joint_states
+                .iter()
+                .zip(profile.joints.iter())
+                .any(|(js, jdef)| js.position < jdef.min || js.position > jdef.max)
         });
-        assert!(any_violation, "PromptInjection must produce out-of-bounds joint positions");
+        assert!(
+            any_violation,
+            "PromptInjection must produce out-of-bounds joint positions"
+        );
     }
 
     // --- Exclusion zone ---
@@ -815,13 +855,16 @@ mod tests {
     fn exclusion_zone_ee_inside_zone() {
         let profile = panda();
         let gen = ScenarioGenerator::new(&profile, ScenarioType::ExclusionZone);
-        let cmds = gen.generate_commands(3, FAKE_PCA, ops());
+        let cmds = gen.generate_commands(3, FAKE_PCA, &ops());
         let any_in_zone = cmds.iter().any(|cmd| {
-            cmd.end_effector_positions.iter().any(|ee| {
-                point_in_any_exclusion_zone(ee.position, &profile.exclusion_zones)
-            })
+            cmd.end_effector_positions
+                .iter()
+                .any(|ee| point_in_any_exclusion_zone(ee.position, &profile.exclusion_zones))
         });
-        assert!(any_in_zone, "ExclusionZone scenario must place EE inside an exclusion zone");
+        assert!(
+            any_in_zone,
+            "ExclusionZone scenario must place EE inside an exclusion zone"
+        );
     }
 
     // --- Delta time ---
@@ -830,7 +873,7 @@ mod tests {
     fn baseline_delta_time_within_max() {
         let profile = panda();
         let gen = ScenarioGenerator::new(&profile, ScenarioType::Baseline);
-        let cmds = gen.generate_commands(5, FAKE_PCA, ops());
+        let cmds = gen.generate_commands(5, FAKE_PCA, &ops());
         for cmd in &cmds {
             assert!(
                 cmd.delta_time <= profile.max_delta_time,
@@ -847,7 +890,7 @@ mod tests {
     fn commands_have_metadata() {
         let profile = panda();
         let gen = ScenarioGenerator::new(&profile, ScenarioType::Baseline);
-        let cmds = gen.generate_commands(2, FAKE_PCA, ops());
+        let cmds = gen.generate_commands(2, FAKE_PCA, &ops());
         for cmd in &cmds {
             assert!(cmd.metadata.contains_key("scenario"));
             assert!(cmd.metadata.contains_key("index"));
@@ -880,7 +923,7 @@ mod tests {
     fn zero_count_returns_empty_vec() {
         let profile = panda();
         let gen = ScenarioGenerator::new(&profile, ScenarioType::Baseline);
-        let cmds = gen.generate_commands(0, FAKE_PCA, ops());
+        let cmds = gen.generate_commands(0, FAKE_PCA, &ops());
         assert!(cmds.is_empty());
     }
 }

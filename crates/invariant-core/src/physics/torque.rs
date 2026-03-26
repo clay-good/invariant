@@ -1,5 +1,7 @@
 // P3: Joint torque limits check
 
+use std::collections::HashMap;
+
 use crate::models::command::JointState;
 use crate::models::profile::JointDefinition;
 use crate::models::verdict::CheckResult;
@@ -9,14 +11,14 @@ use crate::models::verdict::CheckResult;
 /// Each [`JointState`] is matched to a [`JointDefinition`] by name.
 /// A joint state with no matching definition is treated as a violation.
 /// If `joints` is empty the check passes trivially.
-pub fn check_torque_limits(
-    joints: &[JointState],
-    definitions: &[JointDefinition],
-) -> CheckResult {
+pub fn check_torque_limits(joints: &[JointState], definitions: &[JointDefinition]) -> CheckResult {
+    let def_map: HashMap<&str, &JointDefinition> =
+        definitions.iter().map(|d| (d.name.as_str(), d)).collect();
+
     let mut violations: Vec<String> = Vec::new();
 
     for state in joints {
-        match definitions.iter().find(|d| d.name == state.name) {
+        match def_map.get(state.name.as_str()) {
             None => {
                 violations.push(format!(
                     "'{}': unknown joint (no definition found)",
@@ -25,10 +27,7 @@ pub fn check_torque_limits(
             }
             Some(def) => {
                 if !state.effort.is_finite() {
-                    violations.push(format!(
-                        "'{}': effort is NaN or infinite",
-                        state.name
-                    ));
+                    violations.push(format!("'{}': effort is NaN or infinite", state.name));
                 } else if state.effort.abs() > def.max_torque {
                     violations.push(format!(
                         "'{}': |effort| {:.6} exceeds max_torque {:.6}",

@@ -4,7 +4,11 @@ mod commands;
 pub mod key_file;
 
 #[derive(Parser)]
-#[command(name = "invariant", version, about = "Cryptographic command-validation firewall for AI-controlled robots")]
+#[command(
+    name = "invariant",
+    version,
+    about = "Cryptographic command-validation firewall for AI-controlled robots"
+)]
 struct Cli {
     #[command(subcommand)]
     command: Commands,

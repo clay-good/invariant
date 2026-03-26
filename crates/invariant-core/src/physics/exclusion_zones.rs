@@ -10,13 +10,15 @@ use crate::models::verdict::CheckResult;
 /// For Sphere zones, a point is inside when the Euclidean distance to the center
 /// is `<= radius`.
 ///
-/// If `end_effectors` or `zones` is empty the check passes trivially — there is
-/// nothing to violate.
+/// If `zones` is empty the check passes trivially — there is nothing to violate.
+/// If `zones` is non-empty but `end_effectors` is empty the check fails — positions
+/// are required to verify that no zone is entered.
 pub fn check_exclusion_zones(
     end_effectors: &[EndEffectorPosition],
     zones: &[ExclusionZone],
 ) -> CheckResult {
-    if end_effectors.is_empty() || zones.is_empty() {
+    // No zones defined: nothing to violate.
+    if zones.is_empty() {
         return CheckResult {
             name: "exclusion_zones".to_string(),
             category: "physics".to_string(),
@@ -25,10 +27,21 @@ pub fn check_exclusion_zones(
         };
     }
 
+    // Zones are defined but no positions provided: cannot verify — fail.
+    if end_effectors.is_empty() {
+        return CheckResult {
+            name: "exclusion_zones".to_string(),
+            category: "physics".to_string(),
+            passed: false,
+            details: "end_effector_positions required for exclusion zone check".to_string(),
+        };
+    }
+
     let mut violations: Vec<String> = Vec::new();
 
     for ee in end_effectors {
-        if !ee.position[0].is_finite() || !ee.position[1].is_finite() || !ee.position[2].is_finite() {
+        if !ee.position[0].is_finite() || !ee.position[1].is_finite() || !ee.position[2].is_finite()
+        {
             violations.push(format!(
                 "'{}': position contains NaN or infinite value",
                 ee.name
@@ -39,18 +52,16 @@ pub fn check_exclusion_zones(
             match zone {
                 ExclusionZone::Aabb { name, min, max } => {
                     if point_in_aabb(&ee.position, min, max) {
-                        violations.push(format!(
-                            "'{}' inside AABB zone '{}'",
-                            ee.name, name
-                        ));
+                        violations.push(format!("'{}' inside AABB zone '{}'", ee.name, name));
                     }
                 }
-                ExclusionZone::Sphere { name, center, radius } => {
+                ExclusionZone::Sphere {
+                    name,
+                    center,
+                    radius,
+                } => {
                     if point_in_sphere(&ee.position, center, *radius) {
-                        violations.push(format!(
-                            "'{}' inside sphere zone '{}'",
-                            ee.name, name
-                        ));
+                        violations.push(format!("'{}' inside sphere zone '{}'", ee.name, name));
                     }
                 }
             }

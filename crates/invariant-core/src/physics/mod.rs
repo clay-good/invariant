@@ -1,13 +1,13 @@
-pub mod joint_limits;
-pub mod velocity;
-pub mod torque;
 pub mod acceleration;
-pub mod workspace;
-pub mod exclusion_zones;
-pub mod self_collision;
 pub mod delta_time;
-pub mod stability;
+pub mod exclusion_zones;
+pub mod joint_limits;
 pub mod proximity;
+pub mod self_collision;
+pub mod stability;
+pub mod torque;
+pub mod velocity;
+pub mod workspace;
 
 #[cfg(test)]
 mod tests;
@@ -27,6 +27,19 @@ pub fn run_all_checks(
     profile: &RobotProfile,
     previous_joints: Option<&[JointState]>,
 ) -> Vec<CheckResult> {
+    // Reject commands with empty joint_states — a command without any joint
+    // data would vacuously pass all joint-based checks (P1-P4, P10), allowing
+    // an empty command to bypass the entire safety envelope.
+    if command.joint_states.is_empty() && !profile.joints.is_empty() {
+        let fail = CheckResult {
+            name: "empty_joint_states".to_string(),
+            category: "physics".to_string(),
+            passed: false,
+            details: "command contains no joint states but profile defines joints".to_string(),
+        };
+        return vec![fail; 10];
+    }
+
     vec![
         // P1: Joint position limits
         joint_limits::check_joint_limits(&command.joint_states, &profile.joints),
@@ -46,10 +59,7 @@ pub fn run_all_checks(
             command.delta_time,
         ),
         // P5: Workspace bounds
-        workspace::check_workspace_bounds(
-            &command.end_effector_positions,
-            &profile.workspace,
-        ),
+        workspace::check_workspace_bounds(&command.end_effector_positions, &profile.workspace),
         // P6: Exclusion zones
         exclusion_zones::check_exclusion_zones(
             &command.end_effector_positions,
@@ -64,10 +74,7 @@ pub fn run_all_checks(
         // P8: Delta time
         delta_time::check_delta_time(command.delta_time, profile.max_delta_time),
         // P9: Stability (ZMP)
-        stability::check_stability(
-            command.center_of_mass.as_ref(),
-            profile.stability.as_ref(),
-        ),
+        stability::check_stability(command.center_of_mass.as_ref(), profile.stability.as_ref()),
         // P10: Proximity velocity scaling
         proximity::check_proximity_velocity(
             &command.joint_states,
