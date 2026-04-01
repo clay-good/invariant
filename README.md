@@ -256,6 +256,17 @@ cargo clippy -- -D warnings   # zero warnings
 ./examples/demo.sh            # five-minute proof
 ```
 
+### Install globally
+
+```sh
+cargo install --path crates/invariant-cli
+invariant --help
+```
+
+This installs the `invariant` binary to `~/.cargo/bin/`. Make sure `~/.cargo/bin` is on your `PATH`.
+
+> **Note:** `cargo install invariant` from crates.io will NOT work — there's an unrelated library with that name. Always install from the local path.
+
 ---
 
 ## Attribution
