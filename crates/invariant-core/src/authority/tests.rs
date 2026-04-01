@@ -85,10 +85,7 @@ mod tests {
     fn wildcard_prefix_match_boundary() {
         let granted = op("actuate:*");
         assert!(operation_matches(&granted, &op("actuate:arm")));
-        assert!(operation_matches(
-            &granted,
-            &op("actuate:arm:shoulder")
-        ));
+        assert!(operation_matches(&granted, &op("actuate:arm:shoulder")));
         assert!(!operation_matches(&granted, &op("read:sensor")));
     }
 
@@ -299,7 +296,10 @@ mod tests {
     #[test]
     fn decode_payload_invalid_cose_bytes() {
         let result = decode_pca_payload(&[0xFF, 0x00, 0x01], 0);
-        assert!(matches!(result, Err(AuthorityError::CoseError { hop: 0, .. })));
+        assert!(matches!(
+            result,
+            Err(AuthorityError::CoseError { hop: 0, .. })
+        ));
     }
 
     // ───── S4-P3-01: tampered claim detection (via chain verification) ─────
@@ -344,8 +344,11 @@ mod tests {
         let (sk2, vk2) = make_keypair();
 
         let claim0 = make_pca("alice", "key-1", &["actuate:arm:*", "actuate:leg:*"]);
-        let claim1 =
-            make_pca("alice", "key-2", &["actuate:arm:shoulder", "actuate:arm:elbow"]);
+        let claim1 = make_pca(
+            "alice",
+            "key-2",
+            &["actuate:arm:shoulder", "actuate:arm:elbow"],
+        );
 
         let signed0 = sign_pca(&claim0, &sk1).unwrap();
         let signed1 = sign_pca(&claim1, &sk2).unwrap();
@@ -376,8 +379,7 @@ mod tests {
         let signed2 = sign_pca(&claim2, &sk3).unwrap();
 
         let keys = trusted_keys(&[("key-1", &vk1), ("key-2", &vk2), ("key-3", &vk3)]);
-        let chain =
-            verify_chain(&[signed0, signed1, signed2], &keys, Utc::now()).unwrap();
+        let chain = verify_chain(&[signed0, signed1, signed2], &keys, Utc::now()).unwrap();
 
         assert_eq!(*chain.final_ops(), ops(&["actuate:arm:shoulder"]));
     }
@@ -591,6 +593,22 @@ mod tests {
 
         let required = vec![op("actuate:arm:shoulder")];
         assert!(check_required_ops(&chain, &required).is_ok());
+    }
+
+    #[test]
+    fn check_required_ops_empty_required_returns_ok() {
+        // Finding 67: check_required_ops with an empty required slice must
+        // return Ok(()) — vacuous truth means every operation is covered when
+        // no operations are required.  The guard against empty required_ops
+        // lives one layer up in the validator's run_authority(), not here.
+        let (sk, vk) = make_keypair();
+        let claim = make_pca("alice", "key-1", &["actuate:arm:*"]);
+        let signed = sign_pca(&claim, &sk).unwrap();
+
+        let keys = trusted_keys(&[("key-1", &vk)]);
+        let chain = verify_chain(&[signed], &keys, Utc::now()).unwrap();
+
+        assert!(check_required_ops(&chain, &[]).is_ok());
     }
 
     #[test]

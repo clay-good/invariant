@@ -70,6 +70,11 @@ impl Watchdog {
     ///
     /// `now_ms` is the monotonic time at construction (establishes the first
     /// heartbeat baseline).
+    ///
+    /// `timeout_ms = 0` is a valid construction argument but has no practical
+    /// use — the watchdog would trigger on the first `check()` call. Callers
+    /// that treat 0 as "watchdog disabled" must gate on that value themselves
+    /// and skip constructing a `Watchdog` entirely (see `serve.rs`).
     pub fn new(
         timeout_ms: u64,
         safe_stop_profile: SafeStopProfile,
@@ -101,11 +106,15 @@ impl Watchdog {
     ///
     /// Resets the watchdog timer. Returns an error if the watchdog has
     /// already been triggered (one-way transition — operator reset required).
+    ///
+    /// Non-monotonic timestamps (now_ms < last_heartbeat_ms) are silently
+    /// ignored: the timer is not advanced backward, preventing a clock
+    /// regression from artificially extending the deadline.
     pub fn heartbeat(&mut self, now_ms: u64) -> Result<(), WatchdogError> {
         if self.state == WatchdogState::Triggered {
             return Err(WatchdogError::AlreadyTriggered);
         }
-        self.last_heartbeat_ms = now_ms;
+        self.last_heartbeat_ms = now_ms.max(self.last_heartbeat_ms);
         Ok(())
     }
 
@@ -372,13 +381,7 @@ mod tests {
         let sk = make_signing_key();
         let vk = sk.verifying_key();
 
-        let mut wd = Watchdog::new(
-            50,
-            default_safe_stop(),
-            sk,
-            "test-kid".into(),
-            0,
-        );
+        let mut wd = Watchdog::new(50, default_safe_stop(), sk, "test-kid".into(), 0);
 
         let now_utc = Utc::now();
         let cmd = wd.check(100, now_utc).unwrap().unwrap();
@@ -427,9 +430,9 @@ mod tests {
 
         // Check target positions match profile.
         assert_eq!(cmd.joint_states[0].position, -0.5); // left_hip
-        assert_eq!(cmd.joint_states[1].position, 1.0);  // left_knee
+        assert_eq!(cmd.joint_states[1].position, 1.0); // left_knee
         assert_eq!(cmd.joint_states[2].position, -0.5); // right_hip
-        assert_eq!(cmd.joint_states[3].position, 1.0);  // right_knee
+        assert_eq!(cmd.joint_states[3].position, 1.0); // right_knee
     }
 
     #[test]
@@ -440,16 +443,75 @@ mod tests {
             target_joint_positions: HashMap::new(),
         };
 
-        let mut wd = Watchdog::new(
-            50,
-            profile,
-            make_signing_key(),
-            "kid".into(),
-            0,
-        );
+        let mut wd = Watchdog::new(50, profile, make_signing_key(), "kid".into(), 0);
 
         let cmd = wd.check(100, Utc::now()).unwrap().unwrap();
         assert!(cmd.joint_states.is_empty());
+    }
+
+    // -----------------------------------------------------------------------
+    // Finding 19: clock regression (now_ms < last_heartbeat_ms)
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn check_with_clock_regression_does_not_trigger() {
+        // The watchdog uses saturating_sub to compute elapsed time.
+        // If the caller supplies now_ms < last_heartbeat_ms (e.g. due to a
+        // monotonic clock reset or a test misconfiguration), saturating_sub
+        // clamps the elapsed time to 0, which is <= any timeout.
+        // Defined behavior: the watchdog remains Armed and returns None.
+        // This prevents a spurious safe-stop on clock regression.
+        let mut wd = make_watchdog(50, /*now_ms=*/ 100);
+
+        // Simulate a clock regression: check at t=50, which is before the
+        // heartbeat baseline of t=100.
+        let result = wd.check(50, Utc::now()).unwrap();
+        assert!(
+            result.is_none(),
+            "clock regression must not trigger the watchdog"
+        );
+        assert_eq!(
+            wd.state(),
+            WatchdogState::Armed,
+            "watchdog must remain Armed after clock regression"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Finding 49 + 75: timeout_ms=0 triggers on first check() call
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn timeout_zero_triggers_on_first_check() {
+        // timeout_ms=0 is a valid construction argument (not rejected at the
+        // library level) but has no practical use: elapsed = now_ms - 0 = any
+        // positive value, which is immediately > 0, so check() fires on the
+        // very first call.
+        //
+        // Callers that want "watchdog disabled" semantics must gate on
+        // timeout_ms=0 themselves and skip constructing a Watchdog entirely
+        // (see serve.rs). The library does not validate this because the
+        // caller context determines whether 0 is a programming error.
+        let mut wd = make_watchdog(0, 0);
+        assert_eq!(wd.state(), WatchdogState::Armed);
+
+        // Even at now_ms=0 (no elapsed time), elapsed = 0, which is NOT > 0
+        // (the check is strict: elapsed > timeout_ms), so the watchdog does
+        // NOT trigger at exactly t=0 with timeout_ms=0.
+        let result = wd.check(0, Utc::now()).unwrap();
+        assert!(
+            result.is_none(),
+            "at t=0 with timeout_ms=0 elapsed==0 which is NOT > 0, so no trigger"
+        );
+        assert_eq!(wd.state(), WatchdogState::Armed);
+
+        // At t=1 (elapsed=1 > timeout_ms=0), it must trigger.
+        let result = wd.check(1, Utc::now()).unwrap();
+        assert!(
+            result.is_some(),
+            "timeout_ms=0 must trigger on first check with now_ms=1 (elapsed=1 > 0)"
+        );
+        assert_eq!(wd.state(), WatchdogState::Triggered);
     }
 
     #[test]
@@ -464,13 +526,7 @@ mod tests {
             target_joint_positions: targets,
         };
 
-        let mut wd = Watchdog::new(
-            100,
-            profile,
-            make_signing_key(),
-            "kid".into(),
-            0,
-        );
+        let mut wd = Watchdog::new(100, profile, make_signing_key(), "kid".into(), 0);
 
         let cmd = wd.check(200, Utc::now()).unwrap().unwrap();
         assert_eq!(cmd.joint_states.len(), 2);

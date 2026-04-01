@@ -2,6 +2,7 @@ use base64::{engine::general_purpose::STANDARD, Engine};
 use ed25519_dalek::{SigningKey, VerifyingKey};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use std::fmt::Write as FmtWrite;
 use std::path::Path;
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -24,10 +25,7 @@ pub fn validate_kid(kid: &str) -> Result<(), String> {
         return Err("KID must not be empty".to_string());
     }
     if kid.len() > 128 {
-        return Err(format!(
-            "KID must be at most 128 bytes, got {}",
-            kid.len()
-        ));
+        return Err(format!("KID must be at most 128 bytes, got {}", kid.len()));
     }
     for ch in kid.chars() {
         if !matches!(ch, 'a'..='z' | 'A'..='Z' | '0'..='9' | '-' | '_' | '.' | ':') {
@@ -51,11 +49,12 @@ pub fn fingerprint(kf: &KeyFile) -> Result<String, String> {
         .decode(&kf.public_key)
         .map_err(|e| format!("base64 decode public_key: {e}"))?;
     let digest = Sha256::digest(&pk_bytes);
-    let hex: String = digest[..16]
-        .iter()
-        .map(|b| format!("{b:02x}"))
-        .collect();
-    Ok(format!("SHA256:{hex}"))
+    let mut hex = String::with_capacity(7 + 32); // "SHA256:" + 32 hex chars (16 bytes)
+    hex.push_str("SHA256:");
+    for b in &digest[..16] {
+        write!(hex, "{b:02x}").unwrap();
+    }
+    Ok(hex)
 }
 
 /// Create a new KeyFile containing only the public key (secret_key set to None).
@@ -69,21 +68,34 @@ pub fn export_public_key(kf: &KeyFile) -> KeyFile {
 
 /// Write a key file to disk.
 ///
-/// On Unix, if the key file contains a `secret_key`, the file permissions are
-/// set to `0600` (owner read/write only).  On non-Unix platforms, falls back to
-/// the regular [`write_key_file`] behaviour.
+/// On Unix, if the key file contains a `secret_key`, the file is created
+/// directly with mode `0600` (owner read/write only) via `OpenOptions::mode`
+/// so that restricted permissions are established atomically — there is no
+/// window between file creation and `chmod` where another process could read
+/// the private key.  On non-Unix platforms, or for public-key-only files,
+/// falls back to the regular [`write_key_file`] behaviour.
 pub fn write_key_file_secure(path: &Path, kf: &KeyFile) -> Result<(), String> {
-    write_key_file(path, kf)?;
+    let json = serde_json::to_string_pretty(kf)
+        .map_err(|e| format!("failed to serialize key file: {e}"))?;
 
     #[cfg(unix)]
     if kf.secret_key.is_some() {
-        use std::os::unix::fs::PermissionsExt;
-        let perms = std::fs::Permissions::from_mode(0o600);
-        std::fs::set_permissions(path, perms)
-            .map_err(|e| format!("failed to set permissions on {}: {e}", path.display()))?;
+        use std::io::Write;
+        use std::os::unix::fs::OpenOptionsExt;
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .mode(0o600)
+            .open(path)
+            .map_err(|e| format!("failed to write key file {}: {e}", path.display()))?;
+        file.write_all(json.as_bytes())
+            .map_err(|e| format!("failed to write key file {}: {e}", path.display()))?;
+        return Ok(());
     }
 
-    Ok(())
+    std::fs::write(path, json)
+        .map_err(|e| format!("failed to write key file {}: {e}", path.display()))
 }
 
 /// Load and parse a key file from disk.
@@ -102,8 +114,12 @@ pub fn load_key_file(path: &Path) -> Result<KeyFile, String> {
 /// Extract a SigningKey + VerifyingKey + kid from a key file with a secret_key.
 pub fn load_signing_key(kf: &KeyFile) -> Result<(SigningKey, VerifyingKey, String), String> {
     let sk_b64 = kf.secret_key.as_ref().ok_or("key file has no secret_key")?;
-    let sk_bytes = STANDARD.decode(sk_b64).map_err(|e| format!("base64 decode secret_key: {e}"))?;
-    let sk_arr: [u8; 32] = sk_bytes.try_into().map_err(|_| "secret_key must be 32 bytes")?;
+    let sk_bytes = STANDARD
+        .decode(sk_b64)
+        .map_err(|e| format!("base64 decode secret_key: {e}"))?;
+    let sk_arr: [u8; 32] = sk_bytes
+        .try_into()
+        .map_err(|_| "secret_key must be 32 bytes")?;
     let sk = SigningKey::from_bytes(&sk_arr);
     let vk = sk.verifying_key();
     Ok((sk, vk, kf.kid.clone()))
@@ -111,8 +127,12 @@ pub fn load_signing_key(kf: &KeyFile) -> Result<(SigningKey, VerifyingKey, Strin
 
 /// Extract a VerifyingKey + kid from a key file (only public_key needed).
 pub fn load_verifying_key(kf: &KeyFile) -> Result<(VerifyingKey, String), String> {
-    let pk_bytes = STANDARD.decode(&kf.public_key).map_err(|e| format!("base64 decode public_key: {e}"))?;
-    let pk_arr: [u8; 32] = pk_bytes.try_into().map_err(|_| "public_key must be 32 bytes")?;
+    let pk_bytes = STANDARD
+        .decode(&kf.public_key)
+        .map_err(|e| format!("base64 decode public_key: {e}"))?;
+    let pk_arr: [u8; 32] = pk_bytes
+        .try_into()
+        .map_err(|_| "public_key must be 32 bytes")?;
     let vk = VerifyingKey::from_bytes(&pk_arr).map_err(|e| format!("invalid public key: {e}"))?;
     Ok((vk, kf.kid.clone()))
 }
@@ -207,7 +227,8 @@ mod tests {
     fn load_key_file_rejects_invalid_kid() {
         // A key file whose KID contains an invalid character (space) must be
         // rejected even though the JSON itself is valid.
-        let kf_json = r#"{"kid":"bad kid here","public_key":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="}"#;
+        let kf_json =
+            r#"{"kid":"bad kid here","public_key":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="}"#;
         let tmp = write_to_tempfile(kf_json);
         let result = load_key_file(tmp.path());
         assert!(result.is_err());
@@ -331,8 +352,9 @@ mod tests {
                 }
             }
         }
-        let invalid_bytes = invalid_bytes
-            .expect("should find at least one invalid compressed Ed25519 point in the search space");
+        let invalid_bytes = invalid_bytes.expect(
+            "should find at least one invalid compressed Ed25519 point in the search space",
+        );
         let kf = KeyFile {
             kid: "k".to_string(),
             public_key: STANDARD.encode(invalid_bytes),
@@ -455,13 +477,18 @@ mod tests {
     fn fingerprint_returns_sha256_prefixed_hex() {
         let kf = make_key_file_with_secret();
         let fp = fingerprint(&kf).unwrap();
-        assert!(fp.starts_with("SHA256:"), "fingerprint should start with 'SHA256:': {fp}");
+        assert!(
+            fp.starts_with("SHA256:"),
+            "fingerprint should start with 'SHA256:': {fp}"
+        );
         // Prefix (7 chars) + 32 hex chars = 39 total
         assert_eq!(fp.len(), 39, "fingerprint should be 39 chars long: {fp}");
         // Hex portion must be lowercase hex
         let hex_part = &fp[7..];
         assert!(
-            hex_part.chars().all(|c| c.is_ascii_hexdigit() && !c.is_uppercase()),
+            hex_part
+                .chars()
+                .all(|c| c.is_ascii_hexdigit() && !c.is_uppercase()),
             "hex portion must be lowercase hex: {hex_part}"
         );
     }
@@ -585,8 +612,7 @@ mod tests {
     #[test]
     fn write_key_file_secure_bad_path_returns_err() {
         let kf = make_key_file_pubkey_only();
-        let result =
-            write_key_file_secure(std::path::Path::new("/nonexistent/dir/key.json"), &kf);
+        let result = write_key_file_secure(std::path::Path::new("/nonexistent/dir/key.json"), &kf);
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("failed to write key file"));
     }

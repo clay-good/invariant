@@ -1,0 +1,42 @@
+[package]
+name = "invariant-fuzz-targets"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+invariant-core = { path = "../crates/invariant-core" }
+invariant-fuzz = { path = "../crates/invariant-fuzz" }
+serde_json = "1.0"
+chrono = { version = "0.4", features = ["serde"] }
+ed25519-dalek = { version = "2.1", features = ["rand_core"] }
+rand = "0.8"
+base64 = "0.22"
+
+# Prevent this from interfering with the workspace
+[workspace]
+members = ["."]
+
+[[bin]]
+name = "fuzz_command_json"
+path = "fuzz_targets/fuzz_command_json.rs"
+doc = false
+
+[[bin]]
+name = "fuzz_pca_chain"
+path = "fuzz_targets/fuzz_pca_chain.rs"
+doc = false
+
+[[bin]]
+name = "fuzz_profile_json"
+path = "fuzz_targets/fuzz_profile_json.rs"
+doc = false
+
+[[bin]]
+name = "fuzz_validate_pipeline"
+path = "fuzz_targets/fuzz_validate_pipeline.rs"
+doc = false

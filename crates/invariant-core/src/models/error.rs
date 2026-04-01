@@ -12,7 +12,13 @@ pub enum AuthorityError {
     #[error("serialization failed: {reason}")]
     SerializationError { reason: String },
 
-    #[error("A1 provenance violation: p_0 differs at hop {hop} (expected {expected:?}, got {got:?})")]
+    // Principal names are redacted in the Display output to avoid leaking
+    // identity information in logs, API responses, or rejection verdicts.
+    // The full values are retained in the struct fields for internal
+    // diagnostics — access them directly when a detailed audit trail is needed.
+    #[error(
+        "A1 provenance violation: p_0 differs at hop {hop} (expected <redacted>, got <redacted>)"
+    )]
     ProvenanceMismatch {
         hop: usize,
         expected: String,
@@ -25,7 +31,9 @@ pub enum AuthorityError {
     #[error("A3 continuity: signature verification failed at hop {hop}: {reason}")]
     SignatureInvalid { hop: usize, reason: String },
 
-    #[error("A3 continuity: unknown key id {kid:?} at hop {hop}")]
+    // kid is redacted in the Display output for the same reason as
+    // ProvenanceMismatch above.
+    #[error("A3 continuity: unknown key id <redacted> at hop {hop}")]
     UnknownKeyId { hop: usize, kid: String },
 
     #[error("PCA at hop {hop} has expired (exp={exp})")]
@@ -57,9 +65,7 @@ pub enum ValidationError {
         value: f64,
     },
 
-    #[error(
-        "global_velocity_scale {0} is out of range — must be in (0.0, 1.0]"
-    )]
+    #[error("global_velocity_scale {0} is out of range — must be in (0.0, 1.0]")]
     VelocityScaleOutOfRange(f64),
 
     #[error(
@@ -81,6 +87,25 @@ pub enum ValidationError {
         "workspace bounds min ({min:?}) is not strictly less than max ({max:?}) in all dimensions"
     )]
     WorkspaceBoundsInverted { min: [f64; 3], max: [f64; 3] },
+
+    #[error("joint '{name}': {field} must be a finite number (not NaN or infinite)")]
+    JointLimitNotFinite { name: String, field: &'static str },
+
+    #[error(
+        "workspace bounds axis {axis}: coordinate must be a finite number (not NaN or infinite)"
+    )]
+    WorkspaceBoundsNotFinite { axis: usize },
+
+    #[error("proximity zone '{name}': radius {radius} must be a finite positive number")]
+    ProximityRadiusInvalid { name: String, radius: f64 },
+
+    #[error("profile contains duplicate joint name: '{name}'")]
+    DuplicateJointName { name: String },
+
+    #[error(
+        "min_collision_distance must be strictly positive when collision_pairs is non-empty, got {value}"
+    )]
+    InvalidMinCollisionDistance { value: f64 },
 }
 
 /// Types that can be checked for semantic correctness after construction.

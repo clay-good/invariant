@@ -45,10 +45,8 @@ pub fn build_signed_actuation_command(
         signer_kid,
     };
 
-    let payload_json = serde_json::to_vec(&payload).map_err(|e| {
-        ValidatorError::Serialization {
-            reason: e.to_string(),
-        }
+    let payload_json = serde_json::to_vec(&payload).map_err(|e| ValidatorError::Serialization {
+        reason: e.to_string(),
     })?;
 
     use ed25519_dalek::Signer;
@@ -150,14 +148,45 @@ mod tests {
             velocity: 0.0,
             effort: 0.0,
         }];
-        let now = Utc::now();
+        // Use a fixed timestamp so that this test is fully deterministic and
+        // cannot produce different signatures across invocations due to clock
+        // drift between the two build_signed_actuation_command calls.
+        let fixed_ts = chrono::DateTime::from_timestamp(1_000_000_000, 0).unwrap();
 
         let cmd1 =
-            build_signed_actuation_command("sha256:x", 1, &joints, now, &sk, "k").unwrap();
+            build_signed_actuation_command("sha256:x", 1, &joints, fixed_ts, &sk, "k").unwrap();
         let cmd2 =
-            build_signed_actuation_command("sha256:x", 1, &joints, now, &sk, "k").unwrap();
+            build_signed_actuation_command("sha256:x", 1, &joints, fixed_ts, &sk, "k").unwrap();
 
         assert_eq!(cmd1.actuation_signature, cmd2.actuation_signature);
     }
 
+    #[test]
+    fn empty_joint_states_signature_verifiable() {
+        // Finding 63: build_signed_actuation_command must accept an empty
+        // joint_states slice and produce a signature that verifies correctly.
+        let sk = generate_keypair(&mut OsRng);
+        let vk = sk.verifying_key();
+
+        let fixed_ts = chrono::DateTime::from_timestamp(1_000_000_000, 0).unwrap();
+        let cmd =
+            build_signed_actuation_command("sha256:empty", 0, &[], fixed_ts, &sk, "kid-empty")
+                .unwrap();
+
+        assert!(cmd.joint_states.is_empty());
+        assert_eq!(cmd.command_hash, "sha256:empty");
+
+        // Reconstruct the payload from the returned command and verify the signature.
+        let payload = ActuationPayload {
+            command_hash: &cmd.command_hash,
+            command_sequence: cmd.command_sequence,
+            joint_states: &cmd.joint_states,
+            timestamp: cmd.timestamp,
+            signer_kid: &cmd.signer_kid,
+        };
+        let payload_json = serde_json::to_vec(&payload).unwrap();
+        let sig_bytes = STANDARD.decode(&cmd.actuation_signature).unwrap();
+        let signature = ed25519_dalek::Signature::from_slice(&sig_bytes).unwrap();
+        assert!(vk.verify(&payload_json, &signature).is_ok());
+    }
 }

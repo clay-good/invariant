@@ -1,5 +1,7 @@
 // P2: Joint velocity limits check
 
+use std::collections::HashMap;
+
 use crate::models::command::JointState;
 use crate::models::profile::JointDefinition;
 use crate::models::verdict::CheckResult;
@@ -15,10 +17,13 @@ pub fn check_velocity_limits(
     definitions: &[JointDefinition],
     global_velocity_scale: f64,
 ) -> CheckResult {
+    let def_map: HashMap<&str, &JointDefinition> =
+        definitions.iter().map(|d| (d.name.as_str(), d)).collect();
+
     let mut violations: Vec<String> = Vec::new();
 
     for state in joints {
-        match definitions.iter().find(|d| d.name == state.name) {
+        match def_map.get(state.name.as_str()) {
             None => {
                 violations.push(format!(
                     "'{}': unknown joint (no definition found)",
@@ -28,10 +33,7 @@ pub fn check_velocity_limits(
             Some(def) => {
                 let limit = def.max_velocity * global_velocity_scale;
                 if !state.velocity.is_finite() {
-                    violations.push(format!(
-                        "'{}': velocity is NaN or infinite",
-                        state.name
-                    ));
+                    violations.push(format!("'{}': velocity is NaN or infinite", state.name));
                 } else if state.velocity.abs() > limit {
                     violations.push(format!(
                         "'{}': |velocity| {:.6} exceeds limit {:.6} (max_velocity {:.6} * scale {:.6})",

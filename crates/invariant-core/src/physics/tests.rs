@@ -2,8 +2,8 @@
 mod tests {
     use crate::models::command::{EndEffectorPosition, JointState};
     use crate::models::profile::{
-        CollisionPair, ExclusionZone, JointDefinition, JointType, ProximityZone,
-        StabilityConfig, WorkspaceBounds,
+        CollisionPair, ExclusionZone, JointDefinition, JointType, ProximityZone, StabilityConfig,
+        WorkspaceBounds,
     };
     use crate::physics::*;
 
@@ -42,7 +42,10 @@ mod tests {
     #[test]
     fn p1_all_within_limits() {
         let defs = vec![joint_def("j1", -1.0, 1.0), joint_def("j2", -2.0, 2.0)];
-        let joints = vec![joint_state("j1", 0.0, 0.0, 0.0), joint_state("j2", 1.5, 0.0, 0.0)];
+        let joints = vec![
+            joint_state("j1", 0.0, 0.0, 0.0),
+            joint_state("j2", 1.5, 0.0, 0.0),
+        ];
         let r = joint_limits::check_joint_limits(&joints, &defs);
         assert!(r.passed);
         assert_eq!(r.name, "joint_limits");
@@ -97,7 +100,10 @@ mod tests {
     #[test]
     fn p1_multiple_violations() {
         let defs = vec![joint_def("j1", -1.0, 1.0), joint_def("j2", -0.5, 0.5)];
-        let joints = vec![joint_state("j1", 2.0, 0.0, 0.0), joint_state("j2", -1.0, 0.0, 0.0)];
+        let joints = vec![
+            joint_state("j1", 2.0, 0.0, 0.0),
+            joint_state("j2", -1.0, 0.0, 0.0),
+        ];
         let r = joint_limits::check_joint_limits(&joints, &defs);
         assert!(!r.passed);
         assert!(r.details.contains("j1"));
@@ -240,7 +246,7 @@ mod tests {
         // j2 appears in current but not in previous — should be flagged as violation
         let prev = vec![joint_state("j1", 0.0, 1.0, 0.0)];
         let curr = vec![
-            joint_state("j1", 0.0, 1.1, 0.0), // accel = 10, within 25
+            joint_state("j1", 0.0, 1.1, 0.0),   // accel = 10, within 25
             joint_state("j2", 0.0, 100.0, 0.0), // no prev data — flagged
         ];
         let r = acceleration::check_acceleration_limits(&curr, Some(&prev), &defs, 0.01);
@@ -256,6 +262,30 @@ mod tests {
         let curr = vec![joint_state("j1", 0.0, 4.7, 0.0)]; // accel = 0.3/0.01 = 30.0
         let r = acceleration::check_acceleration_limits(&curr, Some(&prev), &defs, 0.01);
         assert!(!r.passed); // deceleration also checked
+    }
+
+    #[test]
+    fn p4_vanishing_joint_absent_from_current_command() {
+        // Finding 40: a joint present in previous_joints but absent from the
+        // current command must be reported as a violation with a message
+        // containing 'absent from current command'.
+        let defs = vec![joint_def("j1", -1.0, 1.0), joint_def("j2", -1.0, 1.0)];
+        let prev = vec![
+            joint_state("j1", 0.0, 1.0, 0.0),
+            joint_state("j2", 0.0, 1.0, 0.0),
+        ];
+        // j2 is absent from the current command.
+        let curr = vec![joint_state("j1", 0.0, 1.1, 0.0)];
+        let r = acceleration::check_acceleration_limits(&curr, Some(&prev), &defs, 0.01);
+        assert!(
+            !r.passed,
+            "result must fail when j2 vanishes from current command"
+        );
+        assert!(
+            r.details.contains("absent from current command"),
+            "details must mention 'absent from current command': {}",
+            r.details
+        );
     }
 
     // ── P5: Workspace bounds ────────────────────────────────────────────
@@ -306,13 +336,16 @@ mod tests {
     }
 
     #[test]
-    fn p5_empty_end_effectors_passes() {
+    fn p5_empty_end_effectors_fails() {
+        // Workspace bounds are always defined; no positions means the check
+        // cannot be satisfied — fail instead of passing trivially.
         let ws = WorkspaceBounds::Aabb {
             min: [-2.0, -2.0, 0.0],
             max: [2.0, 2.0, 2.5],
         };
         let r = workspace::check_workspace_bounds(&[], &ws);
-        assert!(r.passed);
+        assert!(!r.passed);
+        assert!(r.details.contains("end_effector_positions required"));
     }
 
     // ── P6: Exclusion zones ─────────────────────────────────────────────
@@ -386,21 +419,26 @@ mod tests {
     }
 
     #[test]
-    fn p6_empty_end_effectors_passes() {
+    fn p6_empty_end_effectors_fails_when_zones_defined() {
+        // Zones are defined; no positions means we cannot verify — fail.
         let zones = vec![ExclusionZone::Aabb {
             name: "operator".into(),
             min: [0.0, 0.0, 0.0],
             max: [1.0, 1.0, 1.0],
         }];
         let r = exclusion_zones::check_exclusion_zones(&[], &zones);
-        assert!(r.passed);
+        assert!(!r.passed);
+        assert!(r.details.contains("end_effector_positions required"));
     }
 
     // ── P7: Self-collision ──────────────────────────────────────────────
 
     #[test]
     fn p7_far_apart_passes() {
-        let pairs = vec![CollisionPair { link_a: "left_hand".into(), link_b: "head".into() }];
+        let pairs = vec![CollisionPair {
+            link_a: "left_hand".into(),
+            link_b: "head".into(),
+        }];
         let ees = vec![ee("left_hand", 0.0, 0.0, 0.0), ee("head", 1.0, 1.0, 1.0)];
         let r = self_collision::check_self_collision(&ees, &pairs, 0.01);
         assert!(r.passed);
@@ -408,7 +446,10 @@ mod tests {
 
     #[test]
     fn p7_too_close_fails() {
-        let pairs = vec![CollisionPair { link_a: "left_hand".into(), link_b: "head".into() }];
+        let pairs = vec![CollisionPair {
+            link_a: "left_hand".into(),
+            link_b: "head".into(),
+        }];
         let ees = vec![ee("left_hand", 0.0, 0.0, 0.0), ee("head", 0.005, 0.0, 0.0)];
         let r = self_collision::check_self_collision(&ees, &pairs, 0.01);
         assert!(!r.passed);
@@ -418,7 +459,10 @@ mod tests {
 
     #[test]
     fn p7_exactly_at_threshold() {
-        let pairs = vec![CollisionPair { link_a: "a".into(), link_b: "b".into() }];
+        let pairs = vec![CollisionPair {
+            link_a: "a".into(),
+            link_b: "b".into(),
+        }];
         // Distance = 0.01 exactly, which is the threshold. < 0.01 fails, >= passes.
         let ees = vec![ee("a", 0.0, 0.0, 0.0), ee("b", 0.01, 0.0, 0.0)];
         let r = self_collision::check_self_collision(&ees, &pairs, 0.01);
@@ -427,7 +471,10 @@ mod tests {
 
     #[test]
     fn p7_missing_link_flagged() {
-        let pairs = vec![CollisionPair { link_a: "left_hand".into(), link_b: "missing".into() }];
+        let pairs = vec![CollisionPair {
+            link_a: "left_hand".into(),
+            link_b: "missing".into(),
+        }];
         let ees = vec![ee("left_hand", 0.0, 0.0, 0.0)];
         let r = self_collision::check_self_collision(&ees, &pairs, 0.01);
         assert!(!r.passed); // missing link is now flagged as violation
@@ -439,6 +486,18 @@ mod tests {
         let ees = vec![ee("left_hand", 0.0, 0.0, 0.0)];
         let r = self_collision::check_self_collision(&ees, &[], 0.01);
         assert!(r.passed);
+    }
+
+    #[test]
+    fn p7_empty_end_effectors_fails_when_pairs_defined() {
+        // Collision pairs are defined; no positions means we cannot verify — fail.
+        let pairs = vec![CollisionPair {
+            link_a: "left_hand".into(),
+            link_b: "head".into(),
+        }];
+        let r = self_collision::check_self_collision(&[], &pairs, 0.05);
+        assert!(!r.passed);
+        assert!(r.details.contains("end_effector_positions required"));
     }
 
     // ── P8: Delta time ──────────────────────────────────────────────────
@@ -486,9 +545,7 @@ mod tests {
     #[test]
     fn p9_inside_polygon() {
         let config = StabilityConfig {
-            support_polygon: vec![
-                [-0.15, -0.1], [0.15, -0.1], [0.15, 0.1], [-0.15, 0.1],
-            ],
+            support_polygon: vec![[-0.15, -0.1], [0.15, -0.1], [0.15, 0.1], [-0.15, 0.1]],
             com_height_estimate: 0.9,
             enabled: true,
         };
@@ -500,9 +557,7 @@ mod tests {
     #[test]
     fn p9_outside_polygon() {
         let config = StabilityConfig {
-            support_polygon: vec![
-                [-0.15, -0.1], [0.15, -0.1], [0.15, 0.1], [-0.15, 0.1],
-            ],
+            support_polygon: vec![[-0.15, -0.1], [0.15, -0.1], [0.15, 0.1], [-0.15, 0.1]],
             com_height_estimate: 0.9,
             enabled: true,
         };
@@ -542,7 +597,9 @@ mod tests {
     }
 
     #[test]
-    fn p9_degenerate_polygon_passes() {
+    fn p9_degenerate_polygon_fails() {
+        // A polygon with fewer than 3 vertices is degenerate and must fail
+        // the stability check (fail-closed behaviour, Finding 39).
         let config = StabilityConfig {
             support_polygon: vec![[0.0, 0.0], [1.0, 0.0]], // only 2 vertices
             com_height_estimate: 0.9,
@@ -550,7 +607,18 @@ mod tests {
         };
         let com = [0.5, 0.0, 0.9];
         let r = stability::check_stability(Some(&com), Some(&config));
-        assert!(r.passed);
+        assert!(!r.passed);
+        assert!(r.details.contains("degenerate support polygon"));
+
+        // A polygon with zero vertices must also fail.
+        let config_empty = StabilityConfig {
+            support_polygon: vec![],
+            com_height_estimate: 0.9,
+            enabled: true,
+        };
+        let r2 = stability::check_stability(Some(&com), Some(&config_empty));
+        assert!(!r2.passed);
+        assert!(r2.details.contains("degenerate support polygon"));
     }
 
     #[test]
@@ -687,11 +755,11 @@ mod tests {
 
     #[test]
     fn run_all_checks_returns_10_results() {
-        use chrono::Utc;
-        use std::collections::HashMap;
+        use crate::models::authority::Operation;
         use crate::models::command::{Command, CommandAuthority};
         use crate::models::profile::{RobotProfile, SafeStopProfile, WorkspaceBounds};
-        use crate::models::authority::Operation;
+        use chrono::Utc;
+        use std::collections::HashMap;
 
         let profile = RobotProfile {
             name: "test".into(),
@@ -710,6 +778,13 @@ mod tests {
             global_velocity_scale: 1.0,
             watchdog_timeout_ms: 50,
             safe_stop_profile: SafeStopProfile::default(),
+            profile_signature: None,
+            profile_signer_kid: None,
+            config_sequence: None,
+            real_world_margins: None,
+            task_envelope: None,
+            locomotion: None,
+            end_effectors: vec![],
         };
 
         let command = Command {
@@ -725,40 +800,51 @@ mod tests {
                 required_ops: vec![Operation::new("actuate:j1").unwrap()],
             },
             metadata: HashMap::new(),
+            locomotion_state: None,
+            end_effector_forces: vec![],
+            estimated_payload_kg: None,
         };
 
         let results = crate::physics::run_all_checks(&command, &profile, None);
-        assert_eq!(results.len(), 10);
+        assert_eq!(results.len(), 11);
 
         // All should pass for this valid command
         for result in &results {
-            assert!(result.passed, "check '{}' failed: {}", result.name, result.details);
+            assert!(
+                result.passed,
+                "check '{}' failed: {}",
+                result.name, result.details
+            );
             assert_eq!(result.category, "physics");
         }
 
         // Verify the names are correct and in order
         let names: Vec<&str> = results.iter().map(|r| r.name.as_str()).collect();
-        assert_eq!(names, vec![
-            "joint_limits",
-            "velocity_limits",
-            "torque_limits",
-            "acceleration_limits",
-            "workspace_bounds",
-            "exclusion_zones",
-            "self_collision",
-            "delta_time",
-            "stability",
-            "proximity_velocity",
-        ]);
+        assert_eq!(
+            names,
+            vec![
+                "joint_limits",
+                "velocity_limits",
+                "torque_limits",
+                "acceleration_limits",
+                "workspace_bounds",
+                "exclusion_zones",
+                "self_collision",
+                "delta_time",
+                "stability",
+                "proximity_velocity",
+                "iso15066_force_limits",
+            ]
+        );
     }
 
     #[test]
     fn run_all_checks_detects_failures() {
-        use chrono::Utc;
-        use std::collections::HashMap;
+        use crate::models::authority::Operation;
         use crate::models::command::{Command, CommandAuthority};
         use crate::models::profile::{RobotProfile, SafeStopProfile, WorkspaceBounds};
-        use crate::models::authority::Operation;
+        use chrono::Utc;
+        use std::collections::HashMap;
 
         let profile = RobotProfile {
             name: "test".into(),
@@ -781,6 +867,13 @@ mod tests {
             global_velocity_scale: 1.0,
             watchdog_timeout_ms: 50,
             safe_stop_profile: SafeStopProfile::default(),
+            profile_signature: None,
+            profile_signer_kid: None,
+            config_sequence: None,
+            real_world_margins: None,
+            task_envelope: None,
+            locomotion: None,
+            end_effectors: vec![],
         };
 
         let command = Command {
@@ -788,7 +881,7 @@ mod tests {
             source: "test".into(),
             sequence: 1,
             joint_states: vec![joint_state("j1", 2.0, 6.0, 60.0)], // position, velocity, torque all bad
-            delta_time: 0.5, // exceeds max_delta_time
+            delta_time: 0.5,                                       // exceeds max_delta_time
             end_effector_positions: vec![ee("left_hand", 0.0, 0.0, 1.0)], // inside exclusion zone
             center_of_mass: None,
             authority: CommandAuthority {
@@ -796,10 +889,13 @@ mod tests {
                 required_ops: vec![Operation::new("actuate:j1").unwrap()],
             },
             metadata: HashMap::new(),
+            locomotion_state: None,
+            end_effector_forces: vec![],
+            estimated_payload_kg: None,
         };
 
         let results = crate::physics::run_all_checks(&command, &profile, None);
-        assert_eq!(results.len(), 10);
+        assert_eq!(results.len(), 11);
 
         // P1: joint_limits — position 2.0 > max 1.0 => fail
         assert!(!results[0].passed);
@@ -821,6 +917,91 @@ mod tests {
         assert!(results[8].passed);
         // P10: proximity — no zones => pass
         assert!(results[9].passed);
+    }
+
+    // ── Finding 10: run_all_checks with acceleration failure ────────────
+
+    #[test]
+    fn run_all_checks_acceleration_failure_with_previous_joints() {
+        // run_all_checks must exercise the acceleration check (P4) when
+        // previous_joints is Some.  This test provides previous and current
+        // joints whose velocity delta / delta_time exceeds max_acceleration.
+        //
+        // joint_def max_acceleration = 25.0 rad/s²
+        // prev velocity = 0.0 rad/s, curr velocity = 10.0 rad/s
+        // delta_time = 0.01 s
+        // estimated acceleration = |10.0 - 0.0| / 0.01 = 1000 rad/s² >> 25
+        use crate::models::authority::Operation;
+        use crate::models::command::{Command, CommandAuthority, EndEffectorPosition};
+        use crate::models::profile::{RobotProfile, SafeStopProfile, WorkspaceBounds};
+        use chrono::Utc;
+        use std::collections::HashMap;
+
+        let profile = RobotProfile {
+            name: "accel-test".into(),
+            version: "1.0.0".into(),
+            joints: vec![joint_def("j1", -3.15, 3.15)], // max_acceleration=25.0
+            workspace: WorkspaceBounds::Aabb {
+                min: [-2.0, -2.0, 0.0],
+                max: [2.0, 2.0, 3.0],
+            },
+            exclusion_zones: vec![],
+            proximity_zones: vec![],
+            collision_pairs: vec![],
+            stability: None,
+            locomotion: None,
+            end_effectors: vec![],
+            max_delta_time: 0.1,
+            min_collision_distance: 0.01,
+            global_velocity_scale: 1.0,
+            watchdog_timeout_ms: 50,
+            safe_stop_profile: SafeStopProfile::default(),
+            profile_signature: None,
+            profile_signer_kid: None,
+            config_sequence: None,
+            real_world_margins: None,
+            task_envelope: None,
+        };
+
+        let command = Command {
+            timestamp: Utc::now(),
+            source: "test".into(),
+            sequence: 1,
+            joint_states: vec![joint_state("j1", 0.0, 10.0, 0.0)], // velocity = 10 rad/s
+            delta_time: 0.01,
+            end_effector_positions: vec![EndEffectorPosition {
+                name: "ee".into(),
+                position: [0.0, 0.0, 1.0],
+            }],
+            center_of_mass: None,
+            authority: CommandAuthority {
+                pca_chain: String::new(),
+                required_ops: vec![Operation::new("actuate:j1").unwrap()],
+            },
+            metadata: HashMap::new(),
+            locomotion_state: None,
+            end_effector_forces: vec![],
+            estimated_payload_kg: None,
+        };
+
+        let prev_joints = vec![joint_state("j1", 0.0, 0.0, 0.0)]; // velocity = 0 rad/s
+
+        let results = crate::physics::run_all_checks(&command, &profile, Some(&prev_joints));
+        assert_eq!(results.len(), 11);
+
+        // P4: acceleration_limits — 1000 rad/s² >> 25 => fail
+        let accel_check = &results[3];
+        assert_eq!(accel_check.name, "acceleration_limits");
+        assert!(
+            !accel_check.passed,
+            "acceleration_limits must fail: {}",
+            accel_check.details
+        );
+        assert!(
+            accel_check.details.contains("exceeds max_acceleration"),
+            "details should mention the violation: {}",
+            accel_check.details
+        );
     }
 
     // ── NaN/Inf guard tests (R3-01) ─────────────────────────────────────
@@ -947,7 +1128,10 @@ mod tests {
 
     #[test]
     fn p7_nan_position_fails() {
-        let pairs = vec![CollisionPair { link_a: "a".into(), link_b: "b".into() }];
+        let pairs = vec![CollisionPair {
+            link_a: "a".into(),
+            link_b: "b".into(),
+        }];
         let ees = vec![ee("a", f64::NAN, 0.0, 0.0), ee("b", 1.0, 0.0, 0.0)];
         let r = self_collision::check_self_collision(&ees, &pairs, 0.01);
         assert!(!r.passed);
@@ -968,8 +1152,16 @@ mod tests {
 
     #[test]
     fn p8_nan_max_delta_time_fails() {
+        // Finding 41: a non-finite max_delta_time must produce a specific
+        // "profile configuration is invalid" message, not the generic
+        // "exceeds max_delta_time" message.
         let r = delta_time::check_delta_time(0.01, f64::NAN);
         assert!(!r.passed);
+        assert!(
+            r.details.contains("profile configuration is invalid"),
+            "expected 'profile configuration is invalid' in details, got: {}",
+            r.details
+        );
     }
 
     #[test]

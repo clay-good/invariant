@@ -20,7 +20,22 @@ pub fn check_delta_time(delta_time: f64, max_delta_time: f64) -> CheckResult {
         };
     }
 
-    if !max_delta_time.is_finite() || delta_time > max_delta_time {
+    // Guard against a misconfigured profile where max_delta_time is NaN or
+    // infinite — this is a profile error, not a command error.  Report it
+    // distinctly so operators can identify and correct the profile.
+    if !max_delta_time.is_finite() {
+        return CheckResult {
+            name: "delta_time".to_string(),
+            category: "physics".to_string(),
+            passed: false,
+            details: format!(
+                "max_delta_time {} is not finite; profile configuration is invalid",
+                max_delta_time
+            ),
+        };
+    }
+
+    if delta_time > max_delta_time {
         return CheckResult {
             name: "delta_time".to_string(),
             category: "physics".to_string(),

@@ -1,5 +1,7 @@
 // P4: Joint acceleration limits check
 
+use std::collections::{HashMap, HashSet};
+
 use crate::models::command::JointState;
 use crate::models::profile::JointDefinition;
 use crate::models::verdict::CheckResult;
@@ -48,11 +50,19 @@ pub fn check_acceleration_limits(
         };
     }
 
+    let def_map: HashMap<&str, &JointDefinition> =
+        definitions.iter().map(|d| (d.name.as_str(), d)).collect();
+    let prev_map: HashMap<&str, &JointState> = prev.iter().map(|p| (p.name.as_str(), p)).collect();
+
+    // Build a set of current joint names for O(1) lookup in the vanishing-joint
+    // check below.
+    let current_names: HashSet<&str> = joints.iter().map(|s| s.name.as_str()).collect();
+
     let mut violations: Vec<String> = Vec::new();
 
     for state in joints {
         // Unknown joint — cannot evaluate; report as violation.
-        let Some(def) = definitions.iter().find(|d| d.name == state.name) else {
+        let Some(def) = def_map.get(state.name.as_str()) else {
             violations.push(format!(
                 "'{}': unknown joint (no definition found)",
                 state.name
@@ -61,7 +71,7 @@ pub fn check_acceleration_limits(
         };
 
         // No previous entry for this joint — flag as violation.
-        let Some(prev_state) = prev.iter().find(|p| p.name == state.name) else {
+        let Some(prev_state) = prev_map.get(state.name.as_str()) else {
             violations.push(format!(
                 "'{}': no previous joint state (cannot compute acceleration)",
                 state.name
@@ -71,10 +81,7 @@ pub fn check_acceleration_limits(
 
         // Reject non-finite velocities.
         if !state.velocity.is_finite() || !prev_state.velocity.is_finite() {
-            violations.push(format!(
-                "'{}': velocity is NaN or infinite",
-                state.name
-            ));
+            violations.push(format!("'{}': velocity is NaN or infinite", state.name));
             continue;
         }
 
@@ -83,6 +90,18 @@ pub fn check_acceleration_limits(
             violations.push(format!(
                 "'{}': acceleration {:.6} exceeds max_acceleration {:.6}",
                 state.name, accel, def.max_acceleration
+            ));
+        }
+    }
+
+    // Check for joints that were present in the previous command but have
+    // vanished from the current one. A vanishing joint cannot be checked for
+    // acceleration compliance and may indicate a dropped or malformed command.
+    for prev_state in prev {
+        if !current_names.contains(prev_state.name.as_str()) {
+            violations.push(format!(
+                "'{}': joint was present in previous command but is absent from current command",
+                prev_state.name
             ));
         }
     }

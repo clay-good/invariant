@@ -1,5 +1,6 @@
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::collections::HashMap;
+use std::collections::HashSet;
 
 use super::error::{Validate, ValidationError};
 
@@ -29,7 +30,6 @@ pub enum SafeStopStrategy {
     ImmediateStop,
     ParkPosition,
 }
-
 
 // --- CollisionPair (P3-6): named struct instead of positional [String; 2] ---
 
@@ -79,6 +79,10 @@ pub struct RobotProfile {
     pub collision_pairs: Vec<CollisionPair>,
     #[serde(default)]
     pub stability: Option<StabilityConfig>,
+    /// Locomotion safety limits for legged/mobile robots (P15–P20).
+    /// Optional; locomotion checks are skipped when absent.
+    #[serde(default)]
+    pub locomotion: Option<LocomotionConfig>,
     pub max_delta_time: f64,
     #[serde(default = "default_min_collision_distance")]
     pub min_collision_distance: f64,
@@ -88,6 +92,27 @@ pub struct RobotProfile {
     pub watchdog_timeout_ms: u64,
     #[serde(default)]
     pub safe_stop_profile: SafeStopProfile,
+    /// End-effector configuration for manipulation safety checks (P11–P14).
+    /// Optional; manipulation checks are skipped when absent.
+    #[serde(default)]
+    pub end_effectors: Vec<EndEffectorConfig>,
+    /// Ed25519 signature over the canonical profile JSON (Section 8.3).
+    /// Used to verify profile integrity at load time.
+    #[serde(default)]
+    pub profile_signature: Option<String>,
+    /// Key identifier of the profile signer (Section 8.3).
+    #[serde(default)]
+    pub profile_signer_kid: Option<String>,
+    /// Monotonic config version for anti-rollback (Section 8.3).
+    #[serde(default)]
+    pub config_sequence: Option<u64>,
+    /// Per-joint real-world margins for sim-to-real transfer (Section 18.2).
+    /// When present, Guardian mode tightens limits by these fractions.
+    #[serde(default)]
+    pub real_world_margins: Option<RealWorldMargins>,
+    /// Task-scoped safety envelope overrides (Section 17).
+    #[serde(default)]
+    pub task_envelope: Option<TaskEnvelope>,
 }
 
 fn default_min_collision_distance() -> f64 {
@@ -148,6 +173,25 @@ impl Validate for RobotProfile {
             return Err(ValidationError::VelocityScaleOutOfRange(
                 self.global_velocity_scale,
             ));
+        }
+
+        // min_collision_distance must be strictly positive when collision_pairs
+        // are defined; a value of 0.0 (or negative) would never flag any
+        // collision and silently disable the self-collision check.
+        if !self.collision_pairs.is_empty() && self.min_collision_distance <= 0.0 {
+            return Err(ValidationError::InvalidMinCollisionDistance {
+                value: self.min_collision_distance,
+            });
+        }
+
+        // Reject duplicate joint names before per-joint validation.
+        let mut joint_names: HashSet<&str> = HashSet::new();
+        for joint in &self.joints {
+            if !joint_names.insert(joint.name.as_str()) {
+                return Err(ValidationError::DuplicateJointName {
+                    name: joint.name.clone(),
+                });
+            }
         }
 
         // Validate workspace bounds
@@ -211,6 +255,31 @@ impl Validate for JointDefinition {
                 value: self.max_acceleration,
             });
         }
+        // Reject NaN/infinite values which would vacuously pass all comparisons.
+        if !self.min.is_finite() || !self.max.is_finite() {
+            return Err(ValidationError::JointLimitNotFinite {
+                name: self.name.clone(),
+                field: "min/max",
+            });
+        }
+        if !self.max_velocity.is_finite() {
+            return Err(ValidationError::JointLimitNotFinite {
+                name: self.name.clone(),
+                field: "max_velocity",
+            });
+        }
+        if !self.max_torque.is_finite() {
+            return Err(ValidationError::JointLimitNotFinite {
+                name: self.name.clone(),
+                field: "max_torque",
+            });
+        }
+        if !self.max_acceleration.is_finite() {
+            return Err(ValidationError::JointLimitNotFinite {
+                name: self.name.clone(),
+                field: "max_acceleration",
+            });
+        }
         Ok(())
     }
 }
@@ -227,6 +296,11 @@ impl Validate for WorkspaceBounds {
     fn validate(&self) -> Result<(), ValidationError> {
         match self {
             WorkspaceBounds::Aabb { min, max } => {
+                for (i, (lo, hi)) in min.iter().zip(max.iter()).enumerate() {
+                    if !lo.is_finite() || !hi.is_finite() {
+                        return Err(ValidationError::WorkspaceBoundsNotFinite { axis: i });
+                    }
+                }
                 if min[0] >= max[0] || min[1] >= max[1] || min[2] >= max[2] {
                     return Err(ValidationError::WorkspaceBoundsInverted {
                         min: *min,
@@ -280,9 +354,16 @@ impl Validate for ProximityZone {
         match self {
             ProximityZone::Sphere {
                 name,
+                radius,
                 velocity_scale,
                 ..
             } => {
+                if !radius.is_finite() || *radius <= 0.0 {
+                    return Err(ValidationError::ProximityRadiusInvalid {
+                        name: name.clone(),
+                        radius: *radius,
+                    });
+                }
                 if *velocity_scale <= 0.0 || *velocity_scale > 1.0 {
                     return Err(ValidationError::ProximityVelocityScaleOutOfRange {
                         name: name.clone(),
@@ -293,6 +374,23 @@ impl Validate for ProximityZone {
         }
         Ok(())
     }
+}
+
+/// Locomotion safety limits for legged/mobile robots (P15–P20).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct LocomotionConfig {
+    /// Maximum allowed magnitude of the base linear velocity vector (m/s). (P15)
+    pub max_locomotion_velocity: f64,
+    /// Maximum allowed commanded step length (m). (P19)
+    pub max_step_length: f64,
+    /// Minimum required foot clearance height above ground for swing feet (m). (P16)
+    pub min_foot_clearance: f64,
+    /// Maximum allowed magnitude of the ground reaction force per foot (N). (P17)
+    pub max_ground_reaction_force: f64,
+    /// Coulomb friction coefficient for friction-cone constraint (dimensionless). (P18)
+    pub friction_coefficient: f64,
+    /// Maximum allowed heading (yaw) rate (rad/s). (P20)
+    pub max_heading_rate: f64,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -329,4 +427,67 @@ impl Default for SafeStopProfile {
 
 fn default_max_decel() -> f64 {
     5.0
+}
+
+/// Per-end-effector safety limits for manipulation checks (P11–P14).
+///
+/// The `name` field is matched against `EndEffectorForce.name` in the command.
+/// Only end-effectors listed here are subject to manipulation limit checks.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct EndEffectorConfig {
+    /// Name identifying this end-effector (matched against command data by name).
+    pub name: String,
+    /// Maximum allowable Cartesian force magnitude in Newtons (P11).
+    pub max_force_n: f64,
+    /// Maximum allowable grasp (closing) force in Newtons (P12, upper bound).
+    pub max_grasp_force_n: f64,
+    /// Minimum required grasp force in Newtons when grasping (P12, lower bound).
+    pub min_grasp_force_n: f64,
+    /// Maximum allowable rate of change of force magnitude, in N/s (P13).
+    pub max_force_rate_n_per_s: f64,
+    /// Maximum payload mass in kilograms that this end-effector may carry (P14).
+    pub max_payload_kg: f64,
+}
+
+/// Per-joint safety margins for sim-to-real transfer (Section 18.2).
+///
+/// In Guardian mode, limits are tightened by these fractions.
+/// E.g. `velocity_margin: 0.15` means real-world velocity limit is
+/// `max_velocity * (1 - 0.15)`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RealWorldMargins {
+    #[serde(default)]
+    pub position_margin: f64,
+    #[serde(default)]
+    pub velocity_margin: f64,
+    #[serde(default)]
+    pub torque_margin: f64,
+    #[serde(default)]
+    pub acceleration_margin: f64,
+}
+
+/// Task-scoped safety envelope (Section 17).
+///
+/// Overrides base profile limits for a specific task. Envelopes can only
+/// *tighten* limits, never loosen them.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TaskEnvelope {
+    pub name: String,
+    #[serde(default)]
+    pub description: String,
+    /// Velocity scale override — must be <= profile's `global_velocity_scale`.
+    #[serde(default)]
+    pub global_velocity_scale: Option<f64>,
+    /// Maximum payload override in kg.
+    #[serde(default)]
+    pub max_payload_kg: Option<f64>,
+    /// End-effector force limit override in Newtons.
+    #[serde(default)]
+    pub end_effector_force_limit_n: Option<f64>,
+    /// Tighter workspace bounds (must be contained within profile workspace).
+    #[serde(default)]
+    pub workspace: Option<WorkspaceBounds>,
+    /// Additional exclusion zones (added on top of profile zones, never removed).
+    #[serde(default)]
+    pub additional_exclusion_zones: Vec<ExclusionZone>,
 }

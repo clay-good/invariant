@@ -1,6 +1,6 @@
 pub mod chain;
-pub mod operations;
 pub mod crypto;
+pub mod operations;
 
 // Re-export data types so `use invariant_core::authority::Pca` resolves
 // unambiguously (P1-5: resolves module-name collision between the chain-

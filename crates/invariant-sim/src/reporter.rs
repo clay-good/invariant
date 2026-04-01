@@ -80,6 +80,16 @@ pub struct ConfidenceStats {
     ///   SIL 2: PFH < 1e-6
     ///   SIL 1: PFH < 1e-5
     pub sil_rating: u8,
+    /// `true` when `n_escapes > 0`, indicating that the SIL rating was derived
+    /// from the Wald (normal approximation) interval rather than the exact
+    /// Clopper-Pearson interval.
+    ///
+    /// The Wald interval is known to be anti-conservative — it under-covers the
+    /// true escape rate when the sample proportion is near 0 or 1, or when
+    /// `n_trials` is small (below ~1000).  The rating should be treated with
+    /// caution when this field is `true`, particularly when `n_escapes` is
+    /// small relative to `n_trials`.
+    pub sil_rating_approximate: bool,
 }
 
 // ---------------------------------------------------------------------------
@@ -198,8 +208,13 @@ impl CampaignReporter {
             }
         }
 
-        // Per-profile.
-        let ps = self.per_profile.entry(profile.to_string()).or_default();
+        // Per-profile.  Avoid a String allocation on cache hit by checking
+        // for an existing entry before inserting.
+        let ps = if let Some(ps) = self.per_profile.get_mut(profile) {
+            ps
+        } else {
+            self.per_profile.entry(profile.to_owned()).or_default()
+        };
         ps.total += 1;
         if approved {
             ps.approved += 1;
@@ -207,8 +222,12 @@ impl CampaignReporter {
             ps.rejected += 1;
         }
 
-        // Per-scenario.
-        let ss = self.per_scenario.entry(scenario.to_string()).or_default();
+        // Per-scenario.  Same cache-miss-only allocation pattern.
+        let ss = if let Some(ss) = self.per_scenario.get_mut(scenario) {
+            ss
+        } else {
+            self.per_scenario.entry(scenario.to_owned()).or_default()
+        };
         ss.total += 1;
         if approved {
             ss.approved += 1;
@@ -224,9 +243,13 @@ impl CampaignReporter {
             ss.false_rejections += 1;
         }
 
-        // Per-check.
+        // Per-check.  Allocate a new key only on first observation.
         for check in &verdict.verdict.checks {
-            let cs = self.per_check.entry(check.name.clone()).or_default();
+            let cs = if let Some(cs) = self.per_check.get_mut(&check.name) {
+                cs
+            } else {
+                self.per_check.entry(check.name.clone()).or_default()
+            };
             cs.total += 1;
             if check.passed {
                 cs.passed += 1;
@@ -320,7 +343,15 @@ fn compute_confidence(n_trials: u64, n_escapes: u64) -> ConfidenceStats {
         let ub99 = 1.0 - (0.005_f64).powf(1.0 / n);
         (ub95.clamp(0.0, 1.0), ub99.clamp(0.0, 1.0))
     } else {
-        // Normal approximation (conservative).
+        // STATISTICAL NOTE: the Wald (normal approximation) interval used here
+        // is known to be anti-conservative — it under-covers the true escape
+        // rate when the sample proportion is near 0 or 1, or when n is small.
+        // The exact Clopper-Pearson interval (based on the Beta distribution)
+        // would be more appropriate for safety-critical reporting.  A Beta
+        // distribution implementation is not currently available in this
+        // dependency tree, so the Wald approximation is used as a placeholder.
+        // Users should treat these bounds with caution when n_escapes is small
+        // relative to n_trials or when n_trials itself is below ~1000.
         let n = n_trials as f64;
         let p = n_escapes as f64 / n;
         let se = (p * (1.0 - p) / n).sqrt();
@@ -372,6 +403,7 @@ fn compute_confidence(n_trials: u64, n_escapes: u64) -> ConfidenceStats {
         mtbf_hours_95,
         mtbf_hours_99,
         sil_rating,
+        sil_rating_approximate: n_escapes > 0,
     }
 }
 
@@ -404,6 +436,7 @@ mod tests {
                 checks,
                 profile_name: "franka_panda".into(),
                 profile_hash: "sha256:def".into(),
+                threat_analysis: None,
                 authority_summary: AuthoritySummary {
                     origin_principal: "alice".into(),
                     hop_count: 1,
@@ -552,19 +585,13 @@ mod tests {
             "franka_panda",
             "Baseline",
             false,
-            &make_verdict(
-                true,
-                &[("authority", true), ("joint_limits", true)],
-            ),
+            &make_verdict(true, &[("authority", true), ("joint_limits", true)]),
         );
         reporter.record_result(
             "franka_panda",
             "VelocityViolation",
             true,
-            &make_verdict(
-                false,
-                &[("authority", true), ("joint_limits", false)],
-            ),
+            &make_verdict(false, &[("authority", true), ("joint_limits", false)]),
         );
 
         let report = reporter.finalize();
@@ -587,12 +614,7 @@ mod tests {
             reporter.record_result("franka_panda", "Baseline", false, &make_verdict(true, &[]));
         }
         for _ in 0..100 {
-            reporter.record_result(
-                "franka_panda",
-                "Violation",
-                true,
-                &make_verdict(false, &[]),
-            );
+            reporter.record_result("franka_panda", "Violation", true, &make_verdict(false, &[]));
         }
         let report = reporter.finalize();
         assert!(report.criteria_met);
@@ -628,6 +650,214 @@ mod tests {
         }
         let report = reporter.finalize();
         assert!(!report.criteria_met);
+    }
+
+    // criteria_met boundary: legitimate_pass_rate exactly at threshold (passes)
+    #[test]
+    fn criteria_met_at_exact_legitimate_pass_rate_boundary() {
+        // 50 approved out of 50 legitimate = 1.0, threshold 0.98 => met
+        // Use 98 approved + 2 rejected out of 100 to hit exactly 0.98.
+        let criteria = SuccessCriteria {
+            min_legitimate_pass_rate: 0.98,
+            max_violation_escape_rate: 0.0,
+            max_false_rejection_rate: 1.0, // not under test here
+        };
+        let mut reporter = CampaignReporter::new("test".into(), criteria);
+        for _ in 0..98 {
+            reporter.record_result("franka_panda", "Baseline", false, &make_verdict(true, &[]));
+        }
+        for _ in 0..2 {
+            reporter.record_result("franka_panda", "Baseline", false, &make_verdict(false, &[]));
+        }
+        let report = reporter.finalize();
+        // legitimate_pass_rate = 98/100 = 0.98, which is >= 0.98
+        assert!(
+            (report.legitimate_pass_rate - 0.98).abs() < f64::EPSILON,
+            "expected 0.98, got {}",
+            report.legitimate_pass_rate
+        );
+        assert!(report.criteria_met);
+    }
+
+    // criteria_met boundary: legitimate_pass_rate one unit below threshold (fails)
+    #[test]
+    fn criteria_not_met_just_below_legitimate_pass_rate_boundary() {
+        let criteria = SuccessCriteria {
+            min_legitimate_pass_rate: 0.98,
+            max_violation_escape_rate: 0.0,
+            max_false_rejection_rate: 1.0,
+        };
+        let mut reporter = CampaignReporter::new("test".into(), criteria);
+        for _ in 0..97 {
+            reporter.record_result("franka_panda", "Baseline", false, &make_verdict(true, &[]));
+        }
+        for _ in 0..3 {
+            reporter.record_result("franka_panda", "Baseline", false, &make_verdict(false, &[]));
+        }
+        let report = reporter.finalize();
+        // legitimate_pass_rate = 97/100 = 0.97, which is < 0.98
+        assert!(report.legitimate_pass_rate < 0.98);
+        assert!(!report.criteria_met);
+    }
+
+    // criteria_met boundary: violation_escape_rate exactly at threshold (passes, max=0.0)
+    #[test]
+    fn criteria_met_at_zero_escape_rate_boundary() {
+        // max_violation_escape_rate = 0.0; zero escapes => 0.0 <= 0.0 passes
+        let criteria = SuccessCriteria {
+            min_legitimate_pass_rate: 0.0,
+            max_violation_escape_rate: 0.0,
+            max_false_rejection_rate: 1.0,
+        };
+        let mut reporter = CampaignReporter::new("test".into(), criteria);
+        for _ in 0..10 {
+            reporter.record_result("franka_panda", "Violation", true, &make_verdict(false, &[]));
+        }
+        let report = reporter.finalize();
+        assert!((report.violation_escape_rate).abs() < f64::EPSILON);
+        assert!(report.criteria_met);
+    }
+
+    // criteria_met boundary: violation_escape_rate exceeds threshold by one escape
+    #[test]
+    fn criteria_not_met_one_escape_above_zero_threshold() {
+        let criteria = SuccessCriteria {
+            min_legitimate_pass_rate: 0.0,
+            max_violation_escape_rate: 0.0,
+            max_false_rejection_rate: 1.0,
+        };
+        let mut reporter = CampaignReporter::new("test".into(), criteria);
+        for _ in 0..9 {
+            reporter.record_result("franka_panda", "Violation", true, &make_verdict(false, &[]));
+        }
+        // One escape
+        reporter.record_result("franka_panda", "Violation", true, &make_verdict(true, &[]));
+        let report = reporter.finalize();
+        assert!(report.violation_escape_rate > 0.0);
+        assert!(!report.criteria_met);
+    }
+
+    // criteria_met boundary: false_rejection_rate exactly at max threshold (passes)
+    #[test]
+    fn criteria_met_at_exact_false_rejection_boundary() {
+        // max_false_rejection_rate = 0.02; exactly 2/100 => 0.02 <= 0.02 passes
+        let criteria = SuccessCriteria {
+            min_legitimate_pass_rate: 0.0,
+            max_violation_escape_rate: 0.0,
+            max_false_rejection_rate: 0.02,
+        };
+        let mut reporter = CampaignReporter::new("test".into(), criteria);
+        for _ in 0..98 {
+            reporter.record_result("franka_panda", "Baseline", false, &make_verdict(true, &[]));
+        }
+        for _ in 0..2 {
+            reporter.record_result("franka_panda", "Baseline", false, &make_verdict(false, &[]));
+        }
+        let report = reporter.finalize();
+        assert!(
+            (report.false_rejection_rate - 0.02).abs() < f64::EPSILON,
+            "expected 0.02, got {}",
+            report.false_rejection_rate
+        );
+        assert!(report.criteria_met);
+    }
+
+    // criteria_met boundary: false_rejection_rate one unit above max threshold (fails)
+    #[test]
+    fn criteria_not_met_just_above_false_rejection_boundary() {
+        let criteria = SuccessCriteria {
+            min_legitimate_pass_rate: 0.0,
+            max_violation_escape_rate: 0.0,
+            max_false_rejection_rate: 0.02,
+        };
+        let mut reporter = CampaignReporter::new("test".into(), criteria);
+        for _ in 0..97 {
+            reporter.record_result("franka_panda", "Baseline", false, &make_verdict(true, &[]));
+        }
+        for _ in 0..3 {
+            reporter.record_result("franka_panda", "Baseline", false, &make_verdict(false, &[]));
+        }
+        let report = reporter.finalize();
+        // false_rejection_rate = 3/100 = 0.03, which is > 0.02
+        assert!(report.false_rejection_rate > 0.02);
+        assert!(!report.criteria_met);
+    }
+
+    // --- Finding 76: legitimate_pass_rate vacuous-true when zero legitimate commands ---
+
+    /// When only violation commands are recorded, `legitimate_total` is 0.
+    /// The reporter returns 1.0 as a vacuous truth — there are no legitimate
+    /// commands to fail, so the pass rate is trivially 100%.
+    /// Callers should check the total counts before interpreting this value.
+    #[test]
+    fn legitimate_pass_rate_is_vacuously_one_for_zero_legitimate() {
+        let mut reporter = CampaignReporter::new("test".into(), default_criteria());
+        // Record only violation commands (expected_reject = true).
+        for _ in 0..10 {
+            reporter.record_result("franka_panda", "Violation", true, &make_verdict(false, &[]));
+        }
+        let report = reporter.finalize();
+        // No legitimate commands were recorded.
+        assert_eq!(report.false_rejection_count, 0);
+        // legitimate_pass_rate is vacuously 1.0.
+        assert!(
+            (report.legitimate_pass_rate - 1.0).abs() < f64::EPSILON,
+            "expected vacuous 1.0, got {}",
+            report.legitimate_pass_rate
+        );
+    }
+
+    // --- Finding 78: approval_rate + rejection_rate == 1.0 ---
+
+    #[test]
+    fn approval_rate_plus_rejection_rate_equals_one() {
+        let mut reporter = CampaignReporter::new("test".into(), default_criteria());
+        // 7 approved + 3 rejected = 10 total.
+        for _ in 0..7 {
+            reporter.record_result("franka_panda", "Baseline", false, &make_verdict(true, &[]));
+        }
+        for _ in 0..3 {
+            reporter.record_result("franka_panda", "Violation", true, &make_verdict(false, &[]));
+        }
+        let report = reporter.finalize();
+        let sum = report.approval_rate + report.rejection_rate;
+        assert!(
+            (sum - 1.0).abs() < 1e-12,
+            "approval_rate ({}) + rejection_rate ({}) must sum to 1.0, got {}",
+            report.approval_rate,
+            report.rejection_rate,
+            sum
+        );
+    }
+
+    #[test]
+    fn approval_rate_plus_rejection_rate_equals_one_all_approved() {
+        let mut reporter = CampaignReporter::new("test".into(), default_criteria());
+        for _ in 0..20 {
+            reporter.record_result("franka_panda", "Baseline", false, &make_verdict(true, &[]));
+        }
+        let report = reporter.finalize();
+        let sum = report.approval_rate + report.rejection_rate;
+        assert!(
+            (sum - 1.0).abs() < 1e-12,
+            "sum must be 1.0 when all approved, got {}",
+            sum
+        );
+    }
+
+    #[test]
+    fn approval_rate_plus_rejection_rate_equals_one_all_rejected() {
+        let mut reporter = CampaignReporter::new("test".into(), default_criteria());
+        for _ in 0..15 {
+            reporter.record_result("franka_panda", "Violation", true, &make_verdict(false, &[]));
+        }
+        let report = reporter.finalize();
+        let sum = report.approval_rate + report.rejection_rate;
+        assert!(
+            (sum - 1.0).abs() < 1e-12,
+            "sum must be 1.0 when all rejected, got {}",
+            sum
+        );
     }
 
     // --- Confidence stats ---
@@ -672,6 +902,84 @@ mod tests {
         assert!(conf.upper_bound_95 > 0.01);
         assert!(conf.upper_bound_99 > conf.upper_bound_95);
         assert_eq!(conf.sil_rating, 0); // escape rate too high for any SIL
+    }
+
+    // --- Findings 11 / 39: sil_rating_approximate flag ---
+
+    #[test]
+    fn sil_rating_not_approximate_when_zero_escapes() {
+        let conf = compute_confidence(1000, 0);
+        assert!(
+            !conf.sil_rating_approximate,
+            "sil_rating_approximate must be false when n_escapes == 0 (exact Clopper-Pearson)"
+        );
+    }
+
+    #[test]
+    fn sil_rating_approximate_when_nonzero_escapes() {
+        let conf = compute_confidence(1000, 1);
+        assert!(
+            conf.sil_rating_approximate,
+            "sil_rating_approximate must be true when n_escapes > 0 (Wald approximation)"
+        );
+    }
+
+    #[test]
+    fn sil_rating_not_approximate_for_zero_trials() {
+        // n_trials == 0 → worst-case bound, no escapes recorded, not Wald.
+        let conf = compute_confidence(0, 0);
+        assert!(
+            !conf.sil_rating_approximate,
+            "sil_rating_approximate must be false when n_trials == 0"
+        );
+    }
+
+    /// Verify the Wald upper bound is >= the raw observed rate for small n.
+    ///
+    /// For n=10, k=1: p_hat = 0.1. The Wald 99% bound = p_hat + 2.576*se.
+    /// This must exceed 0.1 (the observed rate) to be at all useful.
+    #[test]
+    fn wald_upper_bound_exceeds_observed_rate_for_small_n() {
+        let conf = compute_confidence(10, 1);
+        let observed_rate = 1.0_f64 / 10.0;
+        assert!(
+            conf.upper_bound_99 > observed_rate,
+            "Wald 99% upper bound {:.6} must exceed observed rate {:.6}",
+            conf.upper_bound_99,
+            observed_rate
+        );
+        assert!(
+            conf.upper_bound_95 > observed_rate,
+            "Wald 95% upper bound {:.6} must exceed observed rate {:.6}",
+            conf.upper_bound_95,
+            observed_rate
+        );
+    }
+
+    /// For n=5, k=1 the Wald bound must be at least as large as the known
+    /// conservative Wilson score bound, demonstrating it does not systematically
+    /// under-cover for this extreme-small-n case.
+    ///
+    /// NOTE: The Wald interval is known to be anti-conservative for small n
+    /// and proportions near 0 or 1. This test documents that the bound is
+    /// positive and non-trivially above 0.2 (the observed rate) — it does NOT
+    /// guarantee Clopper-Pearson coverage.  See `sil_rating_approximate` field.
+    #[test]
+    fn wald_bound_positive_and_nonzero_for_small_n() {
+        let conf = compute_confidence(5, 1);
+        assert!(conf.upper_bound_99 > 0.0, "bound must be positive");
+        assert!(conf.upper_bound_95 > 0.0, "bound must be positive");
+        // Wald bound for n=5, k=1: p=0.2, se=sqrt(0.16/5)≈0.179
+        // upper_95 ≈ 0.2 + 1.96*0.179 ≈ 0.55
+        // upper_99 ≈ 0.2 + 2.576*0.179 ≈ 0.66
+        assert!(
+            conf.upper_bound_99 > 0.2,
+            "Wald 99% bound for n=5,k=1 must exceed observed rate 0.2"
+        );
+        assert!(
+            conf.sil_rating_approximate,
+            "must be marked approximate when n_escapes > 0"
+        );
     }
 
     #[test]

@@ -1,7 +1,6 @@
 /// Benchmark: measures validation latency, throughput, and runs a dry campaign.
 ///
 /// Run with: cargo run --release --example benchmark -p invariant-sim
-
 use std::collections::{BTreeSet, HashMap};
 use std::time::Instant;
 
@@ -17,8 +16,8 @@ use invariant_core::models::profile::RobotProfile;
 use invariant_core::profiles;
 use invariant_core::validator::ValidatorConfig;
 
-use invariant_sim::isaac::dry_run::run_dry_campaign;
 use invariant_sim::campaign::{CampaignConfig, ScenarioConfig, SuccessCriteria};
+use invariant_sim::isaac::dry_run::run_dry_campaign;
 
 fn make_chain(sk: &SigningKey, kid: &str, ops: &[&str]) -> String {
     let op_set: BTreeSet<Operation> = ops.iter().map(|s| Operation::new(*s).unwrap()).collect();
@@ -64,6 +63,9 @@ fn make_valid_command(profile: &RobotProfile, chain: &str, seq: u64) -> Command 
             required_ops: ops,
         },
         metadata: HashMap::new(),
+        locomotion_state: None,
+        end_effector_forces: vec![],
+        estimated_payload_kg: None,
     }
 }
 
@@ -85,9 +87,12 @@ fn benchmark_latency() {
 
         let chain = make_chain(&sk, kid, &["actuate:*"]);
 
-        // Warmup
+        // Warmup — pre-build a template and clone it to avoid re-allocating
+        // joint state strings on every iteration.
+        let warmup_template = make_valid_command(&profile, &chain, 0);
         for i in 0..100 {
-            let cmd = make_valid_command(&profile, &chain, i);
+            let mut cmd = warmup_template.clone();
+            cmd.sequence = i;
             let _ = config.validate(&cmd, Utc::now(), None);
         }
 
@@ -95,8 +100,14 @@ fn benchmark_latency() {
         let n = 100_000;
         let mut latencies = Vec::with_capacity(n);
 
+        // Pre-build a command template; only the sequence field varies per
+        // iteration so we clone the template and stamp the sequence in the
+        // loop instead of re-allocating all joint state strings each time.
+        let cmd_template = make_valid_command(&profile, &chain, 0);
+
         for i in 0..n {
-            let cmd = make_valid_command(&profile, &chain, i as u64);
+            let mut cmd = cmd_template.clone();
+            cmd.sequence = i as u64;
             let now = Utc::now();
             let start = Instant::now();
             let _ = config.validate(&cmd, now, None);
@@ -174,25 +185,33 @@ fn benchmark_campaign() {
         };
 
         let start = Instant::now();
-        let report = run_dry_campaign(&config).unwrap();
+        let report = run_dry_campaign(&config, None).unwrap();
         let elapsed = start.elapsed();
 
         eprintln!("Profile: {profile_name}");
         eprintln!("  Total commands:      {}", report.total_commands);
         eprintln!("  Approved:            {}", report.total_approved);
         eprintln!("  Rejected:            {}", report.total_rejected);
-        eprintln!("  Approval rate:       {:.1}%", report.approval_rate * 100.0);
+        eprintln!(
+            "  Approval rate:       {:.1}%",
+            report.approval_rate * 100.0
+        );
         eprintln!("  Violation escapes:   {}", report.violation_escape_count);
         eprintln!("  False rejections:    {}", report.false_rejection_count);
         eprintln!("  Criteria met:        {}", report.criteria_met);
         eprintln!("  Elapsed:             {elapsed:.2?}");
-        eprintln!("  Confidence (95% UB): {:.6}%", report.confidence.upper_bound_95 * 100.0);
+        eprintln!(
+            "  Confidence (95% UB): {:.6}%",
+            report.confidence.upper_bound_95 * 100.0
+        );
         eprintln!();
 
         // Per-scenario breakdown
         for (scenario, stats) in &report.per_scenario {
-            eprintln!("  Scenario '{scenario}': {} total, {} approved, {} rejected",
-                stats.total, stats.approved, stats.rejected);
+            eprintln!(
+                "  Scenario '{scenario}': {} total, {} approved, {} rejected",
+                stats.total, stats.approved, stats.rejected
+            );
         }
         eprintln!();
     }

@@ -1,5 +1,7 @@
 // P7: Self-collision distance check
 
+use std::collections::HashMap;
+
 use crate::models::command::EndEffectorPosition;
 use crate::models::profile::CollisionPair;
 use crate::models::verdict::CheckResult;
@@ -10,13 +12,16 @@ use crate::models::verdict::CheckResult;
 /// Each link is looked up in `end_effectors` by name.  If either link in a pair
 /// has no corresponding end-effector entry the pair is flagged as a violation.
 ///
-/// If `end_effectors` or `collision_pairs` is empty the check passes trivially.
+/// If `collision_pairs` is empty the check passes trivially.
+/// If `collision_pairs` is non-empty but `end_effectors` is empty the check fails —
+/// positions are required to evaluate minimum-distance constraints.
 pub fn check_self_collision(
     end_effectors: &[EndEffectorPosition],
     collision_pairs: &[CollisionPair],
     min_collision_distance: f64,
 ) -> CheckResult {
-    if end_effectors.is_empty() || collision_pairs.is_empty() {
+    // No collision pairs defined: nothing to check.
+    if collision_pairs.is_empty() {
         return CheckResult {
             name: "self_collision".to_string(),
             category: "physics".to_string(),
@@ -25,11 +30,26 @@ pub fn check_self_collision(
         };
     }
 
+    // Collision pairs are defined but no positions provided: cannot verify — fail.
+    if end_effectors.is_empty() {
+        return CheckResult {
+            name: "self_collision".to_string(),
+            category: "physics".to_string(),
+            passed: false,
+            details: "end_effector_positions required for self-collision check".to_string(),
+        };
+    }
+
+    let ee_map: HashMap<&str, &[f64; 3]> = end_effectors
+        .iter()
+        .map(|ee| (ee.name.as_str(), &ee.position))
+        .collect();
+
     let mut violations: Vec<String> = Vec::new();
 
     for pair in collision_pairs {
-        let pos_a = match end_effectors.iter().find(|ee| ee.name == pair.link_a) {
-            Some(ee) => &ee.position,
+        let pos_a = match ee_map.get(pair.link_a.as_str()) {
+            Some(pos) => *pos,
             None => {
                 violations.push(format!(
                     "'{}': link not found in end-effector positions",
@@ -38,8 +58,8 @@ pub fn check_self_collision(
                 continue;
             }
         };
-        let pos_b = match end_effectors.iter().find(|ee| ee.name == pair.link_b) {
-            Some(ee) => &ee.position,
+        let pos_b = match ee_map.get(pair.link_b.as_str()) {
+            Some(pos) => *pos,
             None => {
                 violations.push(format!(
                     "'{}': link not found in end-effector positions",
