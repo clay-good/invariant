@@ -22,6 +22,13 @@ pub struct GuardrailRule {
 /// is non-empty, the default action is `Block` (fail-closed): an explicit
 /// allow-all rule must be present to permit unrecognised check names.  If the
 /// rules list is empty, the default action is `Allow` (no policy = pass through).
+///
+/// # Pattern matching — exact string equality only
+///
+/// `GuardrailRule::pattern` is compared with `check_name` using `==`, **not**
+/// glob or regex semantics.  The strings `"*"`, `"joint_*"`, and `".*"` are
+/// treated as literal check names, not wildcards.  A pattern of `"*"` will
+/// only match a check whose name is literally `"*"`.
 pub fn evaluate_guardrails(check_name: &str, rules: &[GuardrailRule]) -> GuardrailAction {
     for rule in rules {
         if check_name == rule.pattern {
@@ -121,5 +128,80 @@ mod tests {
         let rules = vec![allow_rule("allow-authority", "authority")];
         let action = evaluate_guardrails("", &rules);
         assert_eq!(action, GuardrailAction::Block);
+    }
+
+    // -----------------------------------------------------------------------
+    // Pattern field is exact-match only — NOT glob or regex.
+    //
+    // The names "*", "joint_*", and ".*" look like wildcards but are
+    // treated as literal strings.  These tests document that behaviour.
+    // -----------------------------------------------------------------------
+
+    /// A pattern of `"*"` is a literal string, not a catch-all wildcard.
+    /// It matches only a check whose name is exactly `"*"`.
+    #[test]
+    fn glob_star_pattern_is_literal_not_wildcard() {
+        // A rule whose pattern is the literal string "*".
+        let rules = vec![allow_rule("allow-star", "*")];
+        // "authority" is not literally equal to "*" → no match → fail-closed → Block.
+        assert_eq!(
+            evaluate_guardrails("authority", &rules),
+            GuardrailAction::Block,
+            "'*' pattern should not match 'authority' (exact equality only)"
+        );
+        // The literal string "*" itself does match.
+        assert_eq!(
+            evaluate_guardrails("*", &rules),
+            GuardrailAction::Allow,
+            "the literal check name '*' must match the '*' pattern"
+        );
+    }
+
+    /// A pattern of `"joint_*"` is a literal string, not a prefix glob.
+    /// It matches only a check whose name is exactly `"joint_*"`.
+    #[test]
+    fn prefix_glob_pattern_is_literal_not_prefix_match() {
+        let rules = vec![block_rule("block-joint-star", "joint_*")];
+        // "joint_limits" does not equal the literal "joint_*" → no match →
+        // non-empty policy → fail-closed → Block (but for the wrong reason).
+        // The block must come from fail-closed, not from the rule itself.
+        // We confirm the rule does NOT fire by checking with an empty policy
+        // that would otherwise allow.
+        let empty_rules: Vec<GuardrailRule> = vec![];
+        assert_eq!(
+            evaluate_guardrails("joint_limits", &empty_rules),
+            GuardrailAction::Allow,
+            "sanity: empty rules should allow joint_limits"
+        );
+        // With only the "joint_*" rule present, "joint_limits" is not an exact
+        // match; the outcome is Block purely from fail-closed, not from the rule.
+        assert_eq!(
+            evaluate_guardrails("joint_limits", &rules),
+            GuardrailAction::Block
+        );
+        // The literal "joint_*" itself does match the rule.
+        assert_eq!(
+            evaluate_guardrails("joint_*", &rules),
+            GuardrailAction::Block
+        );
+    }
+
+    /// A pattern of `".*"` is a literal string, not a regex catch-all.
+    /// It matches only a check whose name is exactly `".*"`.
+    #[test]
+    fn regex_dot_star_pattern_is_literal_not_regex() {
+        let rules = vec![allow_rule("allow-dot-star", ".*")];
+        // "authority" does not equal the literal ".*" → no match → Block.
+        assert_eq!(
+            evaluate_guardrails("authority", &rules),
+            GuardrailAction::Block,
+            "'.*' pattern should not match 'authority' (exact equality only)"
+        );
+        // The literal check name ".*" does match.
+        assert_eq!(
+            evaluate_guardrails(".*", &rules),
+            GuardrailAction::Allow,
+            "the literal check name '.*' must match the '.*' pattern"
+        );
     }
 }

@@ -1,0 +1,34 @@
+# Five-Minute Proof: Demo Campaign Configuration
+#
+# Runs a small dry-run campaign with injected faults to demonstrate that
+# Invariant catches every violation while approving legitimate commands.
+#
+# Usage:
+#   invariant campaign --config examples/demo-campaign.yaml --dry-run --key keys.json
+
+name: five_minute_proof
+profile: franka_panda
+environments: 1
+episodes_per_env: 1
+steps_per_episode: 1000
+scenarios:
+  - scenario_type: Baseline
+    weight: 0.7
+  - scenario_type: Aggressive
+    weight: 0.1
+    injections:
+      - VelocityOvershoot
+      - PositionViolation
+  - scenario_type: ExclusionZone
+    weight: 0.05
+  - scenario_type: AuthorityEscalation
+    weight: 0.05
+  - scenario_type: ChainForgery
+    weight: 0.05
+  - scenario_type: PromptInjection
+    weight: 0.05
+
+success_criteria:
+  min_legitimate_pass_rate: 0.90
+  max_violation_escape_rate: 0.0
+  max_false_rejection_rate: 0.10

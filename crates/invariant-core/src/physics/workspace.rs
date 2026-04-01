@@ -27,14 +27,20 @@ pub fn check_workspace_bounds(
 
     match workspace {
         WorkspaceBounds::Aabb { min, max } => {
-            // Invariant: min[i] <= max[i] for all axes. ValidatorConfig rejects
-            // profiles that violate this (WorkspaceBounds::validate), so this
-            // should never fire in production. The debug_assert catches any
-            // path that bypasses validation in tests or future refactors.
-            debug_assert!(
-                min[0] <= max[0] && min[1] <= max[1] && min[2] <= max[2],
-                "workspace AABB min must be <= max on all axes: min={min:?} max={max:?}"
-            );
+            // Guard: min[i] <= max[i] for all axes.  ValidatorConfig normally
+            // rejects profiles that violate this, but check at runtime rather
+            // than with debug_assert so the protection holds in release builds
+            // too (Finding 47).
+            if min[0] > max[0] || min[1] > max[1] || min[2] > max[2] {
+                return CheckResult {
+                    name: "workspace_bounds".to_string(),
+                    category: "physics".to_string(),
+                    passed: false,
+                    details: format!(
+                        "invalid AABB configuration: min {min:?} is not <= max {max:?} on all axes"
+                    ),
+                };
+            }
             for ee in end_effectors {
                 let p = &ee.position;
                 if !p[0].is_finite() || !p[1].is_finite() || !p[2].is_finite() {

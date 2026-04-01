@@ -185,7 +185,8 @@ impl KeyFile {
                 .mode(0o600)
                 .open(path)
                 .map_err(KeyFileError::WriteIo)?;
-            file.write_all(json.as_bytes()).map_err(KeyFileError::WriteIo)?;
+            file.write_all(json.as_bytes())
+                .map_err(KeyFileError::WriteIo)?;
         }
         #[cfg(not(unix))]
         {
@@ -195,7 +196,8 @@ impl KeyFile {
                 .create_new(true)
                 .open(path)
                 .map_err(KeyFileError::WriteIo)?;
-            file.write_all(json.as_bytes()).map_err(KeyFileError::WriteIo)?;
+            file.write_all(json.as_bytes())
+                .map_err(KeyFileError::WriteIo)?;
         }
 
         Ok(())
@@ -253,10 +255,305 @@ impl KeyFile {
     }
 }
 
+// ---------------------------------------------------------------------------
+// KeyStore trait — abstract key storage (Step 32)
+// ---------------------------------------------------------------------------
+
+/// Errors from key store operations.
+#[derive(Debug, thiserror::Error)]
+pub enum KeyStoreError {
+    #[error("signing failed: {reason}")]
+    SigningFailed { reason: String },
+
+    #[error("key store unavailable: {reason}")]
+    Unavailable { reason: String },
+
+    #[error("key not found: {kid}")]
+    KeyNotFound { kid: String },
+
+    #[error("backend not supported: {backend}")]
+    UnsupportedBackend { backend: String },
+}
+
+/// Abstract key storage backend (Section 8.3, Step 32).
+///
+/// Implementations provide Ed25519 signing and public key retrieval.
+/// The private key may reside in memory (file backend), in the OS keyring
+/// (staging), or in a hardware security module (production).
+///
+/// The trait is object-safe so it can be used as `Box<dyn KeyStore>`.
+pub trait KeyStore: Send + Sync + std::fmt::Debug {
+    /// Key identifier for this key store.
+    fn kid(&self) -> &str;
+
+    /// Sign `payload` with the stored private key.
+    ///
+    /// Returns the raw Ed25519 signature bytes (64 bytes).
+    fn sign(&self, payload: &[u8]) -> Result<Vec<u8>, KeyStoreError>;
+
+    /// Return the Ed25519 verifying (public) key.
+    fn verifying_key(&self) -> Result<VerifyingKey, KeyStoreError>;
+
+    /// Backend name for diagnostics (e.g. "file", "os-keyring", "tpm", "yubihsm").
+    fn backend_name(&self) -> &str;
+}
+
+// ---------------------------------------------------------------------------
+// FileKeyStore — file-based implementation (Development / Forge mode)
+// ---------------------------------------------------------------------------
+
+/// File-based key store that holds the Ed25519 signing key in memory.
+///
+/// This is the default backend for development and testing (Forge mode).
+/// The private key is loaded from a JSON file and held in process memory.
+pub struct FileKeyStore {
+    kid: String,
+    signing_key: SigningKey,
+    vk: VerifyingKey,
+}
+
+impl FileKeyStore {
+    /// Create from a decoded key file.
+    pub fn from_decoded(decoded: DecodedKeyFile) -> Self {
+        let vk = decoded.verifying_key;
+        Self {
+            kid: decoded.kid,
+            signing_key: decoded.signing_key,
+            vk,
+        }
+    }
+
+    /// Create from a raw signing key and key identifier.
+    pub fn from_signing_key(kid: String, signing_key: SigningKey) -> Self {
+        let vk = signing_key.verifying_key();
+        Self {
+            kid,
+            signing_key,
+            vk,
+        }
+    }
+
+    /// Load from a key file on disk.
+    pub fn load(path: &Path) -> Result<Self, KeyFileError> {
+        let decoded = KeyFile::load_and_decode(path)?;
+        Ok(Self::from_decoded(decoded))
+    }
+}
+
+impl KeyStore for FileKeyStore {
+    fn kid(&self) -> &str {
+        &self.kid
+    }
+
+    fn sign(&self, payload: &[u8]) -> Result<Vec<u8>, KeyStoreError> {
+        use ed25519_dalek::Signer;
+        let sig = self.signing_key.sign(payload);
+        Ok(sig.to_bytes().to_vec())
+    }
+
+    fn verifying_key(&self) -> Result<VerifyingKey, KeyStoreError> {
+        Ok(self.vk)
+    }
+
+    fn backend_name(&self) -> &str {
+        "file"
+    }
+}
+
+impl std::fmt::Debug for FileKeyStore {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("FileKeyStore")
+            .field("kid", &self.kid)
+            .field("backend", &"file")
+            .field("signing_key", &"[REDACTED]")
+            .finish()
+    }
+}
+
+// ---------------------------------------------------------------------------
+// OsKeyringStore — OS keyring backend (Staging / Shadow mode)
+// ---------------------------------------------------------------------------
+
+/// OS keyring key store stub (macOS Keychain, Linux kernel keyring).
+///
+/// This backend stores the signing key in the operating system's credential
+/// manager rather than a plaintext file. It provides OS-level access control.
+///
+/// **Status**: Stub implementation. Returns `Unavailable` for all operations.
+/// A full implementation would use platform-specific APIs:
+/// - macOS: Security.framework / `security` CLI
+/// - Linux: kernel keyring (`keyctl`) or libsecret
+/// - Windows: Windows Credential Manager
+#[derive(Debug)]
+pub struct OsKeyringStore {
+    kid: String,
+}
+
+impl OsKeyringStore {
+    /// Create a reference to an OS keyring entry.
+    pub fn new(kid: String) -> Self {
+        Self { kid }
+    }
+}
+
+impl KeyStore for OsKeyringStore {
+    fn kid(&self) -> &str {
+        &self.kid
+    }
+
+    fn sign(&self, _payload: &[u8]) -> Result<Vec<u8>, KeyStoreError> {
+        Err(KeyStoreError::Unavailable {
+            reason: "OS keyring backend not yet implemented — use file backend for development"
+                .into(),
+        })
+    }
+
+    fn verifying_key(&self) -> Result<VerifyingKey, KeyStoreError> {
+        Err(KeyStoreError::Unavailable {
+            reason: "OS keyring backend not yet implemented".into(),
+        })
+    }
+
+    fn backend_name(&self) -> &str {
+        "os-keyring"
+    }
+}
+
+// ---------------------------------------------------------------------------
+// TpmKeyStore — TPM 2.0 backend (Production / Guardian mode)
+// ---------------------------------------------------------------------------
+
+/// TPM 2.0 hardware security module key store stub.
+///
+/// In production, the signing key is generated inside the TPM and never
+/// leaves the hardware. Signing operations are performed by the TPM.
+///
+/// **Status**: Stub implementation. Returns `Unavailable` for all operations.
+/// A full implementation would use the `tss-esapi` crate for TPM 2.0 access.
+#[derive(Debug)]
+pub struct TpmKeyStore {
+    kid: String,
+}
+
+impl TpmKeyStore {
+    /// Create a reference to a TPM-stored key.
+    pub fn new(kid: String) -> Self {
+        Self { kid }
+    }
+}
+
+impl KeyStore for TpmKeyStore {
+    fn kid(&self) -> &str {
+        &self.kid
+    }
+
+    fn sign(&self, _payload: &[u8]) -> Result<Vec<u8>, KeyStoreError> {
+        Err(KeyStoreError::Unavailable {
+            reason:
+                "TPM 2.0 backend not yet implemented — requires tss-esapi crate and TPM hardware"
+                    .into(),
+        })
+    }
+
+    fn verifying_key(&self) -> Result<VerifyingKey, KeyStoreError> {
+        Err(KeyStoreError::Unavailable {
+            reason: "TPM 2.0 backend not yet implemented".into(),
+        })
+    }
+
+    fn backend_name(&self) -> &str {
+        "tpm"
+    }
+}
+
+// ---------------------------------------------------------------------------
+// YubiHsmKeyStore — YubiHSM 2 backend (Production / Guardian mode)
+// ---------------------------------------------------------------------------
+
+/// YubiHSM 2 hardware security module key store stub.
+///
+/// The YubiHSM is a USB-attached HSM commonly used in server environments.
+/// Keys are generated on-device and signing operations never expose the
+/// private key to the host.
+///
+/// **Status**: Stub implementation. Returns `Unavailable` for all operations.
+/// A full implementation would use the `yubihsm` crate.
+#[derive(Debug)]
+pub struct YubiHsmKeyStore {
+    kid: String,
+}
+
+impl YubiHsmKeyStore {
+    /// Create a reference to a YubiHSM-stored key.
+    pub fn new(kid: String) -> Self {
+        Self { kid }
+    }
+}
+
+impl KeyStore for YubiHsmKeyStore {
+    fn kid(&self) -> &str {
+        &self.kid
+    }
+
+    fn sign(&self, _payload: &[u8]) -> Result<Vec<u8>, KeyStoreError> {
+        Err(KeyStoreError::Unavailable {
+            reason:
+                "YubiHSM backend not yet implemented — requires yubihsm crate and YubiHSM 2 device"
+                    .into(),
+        })
+    }
+
+    fn verifying_key(&self) -> Result<VerifyingKey, KeyStoreError> {
+        Err(KeyStoreError::Unavailable {
+            reason: "YubiHSM backend not yet implemented".into(),
+        })
+    }
+
+    fn backend_name(&self) -> &str {
+        "yubihsm"
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Factory: create a KeyStore from a backend name
+// ---------------------------------------------------------------------------
+
+/// Create a `Box<dyn KeyStore>` from a backend name and key identifier.
+///
+/// Supported backends:
+/// - `"file"`: Load from a JSON key file at `path` (requires `path`).
+/// - `"os-keyring"`: OS keyring stub (not yet implemented).
+/// - `"tpm"`: TPM 2.0 stub (not yet implemented).
+/// - `"yubihsm"`: YubiHSM 2 stub (not yet implemented).
+pub fn open_key_store(
+    backend: &str,
+    kid: &str,
+    path: Option<&Path>,
+) -> Result<Box<dyn KeyStore>, KeyStoreError> {
+    match backend {
+        "file" => {
+            let p = path.ok_or_else(|| KeyStoreError::Unavailable {
+                reason: "file backend requires a key file path".into(),
+            })?;
+            let store = FileKeyStore::load(p).map_err(|e| KeyStoreError::Unavailable {
+                reason: e.to_string(),
+            })?;
+            Ok(Box::new(store))
+        }
+        "os-keyring" => Ok(Box::new(OsKeyringStore::new(kid.to_string()))),
+        "tpm" => Ok(Box::new(TpmKeyStore::new(kid.to_string()))),
+        "yubihsm" => Ok(Box::new(YubiHsmKeyStore::new(kid.to_string()))),
+        other => Err(KeyStoreError::UnsupportedBackend {
+            backend: other.to_string(),
+        }),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use rand::rngs::OsRng;
+    use tempfile::TempDir;
 
     fn gen_key_file() -> KeyFile {
         let sk = SigningKey::generate(&mut OsRng);
@@ -389,24 +686,18 @@ mod tests {
     #[test]
     fn save_refuses_overwrite() {
         let kf = gen_key_file();
-        let dir = std::env::temp_dir().join("invariant_key_test_overwrite");
-        let _ = std::fs::create_dir_all(&dir);
-        let path = dir.join("existing.json");
+        let dir = TempDir::new().expect("tempdir");
+        let path = dir.path().join("existing.json");
         std::fs::write(&path, "existing").unwrap();
         let err = kf.save(&path).unwrap_err();
         assert!(matches!(err, KeyFileError::WriteIo(_)));
-        // Cleanup
-        let _ = std::fs::remove_file(&path);
-        let _ = std::fs::remove_dir(&dir);
     }
 
     #[test]
     fn save_and_load_roundtrip() {
         let kf = gen_key_file();
-        let dir = std::env::temp_dir().join("invariant_key_test_roundtrip");
-        let _ = std::fs::create_dir_all(&dir);
-        let path = dir.join("test_keys.json");
-        let _ = std::fs::remove_file(&path); // ensure clean
+        let dir = TempDir::new().expect("tempdir");
+        let path = dir.path().join("test_keys.json");
         kf.save(&path).unwrap();
         let loaded = KeyFile::load(&path).unwrap();
         assert_eq!(loaded.kid, kf.kid);
@@ -414,23 +705,135 @@ mod tests {
         assert_eq!(loaded.signing_key, kf.signing_key);
         assert_eq!(loaded.verifying_key, kf.verifying_key);
         loaded.decode().unwrap();
-        // Cleanup
-        let _ = std::fs::remove_file(&path);
-        let _ = std::fs::remove_dir(&dir);
     }
 
     #[test]
     fn load_and_decode_shortcut() {
         let kf = gen_key_file();
-        let dir = std::env::temp_dir().join("invariant_key_test_shortcut");
-        let _ = std::fs::create_dir_all(&dir);
-        let path = dir.join("shortcut_keys.json");
-        let _ = std::fs::remove_file(&path);
+        let dir = TempDir::new().expect("tempdir");
+        let path = dir.path().join("shortcut_keys.json");
         kf.save(&path).unwrap();
         let decoded = KeyFile::load_and_decode(&path).unwrap();
         assert_eq!(decoded.kid, "test-key-001");
-        // Cleanup
-        let _ = std::fs::remove_file(&path);
-        let _ = std::fs::remove_dir(&dir);
+    }
+
+    // -----------------------------------------------------------------------
+    // KeyStore trait tests (Step 32)
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn file_key_store_signs_and_verifies() {
+        use ed25519_dalek::Verifier;
+
+        let sk = SigningKey::generate(&mut OsRng);
+        let store = FileKeyStore::from_signing_key("fks-kid".into(), sk);
+
+        assert_eq!(store.kid(), "fks-kid");
+        assert_eq!(store.backend_name(), "file");
+
+        let payload = b"test payload for signing";
+        let sig_bytes = store.sign(payload).unwrap();
+        assert_eq!(sig_bytes.len(), 64, "Ed25519 signature must be 64 bytes");
+
+        let vk = store.verifying_key().unwrap();
+        let sig = ed25519_dalek::Signature::from_slice(&sig_bytes).unwrap();
+        assert!(
+            vk.verify(payload, &sig).is_ok(),
+            "signature must verify with the store's verifying key"
+        );
+    }
+
+    #[test]
+    fn file_key_store_from_decoded() {
+        let kf = gen_key_file();
+        let decoded = kf.decode().unwrap();
+        let store = FileKeyStore::from_decoded(decoded);
+        assert_eq!(store.kid(), "test-key-001");
+        store.sign(b"hello").unwrap();
+    }
+
+    #[test]
+    fn file_key_store_load_from_disk() {
+        let kf = gen_key_file();
+        let dir = TempDir::new().expect("tempdir");
+        let path = dir.path().join("store_test.json");
+        kf.save(&path).unwrap();
+
+        let store = FileKeyStore::load(&path).unwrap();
+        assert_eq!(store.kid(), "test-key-001");
+        let sig = store.sign(b"payload").unwrap();
+        assert_eq!(sig.len(), 64);
+    }
+
+    #[test]
+    fn os_keyring_store_returns_unavailable() {
+        let store = OsKeyringStore::new("kr-kid".into());
+        assert_eq!(store.kid(), "kr-kid");
+        assert_eq!(store.backend_name(), "os-keyring");
+        assert!(store.sign(b"x").is_err());
+        assert!(store.verifying_key().is_err());
+    }
+
+    #[test]
+    fn tpm_store_returns_unavailable() {
+        let store = TpmKeyStore::new("tpm-kid".into());
+        assert_eq!(store.backend_name(), "tpm");
+        assert!(store.sign(b"x").is_err());
+        assert!(store.verifying_key().is_err());
+    }
+
+    #[test]
+    fn yubihsm_store_returns_unavailable() {
+        let store = YubiHsmKeyStore::new("hsm-kid".into());
+        assert_eq!(store.backend_name(), "yubihsm");
+        assert!(store.sign(b"x").is_err());
+        assert!(store.verifying_key().is_err());
+    }
+
+    #[test]
+    fn open_key_store_file_backend() {
+        let kf = gen_key_file();
+        let dir = TempDir::new().expect("tempdir");
+        let path = dir.path().join("factory_test.json");
+        kf.save(&path).unwrap();
+
+        let store = open_key_store("file", "test-key-001", Some(&path)).unwrap();
+        assert_eq!(store.kid(), "test-key-001");
+        assert_eq!(store.backend_name(), "file");
+        store.sign(b"test").unwrap();
+    }
+
+    #[test]
+    fn open_key_store_stubs() {
+        let store = open_key_store("os-keyring", "k", None).unwrap();
+        assert_eq!(store.backend_name(), "os-keyring");
+
+        let store = open_key_store("tpm", "k", None).unwrap();
+        assert_eq!(store.backend_name(), "tpm");
+
+        let store = open_key_store("yubihsm", "k", None).unwrap();
+        assert_eq!(store.backend_name(), "yubihsm");
+    }
+
+    #[test]
+    fn open_key_store_unknown_backend() {
+        let err = open_key_store("quantum", "k", None).unwrap_err();
+        assert!(matches!(err, KeyStoreError::UnsupportedBackend { .. }));
+    }
+
+    #[test]
+    fn open_key_store_file_requires_path() {
+        let err = open_key_store("file", "k", None).unwrap_err();
+        assert!(matches!(err, KeyStoreError::Unavailable { .. }));
+    }
+
+    #[test]
+    fn key_store_is_object_safe() {
+        // Verify the trait can be used as Box<dyn KeyStore>.
+        let sk = SigningKey::generate(&mut OsRng);
+        let store: Box<dyn KeyStore> =
+            Box::new(FileKeyStore::from_signing_key("dyn-kid".into(), sk));
+        assert_eq!(store.kid(), "dyn-kid");
+        store.sign(b"object safety test").unwrap();
     }
 }

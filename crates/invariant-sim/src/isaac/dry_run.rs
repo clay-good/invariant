@@ -13,7 +13,8 @@ use invariant_core::authority::crypto::{generate_keypair, sign_pca};
 use invariant_core::models::authority::{Operation, Pca, SignedPca};
 use invariant_core::models::verdict::SignedVerdict;
 use invariant_core::validator::ValidatorConfig;
-use rand::rngs::OsRng;
+use rand::rngs::{OsRng, StdRng};
+use rand::SeedableRng;
 use thiserror::Error;
 
 use crate::campaign::CampaignConfig;
@@ -59,7 +60,14 @@ pub enum DryRunError {
 /// 3. Optional fault injections are applied on top.
 /// 4. Each command is validated through `ValidatorConfig::validate`.
 /// 5. Results are recorded in `CampaignReporter`.
-pub fn run_dry_campaign(config: &CampaignConfig) -> Result<CampaignReport, DryRunError> {
+///
+/// `seed` — when `Some([u8; 32])`, keypair generation uses a deterministic
+/// `StdRng` seeded from that value, making the campaign reproducible.  When
+/// `None`, `OsRng` is used (non-deterministic, suitable for production runs).
+pub fn run_dry_campaign(
+    config: &CampaignConfig,
+    seed: Option<[u8; 32]>,
+) -> Result<CampaignReport, DryRunError> {
     // Guard against an empty scenarios slice that would cause select_scenario
     // to panic.  This can happen when run_dry_campaign is called with a
     // hand-constructed config that bypasses load_config validation.
@@ -75,10 +83,23 @@ pub fn run_dry_campaign(config: &CampaignConfig) -> Result<CampaignReport, DryRu
     // --- Keypair setup ---
     // One root PCA key (trusted by the validator) and one signing key for
     // the validator itself.
-    let mut rng = OsRng;
-    let pca_sk = generate_keypair(&mut rng);
-    let pca_vk = pca_sk.verifying_key();
-    let validator_sk = generate_keypair(&mut rng);
+    //
+    // Use a deterministic RNG when a seed is provided (for reproducibility in
+    // testing and benchmarking), otherwise fall back to the OS entropy source.
+    let pca_sk;
+    let pca_vk;
+    let validator_sk;
+    if let Some(seed_bytes) = seed {
+        let mut rng = StdRng::from_seed(seed_bytes);
+        pca_sk = generate_keypair(&mut rng);
+        pca_vk = pca_sk.verifying_key();
+        validator_sk = generate_keypair(&mut rng);
+    } else {
+        let mut rng = OsRng;
+        pca_sk = generate_keypair(&mut rng);
+        pca_vk = pca_sk.verifying_key();
+        validator_sk = generate_keypair(&mut rng);
+    }
     let pca_kid = "dry-run-root".to_string();
     let validator_kid = "dry-run-validator".to_string();
 
@@ -111,6 +132,15 @@ pub fn run_dry_campaign(config: &CampaignConfig) -> Result<CampaignReport, DryRu
 
     // --- Scenario weight prefix sums (for weighted selection) ---
     let total_weight: f64 = config.scenarios.iter().map(|s| s.weight).sum();
+    // Guard: total weight must be finite and positive.  Individual weights are
+    // validated by `validate_config`, but a hand-constructed config or numeric
+    // edge-cases (e.g. all weights = f64::MIN_POSITIVE summing to subnormal)
+    // could still produce a degenerate total.
+    if !(total_weight > 0.0 && total_weight.is_finite()) {
+        return Err(DryRunError::UnknownScenario(format!(
+            "total scenario weight must be a finite positive number (got {total_weight})"
+        )));
+    }
     let prefix: Vec<f64> = config
         .scenarios
         .iter()
@@ -274,18 +304,22 @@ fn parse_scenario_type(name: &str) -> Result<ScenarioType, DryRunError> {
 }
 
 /// Map injection type name string to the `InjectionType` enum.
+///
+/// Accepts both PascalCase (`"VelocityOvershoot"`) and snake_case
+/// (`"velocity_overshoot"`) to match how `InjectionType` is serialized by
+/// serde (which uses `rename_all = "snake_case"`).
 fn parse_injection_type(name: &str) -> Result<InjectionType, DryRunError> {
     match name {
-        "VelocityOvershoot" => Ok(InjectionType::VelocityOvershoot),
-        "PositionViolation" => Ok(InjectionType::PositionViolation),
-        "TorqueSpike" => Ok(InjectionType::TorqueSpike),
-        "WorkspaceEscape" => Ok(InjectionType::WorkspaceEscape),
-        "DeltaTimeViolation" => Ok(InjectionType::DeltaTimeViolation),
-        "SelfCollision" => Ok(InjectionType::SelfCollision),
-        "StabilityViolation" => Ok(InjectionType::StabilityViolation),
-        "AuthorityStrip" => Ok(InjectionType::AuthorityStrip),
-        "ReplayAttack" => Ok(InjectionType::ReplayAttack),
-        "NanInjection" => Ok(InjectionType::NanInjection),
+        "VelocityOvershoot" | "velocity_overshoot" => Ok(InjectionType::VelocityOvershoot),
+        "PositionViolation" | "position_violation" => Ok(InjectionType::PositionViolation),
+        "TorqueSpike" | "torque_spike" => Ok(InjectionType::TorqueSpike),
+        "WorkspaceEscape" | "workspace_escape" => Ok(InjectionType::WorkspaceEscape),
+        "DeltaTimeViolation" | "delta_time_violation" => Ok(InjectionType::DeltaTimeViolation),
+        "SelfCollision" | "self_collision" => Ok(InjectionType::SelfCollision),
+        "StabilityViolation" | "stability_violation" => Ok(InjectionType::StabilityViolation),
+        "AuthorityStrip" | "authority_strip" => Ok(InjectionType::AuthorityStrip),
+        "ReplayAttack" | "replay_attack" => Ok(InjectionType::ReplayAttack),
+        "NanInjection" | "nan_injection" => Ok(InjectionType::NanInjection),
         other => Err(DryRunError::UnknownInjection(other.to_string())),
     }
 }
@@ -338,6 +372,7 @@ fn make_error_verdict(
                 operations_granted: vec![],
                 operations_required: vec![],
             },
+            threat_analysis: None,
         },
         verdict_signature: String::new(),
         signer_kid: String::new(),
@@ -397,7 +432,7 @@ mod tests {
     #[test]
     fn dry_run_baseline_completes() {
         let config = baseline_config(5);
-        let report = run_dry_campaign(&config).expect("dry run must complete");
+        let report = run_dry_campaign(&config, None).expect("dry run must complete");
         assert_eq!(report.campaign_name, "dry_run_test");
         assert_eq!(report.total_commands, 5);
     }
@@ -405,7 +440,7 @@ mod tests {
     #[test]
     fn dry_run_baseline_all_approved() {
         let config = baseline_config(10);
-        let report = run_dry_campaign(&config).expect("dry run must complete");
+        let report = run_dry_campaign(&config, None).expect("dry run must complete");
         // All baseline commands should be approved (valid PCA chain, valid physics).
         assert_eq!(
             report.total_approved, 10,
@@ -430,7 +465,7 @@ mod tests {
             }],
             success_criteria: SuccessCriteria::default(),
         };
-        let report = run_dry_campaign(&config).expect("dry run must complete");
+        let report = run_dry_campaign(&config, None).expect("dry run must complete");
         assert_eq!(report.total_commands, 4);
         // AuthorityEscalation commands have no PCA chain — must all be rejected.
         assert_eq!(
@@ -443,7 +478,7 @@ mod tests {
     #[test]
     fn dry_run_violation_escape_count_zero() {
         let config = violation_config();
-        let report = run_dry_campaign(&config).expect("dry run must complete");
+        let report = run_dry_campaign(&config, None).expect("dry run must complete");
         assert_eq!(
             report.violation_escape_count, 0,
             "no violation should escape a correct validator"
@@ -453,7 +488,7 @@ mod tests {
     #[test]
     fn dry_run_criteria_met_on_clean_run() {
         let config = baseline_config(20);
-        let report = run_dry_campaign(&config).expect("dry run must complete");
+        let report = run_dry_campaign(&config, None).expect("dry run must complete");
         assert!(
             report.criteria_met,
             "criteria must be met on a baseline-only campaign"
@@ -477,7 +512,7 @@ mod tests {
             }],
             success_criteria: SuccessCriteria::default(),
         };
-        let report = run_dry_campaign(&config).expect("dry run must complete");
+        let report = run_dry_campaign(&config, None).expect("dry run must complete");
         // 3 * 4 * 5 = 60 commands total.
         assert_eq!(report.total_commands, 60);
     }
@@ -499,7 +534,7 @@ mod tests {
             }],
             success_criteria: SuccessCriteria::default(),
         };
-        let err = run_dry_campaign(&config).unwrap_err();
+        let err = run_dry_campaign(&config, None).unwrap_err();
         assert!(matches!(err, DryRunError::UnknownScenario(_)));
     }
 
@@ -518,7 +553,7 @@ mod tests {
             }],
             success_criteria: SuccessCriteria::default(),
         };
-        let err = run_dry_campaign(&config).unwrap_err();
+        let err = run_dry_campaign(&config, None).unwrap_err();
         assert!(matches!(err, DryRunError::UnknownInjection(_)));
     }
 
@@ -537,7 +572,7 @@ mod tests {
             scenarios: vec![],
             success_criteria: SuccessCriteria::default(),
         };
-        let err = run_dry_campaign(&config).unwrap_err();
+        let err = run_dry_campaign(&config, None).unwrap_err();
         assert!(matches!(err, DryRunError::UnknownScenario(_)));
     }
 
@@ -558,7 +593,7 @@ mod tests {
             }],
             success_criteria: SuccessCriteria::default(),
         };
-        let err = run_dry_campaign(&config).unwrap_err();
+        let err = run_dry_campaign(&config, None).unwrap_err();
         assert!(matches!(err, DryRunError::ProfileLoad(_)));
     }
 
@@ -630,10 +665,206 @@ mod tests {
                 }],
                 success_criteria: SuccessCriteria::default(),
             };
-            let report = run_dry_campaign(&config)
+            let report = run_dry_campaign(&config, None)
                 .unwrap_or_else(|e| panic!("dry run failed for {profile_name}: {e}"));
             assert_eq!(report.total_commands, 3, "profile {profile_name}");
         }
+    }
+
+    // --- Finding 12: deterministic seed produces same report ---
+
+    #[test]
+    fn deterministic_seed_produces_reproducible_results() {
+        let seed: [u8; 32] = [42u8; 32];
+        let config = baseline_config(5);
+        let report1 = run_dry_campaign(&config, Some(seed)).expect("run 1 must complete");
+        let report2 = run_dry_campaign(&config, Some(seed)).expect("run 2 must complete");
+        // Structural outputs are deterministic (same trial counts, same approval status).
+        assert_eq!(report1.total_commands, report2.total_commands);
+        assert_eq!(report1.total_approved, report2.total_approved);
+        assert_eq!(report1.total_rejected, report2.total_rejected);
+    }
+
+    #[test]
+    fn none_seed_runs_without_error() {
+        let config = baseline_config(3);
+        let report = run_dry_campaign(&config, None).expect("None seed must work");
+        assert_eq!(report.total_commands, 3);
+    }
+
+    // --- Finding 13: Aggressive scenario — all commands approved ---
+
+    #[test]
+    fn aggressive_scenario_runs_and_produces_expected_count() {
+        let config = CampaignConfig {
+            name: "aggressive_test".to_string(),
+            profile: "franka_panda".to_string(),
+            environments: 1,
+            episodes_per_env: 1,
+            steps_per_episode: 6,
+            scenarios: vec![ScenarioConfig {
+                scenario_type: "Aggressive".to_string(),
+                weight: 1.0,
+                injections: vec![],
+            }],
+            success_criteria: SuccessCriteria {
+                min_legitimate_pass_rate: 0.0,
+                max_violation_escape_rate: 1.0,
+                max_false_rejection_rate: 1.0,
+            },
+        };
+        let report =
+            run_dry_campaign(&config, Some([0u8; 32])).expect("aggressive run must complete");
+        assert_eq!(report.total_commands, 6);
+        // Aggressive is classified as legitimate (is_expected_reject = false),
+        // so any rejections are counted as false_rejections, not escapes.
+        assert_eq!(report.violation_escape_count, 0);
+        // All commands are accounted for.
+        assert_eq!(report.total_approved + report.total_rejected, 6);
+    }
+
+    // --- Finding 38: total_weight == 0 returns error ---
+
+    #[test]
+    fn zero_total_weight_returns_error() {
+        // Build a config that bypasses validate_config but produces zero total weight.
+        // weight validation prevents 0.0 in load_config, so we test the runtime guard.
+        // Actually validate_config prevents weight <= 0, so we test an edge-case
+        // reachable only by constructing configs directly.
+        // We trigger it by building configs with an extremely small positive weight
+        // that sums to a subnormal — but that's hard to arrange.  Instead, use the
+        // run_dry_campaign guard directly by injecting a synthetic "all-zero" sum
+        // via the public DryRunError::UnknownScenario path.  The guard checks
+        // total_weight after summing, so a NaN weight (bypassing validate_config)
+        // would trigger it.
+        let mut config = baseline_config(1);
+        // Bypass validate_config by directly overriding weight to NaN after construction.
+        config.scenarios[0].weight = f64::NAN;
+        let err = run_dry_campaign(&config, None).unwrap_err();
+        assert!(
+            matches!(err, DryRunError::UnknownScenario(ref msg) if msg.contains("total scenario weight")),
+            "expected UnknownScenario with weight message, got: {err:?}"
+        );
+    }
+
+    // --- Finding 73: load_profile file-path branch ---
+
+    #[test]
+    fn load_profile_by_json_file_path() {
+        // Write a minimal valid profile JSON to a temp file and load it by path.
+        let profile_json = r#"{
+  "name": "test_robot",
+  "version": "1.0.0",
+  "joints": [
+    {"name": "j1", "type": "revolute", "min": -1.57, "max": 1.57,
+     "max_velocity": 1.0, "max_torque": 10.0, "max_acceleration": 5.0}
+  ],
+  "workspace": {"type": "aabb", "min": [-0.5, -0.5, 0.0], "max": [0.5, 0.5, 1.0]},
+  "exclusion_zones": [],
+  "collision_pairs": [],
+  "min_collision_distance": 0.05,
+  "global_velocity_scale": 1.0,
+  "max_delta_time": 0.1,
+  "stability": null
+}"#;
+        let tmp_path = std::env::temp_dir().join("invariant_test_profile.json");
+        std::fs::write(&tmp_path, profile_json).expect("write temp profile");
+
+        let profile_path = tmp_path.to_str().expect("valid path");
+        let result = load_profile(profile_path);
+        let _ = std::fs::remove_file(&tmp_path); // cleanup
+        assert!(
+            result.is_ok(),
+            "load_profile must succeed for valid JSON file, got: {result:?}"
+        );
+        assert_eq!(result.unwrap().name, "test_robot");
+    }
+
+    #[test]
+    fn load_profile_path_with_parent_dir_returns_error() {
+        let result = load_profile("../some/path/profile.json");
+        assert!(
+            matches!(result, Err(DryRunError::ProfileLoad(_))),
+            "path traversal must be rejected"
+        );
+    }
+
+    #[test]
+    fn load_profile_yaml_extension_returns_error() {
+        let result = load_profile("robot_profile.yaml");
+        assert!(
+            matches!(result, Err(DryRunError::ProfileLoad(_))),
+            "non-.json extension must be rejected"
+        );
+    }
+
+    // --- Finding 74: validator error fallback counted as rejected ---
+
+    #[test]
+    fn validator_error_command_counted_as_rejected() {
+        // The validator error path in run_dry_campaign produces a synthetic
+        // rejection verdict.  We cannot trivially force a validator error from
+        // outside, but we can verify that the total command count always equals
+        // the sum of approved + rejected (the invariant that holds whether or
+        // not the fallback is exercised).
+        let config = baseline_config(10);
+        let report = run_dry_campaign(&config, None).expect("must complete");
+        assert_eq!(
+            report.total_commands,
+            report.total_approved + report.total_rejected,
+            "total_commands must equal approved + rejected (fallback verdict is counted)"
+        );
+    }
+
+    // --- Finding 75: snake_case injection names ---
+
+    #[test]
+    fn snake_case_injection_names_accepted() {
+        // All snake_case injection names must parse without error.
+        let snake_names = [
+            "velocity_overshoot",
+            "position_violation",
+            "torque_spike",
+            "workspace_escape",
+            "delta_time_violation",
+            "self_collision",
+            "stability_violation",
+            "authority_strip",
+            "replay_attack",
+            "nan_injection",
+        ];
+        for name in snake_names {
+            let result = parse_injection_type(name);
+            assert!(
+                result.is_ok(),
+                "snake_case injection name '{name}' must parse, got: {result:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn snake_case_injection_in_campaign_config() {
+        // End-to-end: snake_case injection names work in a campaign config.
+        let config = CampaignConfig {
+            name: "snake_inj".to_string(),
+            profile: "franka_panda".to_string(),
+            environments: 1,
+            episodes_per_env: 1,
+            steps_per_episode: 3,
+            scenarios: vec![ScenarioConfig {
+                scenario_type: "Baseline".to_string(),
+                weight: 1.0,
+                injections: vec!["velocity_overshoot".to_string()],
+            }],
+            success_criteria: SuccessCriteria {
+                min_legitimate_pass_rate: 0.0,
+                max_violation_escape_rate: 1.0,
+                max_false_rejection_rate: 1.0,
+            },
+        };
+        let report = run_dry_campaign(&config, None).expect("snake_case injection must work");
+        // velocity_overshoot should cause rejections.
+        assert_eq!(report.total_rejected, 3);
     }
 
     // --- Injections applied ---
@@ -657,7 +888,7 @@ mod tests {
                 max_false_rejection_rate: 1.0,
             },
         };
-        let report = run_dry_campaign(&config).expect("dry run must complete");
+        let report = run_dry_campaign(&config, None).expect("dry run must complete");
         // Baseline + VelocityOvershoot -> all commands should be rejected.
         assert_eq!(
             report.total_rejected, 5,

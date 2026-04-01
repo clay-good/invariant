@@ -23,6 +23,44 @@ pub struct Command {
     /// deeply-nested JSON objects from causing stack-overflow DoS (P1-1).
     #[serde(default)]
     pub metadata: HashMap<String, String>,
+    /// Locomotion state for legged robots (P15–P20). Optional; locomotion
+    /// checks are skipped when absent.
+    #[serde(default)]
+    pub locomotion_state: Option<LocomotionState>,
+    /// Per-end-effector force/torque readings for manipulation safety checks (P11-P13).
+    #[serde(default)]
+    pub end_effector_forces: Vec<EndEffectorForce>,
+    /// Estimated mass of the grasped payload in kilograms, for payload limit check (P14).
+    #[serde(default)]
+    pub estimated_payload_kg: Option<f64>,
+}
+
+/// Locomotion state for a legged/mobile robot base (P15–P20).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct LocomotionState {
+    /// Linear velocity of the robot base in world frame [vx, vy, vz] (m/s).
+    pub base_velocity: [f64; 3],
+    /// Yaw (heading) rate of the robot base (rad/s).
+    pub heading_rate: f64,
+    /// Per-foot state for all feet of the robot.
+    pub feet: Vec<FootState>,
+    /// Commanded step length (m).
+    pub step_length: f64,
+}
+
+/// State of a single foot on a legged robot.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FootState {
+    /// Foot link name matching the robot URDF/profile.
+    pub name: String,
+    /// Foot position in world frame [x, y, z] (m). z is height above ground.
+    pub position: [f64; 3],
+    /// Whether the foot is currently in contact with the ground.
+    pub contact: bool,
+    /// Ground reaction force vector [fx, fy, fz] (N). Present only when
+    /// force/torque sensing is available.
+    #[serde(default)]
+    pub ground_reaction_force: Option<[f64; 3]>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -45,4 +83,23 @@ pub struct CommandAuthority {
     pub pca_chain: String,
     /// Operations this command requires. Validated against the decoded chain's final_ops.
     pub required_ops: Vec<Operation>,
+}
+
+/// Force/torque measurement at a single end-effector (P11–P13).
+///
+/// `name` must match an [`EndEffectorConfig`](crate::models::profile::EndEffectorConfig)
+/// in the robot profile for limit checks to fire. Entries with no matching profile
+/// config are passed through without checking.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct EndEffectorForce {
+    /// Name identifying the end-effector (must match profile config to be checked).
+    pub name: String,
+    /// Cartesian force vector [fx, fy, fz] in Newtons.
+    pub force: [f64; 3],
+    /// Cartesian torque vector [tx, ty, tz] in Newton-metres.
+    pub torque: [f64; 3],
+    /// Scalar grasp force in Newtons (e.g. gripper closing force). Omitted when
+    /// force/torque sensing is available but grasp force sensing is not.
+    #[serde(default)]
+    pub grasp_force: Option<f64>,
 }

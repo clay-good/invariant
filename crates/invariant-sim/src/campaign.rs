@@ -123,6 +123,11 @@ pub fn load_config_file(path: &std::path::Path) -> Result<CampaignConfig, Campai
 const MAX_ENVIRONMENTS: u32 = 10_000;
 /// Maximum number of episodes per environment.
 const MAX_EPISODES_PER_ENV: u32 = 100_000;
+/// Maximum steps per episode.
+///
+/// Prevents runaway campaigns and integer overflow in the total-commands check.
+/// At 100 Hz a 10 000-step episode corresponds to 100 seconds of wall time.
+const MAX_STEPS_PER_EPISODE: u32 = 1_000_000;
 /// Maximum total commands (environments × episodes × steps) in a campaign.
 const MAX_TOTAL_COMMANDS: u64 = 10_000_000;
 
@@ -161,6 +166,12 @@ fn validate_config(config: &CampaignConfig) -> Result<(), CampaignError> {
         return Err(CampaignError::Validation(
             "steps_per_episode must be > 0".into(),
         ));
+    }
+    if config.steps_per_episode > MAX_STEPS_PER_EPISODE {
+        return Err(CampaignError::Validation(format!(
+            "steps_per_episode must be <= {MAX_STEPS_PER_EPISODE} (got {})",
+            config.steps_per_episode
+        )));
     }
     let total_commands = config.environments as u64
         * config.episodes_per_env as u64
@@ -445,5 +456,317 @@ scenarios:
     fn load_config_file_nonexistent() {
         let err = load_config_file(std::path::Path::new("/nonexistent/campaign.yaml")).unwrap_err();
         assert!(matches!(err, CampaignError::Io(_)));
+    }
+
+    // --- Finding 68: 1 MiB file-size limit ---
+
+    #[test]
+    fn load_config_file_exceeds_max_size_returns_validation_error() {
+        // Write a file larger than MAX_CONFIG_FILE_BYTES (1 MiB = 1_048_576 bytes).
+        let tmp_path = std::env::temp_dir().join("invariant_oversized_campaign.yaml");
+        // Fill with 1 MiB + 1 byte of spaces (valid UTF-8 but not valid YAML campaign).
+        let big_content = " ".repeat(1024 * 1024 + 1);
+        std::fs::write(&tmp_path, big_content).expect("write oversized file");
+
+        let err = load_config_file(&tmp_path).unwrap_err();
+        let _ = std::fs::remove_file(&tmp_path); // cleanup
+        assert!(
+            matches!(&err, CampaignError::Validation(msg) if msg.contains("exceeds maximum size")),
+            "expected Validation error about max size, got: {err:?}"
+        );
+    }
+
+    // --- Finding 69: MAX_TOTAL_COMMANDS boundary ---
+
+    #[test]
+    fn total_commands_at_max_is_valid() {
+        // MAX_TOTAL_COMMANDS = 10_000_000. Use 1 env × 10_000_000 steps × 1 episode
+        // but stay within per-field limits.  Use 10 envs × 1_000_000 steps = 10M.
+        // However MAX_STEPS_PER_EPISODE = 1_000_000 and MAX_ENVIRONMENTS = 10_000.
+        // 10 × 1 × 1_000_000 = 10_000_000 exactly.
+        let config = CampaignConfig {
+            name: "boundary_test".to_string(),
+            profile: "franka_panda".to_string(),
+            environments: 10,
+            episodes_per_env: 1,
+            steps_per_episode: 1_000_000,
+            scenarios: vec![ScenarioConfig {
+                scenario_type: "Baseline".to_string(),
+                weight: 1.0,
+                injections: vec![],
+            }],
+            success_criteria: SuccessCriteria::default(),
+        };
+        // Exactly at the limit: must succeed.
+        assert!(
+            validate_config(&config).is_ok(),
+            "total == MAX_TOTAL_COMMANDS must be valid"
+        );
+    }
+
+    #[test]
+    fn total_commands_above_max_returns_validation_error() {
+        // 10 envs × 1 episode × 1_000_001 steps = 10_000_010 > MAX_TOTAL_COMMANDS.
+        let config = CampaignConfig {
+            name: "over_limit".to_string(),
+            profile: "franka_panda".to_string(),
+            environments: 10,
+            episodes_per_env: 1,
+            steps_per_episode: 1_000_001,
+            scenarios: vec![ScenarioConfig {
+                scenario_type: "Baseline".to_string(),
+                weight: 1.0,
+                injections: vec![],
+            }],
+            success_criteria: SuccessCriteria::default(),
+        };
+        // steps_per_episode > MAX_STEPS_PER_EPISODE fires first, but
+        // the resulting total would also exceed MAX_TOTAL_COMMANDS.
+        let err = validate_config(&config).unwrap_err();
+        assert!(matches!(err, CampaignError::Validation(_)));
+    }
+
+    // --- Finding 70: MAX_ENVIRONMENTS and MAX_EPISODES_PER_ENV upper bounds ---
+
+    #[test]
+    fn environments_above_max_returns_validation_error() {
+        let config = CampaignConfig {
+            name: "too_many_envs".to_string(),
+            profile: "franka_panda".to_string(),
+            environments: 10_001, // MAX_ENVIRONMENTS + 1
+            episodes_per_env: 1,
+            steps_per_episode: 1,
+            scenarios: vec![ScenarioConfig {
+                scenario_type: "Baseline".to_string(),
+                weight: 1.0,
+                injections: vec![],
+            }],
+            success_criteria: SuccessCriteria::default(),
+        };
+        let err = validate_config(&config).unwrap_err();
+        assert!(
+            matches!(&err, CampaignError::Validation(msg) if msg.contains("environments")),
+            "got: {err:?}"
+        );
+    }
+
+    #[test]
+    fn episodes_per_env_above_max_returns_validation_error() {
+        let config = CampaignConfig {
+            name: "too_many_eps".to_string(),
+            profile: "franka_panda".to_string(),
+            environments: 1,
+            episodes_per_env: 100_001, // MAX_EPISODES_PER_ENV + 1
+            steps_per_episode: 1,
+            scenarios: vec![ScenarioConfig {
+                scenario_type: "Baseline".to_string(),
+                weight: 1.0,
+                injections: vec![],
+            }],
+            success_criteria: SuccessCriteria::default(),
+        };
+        let err = validate_config(&config).unwrap_err();
+        assert!(
+            matches!(&err, CampaignError::Validation(msg) if msg.contains("episodes_per_env")),
+            "got: {err:?}"
+        );
+    }
+
+    #[test]
+    fn steps_per_episode_above_max_returns_validation_error() {
+        let config = CampaignConfig {
+            name: "too_many_steps".to_string(),
+            profile: "franka_panda".to_string(),
+            environments: 1,
+            episodes_per_env: 1,
+            steps_per_episode: 1_000_001, // MAX_STEPS_PER_EPISODE + 1
+            scenarios: vec![ScenarioConfig {
+                scenario_type: "Baseline".to_string(),
+                weight: 1.0,
+                injections: vec![],
+            }],
+            success_criteria: SuccessCriteria::default(),
+        };
+        let err = validate_config(&config).unwrap_err();
+        assert!(
+            matches!(&err, CampaignError::Validation(msg) if msg.contains("steps_per_episode")),
+            "got: {err:?}"
+        );
+    }
+
+    // --- Finding 71: success_criteria out-of-range ---
+
+    #[test]
+    fn min_legitimate_pass_rate_above_one_returns_validation_error() {
+        let yaml = r#"
+name: tc
+profile: franka_panda
+environments: 1
+episodes_per_env: 1
+steps_per_episode: 1
+scenarios:
+  - scenario_type: Baseline
+    weight: 1.0
+success_criteria:
+  min_legitimate_pass_rate: 1.1
+  max_violation_escape_rate: 0.0
+  max_false_rejection_rate: 0.0
+"#;
+        let err = load_config(yaml).unwrap_err();
+        assert!(
+            matches!(&err, CampaignError::Validation(msg) if msg.contains("min_legitimate_pass_rate")),
+            "got: {err:?}"
+        );
+    }
+
+    #[test]
+    fn min_legitimate_pass_rate_below_zero_returns_validation_error() {
+        let config = CampaignConfig {
+            name: "tc".to_string(),
+            profile: "franka_panda".to_string(),
+            environments: 1,
+            episodes_per_env: 1,
+            steps_per_episode: 1,
+            scenarios: vec![ScenarioConfig {
+                scenario_type: "Baseline".to_string(),
+                weight: 1.0,
+                injections: vec![],
+            }],
+            success_criteria: SuccessCriteria {
+                min_legitimate_pass_rate: -0.01,
+                max_violation_escape_rate: 0.0,
+                max_false_rejection_rate: 0.0,
+            },
+        };
+        let err = validate_config(&config).unwrap_err();
+        assert!(
+            matches!(&err, CampaignError::Validation(msg) if msg.contains("min_legitimate_pass_rate")),
+            "got: {err:?}"
+        );
+    }
+
+    #[test]
+    fn max_violation_escape_rate_above_one_returns_validation_error() {
+        let config = CampaignConfig {
+            name: "tc".to_string(),
+            profile: "franka_panda".to_string(),
+            environments: 1,
+            episodes_per_env: 1,
+            steps_per_episode: 1,
+            scenarios: vec![ScenarioConfig {
+                scenario_type: "Baseline".to_string(),
+                weight: 1.0,
+                injections: vec![],
+            }],
+            success_criteria: SuccessCriteria {
+                min_legitimate_pass_rate: 0.98,
+                max_violation_escape_rate: 1.5,
+                max_false_rejection_rate: 0.02,
+            },
+        };
+        let err = validate_config(&config).unwrap_err();
+        assert!(
+            matches!(&err, CampaignError::Validation(msg) if msg.contains("max_violation_escape_rate")),
+            "got: {err:?}"
+        );
+    }
+
+    #[test]
+    fn max_violation_escape_rate_below_zero_returns_validation_error() {
+        let config = CampaignConfig {
+            name: "tc".to_string(),
+            profile: "franka_panda".to_string(),
+            environments: 1,
+            episodes_per_env: 1,
+            steps_per_episode: 1,
+            scenarios: vec![ScenarioConfig {
+                scenario_type: "Baseline".to_string(),
+                weight: 1.0,
+                injections: vec![],
+            }],
+            success_criteria: SuccessCriteria {
+                min_legitimate_pass_rate: 0.98,
+                max_violation_escape_rate: -0.1,
+                max_false_rejection_rate: 0.02,
+            },
+        };
+        let err = validate_config(&config).unwrap_err();
+        assert!(
+            matches!(&err, CampaignError::Validation(msg) if msg.contains("max_violation_escape_rate")),
+            "got: {err:?}"
+        );
+    }
+
+    #[test]
+    fn max_false_rejection_rate_above_one_returns_validation_error() {
+        let config = CampaignConfig {
+            name: "tc".to_string(),
+            profile: "franka_panda".to_string(),
+            environments: 1,
+            episodes_per_env: 1,
+            steps_per_episode: 1,
+            scenarios: vec![ScenarioConfig {
+                scenario_type: "Baseline".to_string(),
+                weight: 1.0,
+                injections: vec![],
+            }],
+            success_criteria: SuccessCriteria {
+                min_legitimate_pass_rate: 0.98,
+                max_violation_escape_rate: 0.0,
+                max_false_rejection_rate: 2.0,
+            },
+        };
+        let err = validate_config(&config).unwrap_err();
+        assert!(
+            matches!(&err, CampaignError::Validation(msg) if msg.contains("max_false_rejection_rate")),
+            "got: {err:?}"
+        );
+    }
+
+    #[test]
+    fn max_false_rejection_rate_below_zero_returns_validation_error() {
+        let config = CampaignConfig {
+            name: "tc".to_string(),
+            profile: "franka_panda".to_string(),
+            environments: 1,
+            episodes_per_env: 1,
+            steps_per_episode: 1,
+            scenarios: vec![ScenarioConfig {
+                scenario_type: "Baseline".to_string(),
+                weight: 1.0,
+                injections: vec![],
+            }],
+            success_criteria: SuccessCriteria {
+                min_legitimate_pass_rate: 0.98,
+                max_violation_escape_rate: 0.0,
+                max_false_rejection_rate: -0.5,
+            },
+        };
+        let err = validate_config(&config).unwrap_err();
+        assert!(
+            matches!(&err, CampaignError::Validation(msg) if msg.contains("max_false_rejection_rate")),
+            "got: {err:?}"
+        );
+    }
+
+    // --- Finding 72: empty profile string ---
+
+    #[test]
+    fn empty_profile_returns_validation_error() {
+        let yaml = r#"
+name: tc
+profile: ""
+environments: 1
+episodes_per_env: 1
+steps_per_episode: 1
+scenarios:
+  - scenario_type: Baseline
+    weight: 1.0
+"#;
+        let err = load_config(yaml).unwrap_err();
+        assert!(
+            matches!(&err, CampaignError::Validation(msg) if msg.contains("profile")),
+            "got: {err:?}"
+        );
     }
 }

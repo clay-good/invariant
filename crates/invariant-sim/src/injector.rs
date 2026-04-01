@@ -294,6 +294,9 @@ mod tests {
                 required_ops: vec![],
             },
             metadata: HashMap::new(),
+            locomotion_state: None,
+            end_effector_forces: vec![],
+            estimated_payload_kg: None,
         }
     }
 

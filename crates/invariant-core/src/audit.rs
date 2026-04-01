@@ -10,6 +10,7 @@ use std::io::Write;
 
 use base64::{engine::general_purpose::STANDARD, Engine};
 use ed25519_dalek::SigningKey;
+use serde::Serialize;
 use thiserror::Error;
 
 use crate::models::audit::{AuditEntry, SignedAuditEntry};
@@ -220,62 +221,57 @@ impl<W: Write> AuditLogger<W> {
 // ---------------------------------------------------------------------------
 
 #[cfg(not(target_os = "unknown"))]
-impl AuditLogger<std::io::BufWriter<std::fs::File>> {
-    /// Open a file in append-only mode and create an audit logger for it.
+impl AuditLogger<std::fs::File> {
+    /// Open an audit log file and create an audit logger for it.
     ///
-    /// The file is opened with `O_APPEND | O_CREATE | O_WRONLY` to enforce
-    /// immutability (L4). If the file already exists and contains entries,
-    /// the logger resumes the hash chain from the last entry so that new
-    /// appended entries remain linked (L2).
+    /// The file is opened once with `read + write + create` (O_RDWR | O_CREAT).
+    /// If the file already has entries the last line is read from the same
+    /// descriptor (avoiding a TOCTOU race) and the logger resumes the hash
+    /// chain from that last entry (L2).  After reading, the file position is
+    /// seeked to the end so all subsequent writes are append-only (L4).
     ///
-    /// # RELIABILITY: BufWriter and partial-flush risk
+    /// Writing directly to `File` without a `BufWriter` means there is no
+    /// intermediate buffer that could hold stale data on a flush failure.
+    /// Since `log()` flushes after every single JSONL line the absence of
+    /// `BufWriter` does not hurt performance (a `BufWriter` drained on every
+    /// entry provides no net buffering benefit).
     ///
-    /// The writer is wrapped in `BufWriter` for performance. If the process
-    /// crashes between the point where a JSONL line is written into the
-    /// `BufWriter` internal buffer and the explicit `flush()` call in `log()`,
-    /// the line will be lost. The hash chain state in memory will have advanced
-    /// (the `sequence` and `previous_hash` fields) but the corresponding bytes
-    /// will not have reached the kernel page cache. On recovery the on-disk
-    /// file will be one or more entries behind the in-memory state.
+    /// # SECURITY: chain state is recovered without re-verifying signatures
     ///
-    /// Mitigation: `log()` calls `flush()` immediately after every `writeln!`
-    /// and advances the in-memory chain state only after the flush succeeds.
-    /// The `BufWriter` is therefore drained after every single entry, making
-    /// the write-then-flush pair effectively atomic at the level of one log
-    /// entry.  A crash after `writeln!` but before `flush()` can still leave
-    /// a partial line; such a line will be rejected by `verify_log` because it
-    /// will fail JSON deserialization, which is the correct fail-safe behaviour.
+    /// Only the last non-empty line of the file is parsed to determine the
+    /// current sequence number and hash.  Full integrity verification
+    /// (`verify_log`) is a separate, operator-invoked operation.  If the file
+    /// has been tampered with, new entries will chain onto the tampered state
+    /// and a subsequent `verify_log` call will detect the break.
+    ///
+    /// Concurrent writers are NOT supported.
     pub fn open_file(
         path: &std::path::Path,
         signing_key: SigningKey,
         signer_kid: String,
     ) -> Result<Self, AuditError> {
-        // Read existing content to determine chain state before opening for
-        // append.  We must read first because once the file is opened in
-        // append mode we cannot seek back.
-        let (next_sequence, last_entry_hash) = if path.exists() {
-            let content = std::fs::read_to_string(path).map_err(|e| AuditError::Io {
-                reason: e.to_string(),
-            })?;
-            parse_chain_state(&content)?
-        } else {
-            (0, String::new())
-        };
+        use std::io::Seek;
 
-        let file = std::fs::OpenOptions::new()
+        // Open once with read+write+create. This single open eliminates the
+        // TOCTOU race between reading existing content and opening for append.
+        let mut file = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
             .create(true)
-            .append(true)
+            .truncate(false)
             .open(path)?;
 
+        // Read only the last non-empty line to recover chain state.
+        let (next_sequence, last_entry_hash) = read_last_line(&mut file)?;
+
+        // Seek to end so all subsequent writes append without overwriting data.
+        file.seek(std::io::SeekFrom::End(0))?;
+
         if next_sequence == 0 {
-            Ok(Self::new(
-                std::io::BufWriter::new(file),
-                signing_key,
-                signer_kid,
-            ))
+            Ok(Self::new(file, signing_key, signer_kid))
         } else {
             Ok(Self::resume(
-                std::io::BufWriter::new(file),
+                file,
                 signing_key,
                 signer_kid,
                 next_sequence,
@@ -285,51 +281,67 @@ impl AuditLogger<std::io::BufWriter<std::fs::File>> {
     }
 }
 
-/// Parse existing audit log content to find the last entry's sequence and
-/// hash so that `open_file` can resume the chain.
+/// Read the last non-empty line from a file and parse it as a
+/// [`SignedAuditEntry`] to recover `(next_sequence, last_entry_hash)`.
 ///
-/// Returns `(next_sequence, last_entry_hash)`.  If the content is empty or
-/// contains no parseable entries, returns `(0, "")`.
+/// Scans backward from EOF one byte at a time to locate the final newline,
+/// avoiding loading the entire file into memory (O(last_line_length) I/O).
 ///
-/// # SECURITY: chain state is recovered without re-verifying signatures
-///
-/// This function reads the raw on-disk content and trusts the sequence numbers
-/// and entry hashes it finds there. It does NOT call `verify_log` before
-/// resuming the chain. This is intentional for the open-for-append path (the
-/// full verification pass is a separate, operator-invoked operation), but it
-/// means that if the audit log file has been tampered with before this call the
-/// new appended entries will chain onto the tampered state.
-///
-/// Callers must ensure the audit log file path is protected by OS-level
-/// permissions (O_APPEND, mode 0o600) so that only the Invariant process can
-/// write to it. Concurrent writers are NOT supported: if two processes call
-/// `open_file` on the same path simultaneously, their independent chain states
-/// will diverge and subsequent `verify_log` calls will fail.
+/// Returns `(0, "")` if the file is empty or contains only blank lines.
 #[cfg(not(target_os = "unknown"))]
-fn parse_chain_state(content: &str) -> Result<(u64, String), AuditError> {
-    let mut last_sequence = 0u64;
-    let mut last_hash = String::new();
-    let mut found_any = false;
+fn read_last_line(file: &mut std::fs::File) -> Result<(u64, String), AuditError> {
+    use std::io::{Read, Seek};
 
-    for line in content.lines() {
-        let trimmed = line.trim();
-        if trimmed.is_empty() {
+    let file_len = file.seek(std::io::SeekFrom::End(0))?;
+    if file_len == 0 {
+        return Ok((0, String::new()));
+    }
+
+    // Scan backward to find the start of the last non-empty line.
+    // We read one byte at a time from the end, collecting the line content.
+    let mut pos = file_len;
+    let mut line_bytes: Vec<u8> = Vec::new();
+    let mut found_content = false;
+
+    loop {
+        if pos == 0 {
+            break;
+        }
+        pos -= 1;
+        file.seek(std::io::SeekFrom::Start(pos))?;
+        let mut byte = [0u8; 1];
+        file.read_exact(&mut byte)?;
+
+        if byte[0] == b'\n' {
+            if found_content {
+                // We've collected the full line in reverse; stop here.
+                break;
+            }
+            // Skip trailing newlines / blank lines at end of file.
             continue;
         }
-        let signed: crate::models::audit::SignedAuditEntry = serde_json::from_str(trimmed)
-            .map_err(|e| AuditError::Serialization {
-                reason: format!("failed to parse existing audit log entry: {e}"),
-            })?;
-        last_sequence = signed.entry.sequence;
-        last_hash = signed.entry.entry_hash.clone();
-        found_any = true;
+
+        found_content = true;
+        line_bytes.push(byte[0]);
     }
 
-    if found_any {
-        Ok((last_sequence + 1, last_hash))
-    } else {
-        Ok((0, String::new()))
+    if !found_content {
+        return Ok((0, String::new()));
     }
+
+    // We built the line in reverse order; flip it back.
+    line_bytes.reverse();
+
+    let line = String::from_utf8(line_bytes).map_err(|e| AuditError::Serialization {
+        reason: format!("last audit log line is not valid UTF-8: {e}"),
+    })?;
+
+    let signed: crate::models::audit::SignedAuditEntry = serde_json::from_str(line.trim())
+        .map_err(|e| AuditError::Serialization {
+            reason: format!("failed to parse last audit log entry: {e}"),
+        })?;
+
+    Ok((signed.entry.sequence + 1, signed.entry.entry_hash.clone()))
 }
 
 // ---------------------------------------------------------------------------
@@ -383,10 +395,24 @@ pub fn verify_log(
         }
 
         // Recompute entry_hash over the entry with entry_hash set to "".
+        // Use a borrowing view struct to avoid cloning the entire entry.
         let entry_json = {
-            let mut check = entry.clone();
-            check.entry_hash = String::new();
-            serde_json::to_vec(&check).map_err(|e| AuditVerifyError::Deserialization {
+            #[derive(Serialize)]
+            struct HashableEntryView<'a> {
+                sequence: u64,
+                previous_hash: &'a str,
+                command: &'a crate::models::command::Command,
+                verdict: &'a crate::models::verdict::SignedVerdict,
+                entry_hash: &'static str,
+            }
+            let view = HashableEntryView {
+                sequence: entry.sequence,
+                previous_hash: &entry.previous_hash,
+                command: &entry.command,
+                verdict: &entry.verdict,
+                entry_hash: "",
+            };
+            serde_json::to_vec(&view).map_err(|e| AuditVerifyError::Deserialization {
                 line: line_idx + 1,
                 reason: e.to_string(),
             })?
@@ -485,11 +511,18 @@ mod tests {
             proximity_zones: vec![],
             collision_pairs: vec![],
             stability: None,
+            locomotion: None,
+            end_effectors: vec![],
             max_delta_time: 0.1,
             min_collision_distance: 0.01,
             global_velocity_scale: 1.0,
             watchdog_timeout_ms: 50,
             safe_stop_profile: SafeStopProfile::default(),
+            profile_signature: None,
+            profile_signer_kid: None,
+            config_sequence: None,
+            real_world_margins: None,
+            task_envelope: None,
         }
     }
 
@@ -517,6 +550,9 @@ mod tests {
                 required_ops,
             },
             metadata: HashMap::new(),
+            locomotion_state: None,
+            end_effector_forces: vec![],
+            estimated_payload_kg: None,
         }
     }
 
@@ -554,11 +590,16 @@ mod tests {
 
     fn make_simple_signed_verdict() -> (SignedVerdict, SigningKey) {
         let (sign_sk, _) = make_keypair();
+        // Use a fixed timestamp so that entry_hash values are deterministic
+        // across repeated calls (Finding 49).
+        let fixed_ts = chrono::DateTime::parse_from_rfc3339("2024-01-01T00:00:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
         let verdict = Verdict {
             approved: true,
             command_hash: "sha256:abc123".into(),
             command_sequence: 1,
-            timestamp: Utc::now(),
+            timestamp: fixed_ts,
             checks: vec![CheckResult {
                 name: "test".into(),
                 category: "test".into(),
@@ -567,6 +608,7 @@ mod tests {
             }],
             profile_name: "test_robot".into(),
             profile_hash: "sha256:def456".into(),
+            threat_analysis: None,
             authority_summary: AuthoritySummary {
                 origin_principal: "alice".into(),
                 hop_count: 1,
@@ -607,6 +649,9 @@ mod tests {
                 required_ops: vec![op("actuate:j1")],
             },
             metadata: HashMap::new(),
+            locomotion_state: None,
+            end_effector_forces: vec![],
+            estimated_payload_kg: None,
         }
     }
 
@@ -879,6 +924,7 @@ mod tests {
             }],
             profile_name: "test".into(),
             profile_hash: "sha256:profile".into(),
+            threat_analysis: None,
             authority_summary: AuthoritySummary {
                 origin_principal: String::new(),
                 hop_count: 0,
@@ -1112,5 +1158,70 @@ mod tests {
             result.unwrap_err(),
             AuditVerifyError::NonEmptyGenesisPreviousHash,
         );
+    }
+
+    // -----------------------------------------------------------------------
+    // Finding 43: open_file resumes from tampered log without re-verifying
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn open_file_tampered_log_verify_fails_after_resume() {
+        // Write a valid 2-entry log, corrupt the last entry_hash on disk, then
+        // call open_file to resume (which reads but does NOT verify the chain).
+        // After logging one more entry, verify_log on the combined file must
+        // fail with HashChainBroken because the corrupted hash was chained into
+        // the new entry's previous_hash field.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("tampered_audit.jsonl");
+
+        let (sign_sk, sign_vk) = make_keypair();
+        let cmd = make_simple_command();
+        let (verdict, _) = make_simple_signed_verdict();
+
+        // Phase 1: write a valid 2-entry log.
+        {
+            let mut logger =
+                AuditLogger::open_file(&path, sign_sk.clone(), "kid-tamper".into()).unwrap();
+            logger.log(&cmd, &verdict).unwrap();
+            logger.log(&cmd, &verdict).unwrap();
+        }
+
+        // Phase 2: corrupt the last entry_hash field in the file.
+        let original = std::fs::read_to_string(&path).unwrap();
+        let lines: Vec<&str> = original.lines().collect();
+        assert_eq!(lines.len(), 2);
+        // Replace the entry_hash value in the last line with zeroes.
+        let corrupted_last = {
+            let mut val: serde_json::Value = serde_json::from_str(lines[1]).unwrap();
+            val["entry_hash"] = serde_json::Value::String(
+                "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+                    .to_string(),
+            );
+            serde_json::to_string(&val).unwrap()
+        };
+        let tampered_content = format!("{}\n{}\n", lines[0], corrupted_last);
+        std::fs::write(&path, &tampered_content).unwrap();
+
+        // Phase 3: open_file resumes from the tampered log and appends a third entry.
+        // This should succeed — open_file does not verify the chain on resume.
+        {
+            let mut logger =
+                AuditLogger::open_file(&path, sign_sk.clone(), "kid-tamper".into()).unwrap();
+            logger.log(&cmd, &verdict).unwrap();
+        }
+
+        // Phase 4: verify_log must fail because the chain is broken.
+        let combined = std::fs::read_to_string(&path).unwrap();
+        let result = verify_log(&combined, &sign_vk);
+        assert!(
+            result.is_err(),
+            "verify_log must fail on a log that resumes from a tampered entry"
+        );
+        // The error should be about the hash chain or entry hash mismatch.
+        match result.unwrap_err() {
+            AuditVerifyError::HashChainBroken { .. }
+            | AuditVerifyError::EntryHashMismatch { .. } => {}
+            other => panic!("expected HashChainBroken or EntryHashMismatch, got {other:?}"),
+        }
     }
 }

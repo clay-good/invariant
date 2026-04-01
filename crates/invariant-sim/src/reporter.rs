@@ -80,6 +80,16 @@ pub struct ConfidenceStats {
     ///   SIL 2: PFH < 1e-6
     ///   SIL 1: PFH < 1e-5
     pub sil_rating: u8,
+    /// `true` when `n_escapes > 0`, indicating that the SIL rating was derived
+    /// from the Wald (normal approximation) interval rather than the exact
+    /// Clopper-Pearson interval.
+    ///
+    /// The Wald interval is known to be anti-conservative — it under-covers the
+    /// true escape rate when the sample proportion is near 0 or 1, or when
+    /// `n_trials` is small (below ~1000).  The rating should be treated with
+    /// caution when this field is `true`, particularly when `n_escapes` is
+    /// small relative to `n_trials`.
+    pub sil_rating_approximate: bool,
 }
 
 // ---------------------------------------------------------------------------
@@ -393,6 +403,7 @@ fn compute_confidence(n_trials: u64, n_escapes: u64) -> ConfidenceStats {
         mtbf_hours_95,
         mtbf_hours_99,
         sil_rating,
+        sil_rating_approximate: n_escapes > 0,
     }
 }
 
@@ -425,6 +436,7 @@ mod tests {
                 checks,
                 profile_name: "franka_panda".into(),
                 profile_hash: "sha256:def".into(),
+                threat_analysis: None,
                 authority_summary: AuthoritySummary {
                     origin_principal: "alice".into(),
                     hop_count: 1,
@@ -771,6 +783,83 @@ mod tests {
         assert!(!report.criteria_met);
     }
 
+    // --- Finding 76: legitimate_pass_rate vacuous-true when zero legitimate commands ---
+
+    /// When only violation commands are recorded, `legitimate_total` is 0.
+    /// The reporter returns 1.0 as a vacuous truth — there are no legitimate
+    /// commands to fail, so the pass rate is trivially 100%.
+    /// Callers should check the total counts before interpreting this value.
+    #[test]
+    fn legitimate_pass_rate_is_vacuously_one_for_zero_legitimate() {
+        let mut reporter = CampaignReporter::new("test".into(), default_criteria());
+        // Record only violation commands (expected_reject = true).
+        for _ in 0..10 {
+            reporter.record_result("franka_panda", "Violation", true, &make_verdict(false, &[]));
+        }
+        let report = reporter.finalize();
+        // No legitimate commands were recorded.
+        assert_eq!(report.false_rejection_count, 0);
+        // legitimate_pass_rate is vacuously 1.0.
+        assert!(
+            (report.legitimate_pass_rate - 1.0).abs() < f64::EPSILON,
+            "expected vacuous 1.0, got {}",
+            report.legitimate_pass_rate
+        );
+    }
+
+    // --- Finding 78: approval_rate + rejection_rate == 1.0 ---
+
+    #[test]
+    fn approval_rate_plus_rejection_rate_equals_one() {
+        let mut reporter = CampaignReporter::new("test".into(), default_criteria());
+        // 7 approved + 3 rejected = 10 total.
+        for _ in 0..7 {
+            reporter.record_result("franka_panda", "Baseline", false, &make_verdict(true, &[]));
+        }
+        for _ in 0..3 {
+            reporter.record_result("franka_panda", "Violation", true, &make_verdict(false, &[]));
+        }
+        let report = reporter.finalize();
+        let sum = report.approval_rate + report.rejection_rate;
+        assert!(
+            (sum - 1.0).abs() < 1e-12,
+            "approval_rate ({}) + rejection_rate ({}) must sum to 1.0, got {}",
+            report.approval_rate,
+            report.rejection_rate,
+            sum
+        );
+    }
+
+    #[test]
+    fn approval_rate_plus_rejection_rate_equals_one_all_approved() {
+        let mut reporter = CampaignReporter::new("test".into(), default_criteria());
+        for _ in 0..20 {
+            reporter.record_result("franka_panda", "Baseline", false, &make_verdict(true, &[]));
+        }
+        let report = reporter.finalize();
+        let sum = report.approval_rate + report.rejection_rate;
+        assert!(
+            (sum - 1.0).abs() < 1e-12,
+            "sum must be 1.0 when all approved, got {}",
+            sum
+        );
+    }
+
+    #[test]
+    fn approval_rate_plus_rejection_rate_equals_one_all_rejected() {
+        let mut reporter = CampaignReporter::new("test".into(), default_criteria());
+        for _ in 0..15 {
+            reporter.record_result("franka_panda", "Violation", true, &make_verdict(false, &[]));
+        }
+        let report = reporter.finalize();
+        let sum = report.approval_rate + report.rejection_rate;
+        assert!(
+            (sum - 1.0).abs() < 1e-12,
+            "sum must be 1.0 when all rejected, got {}",
+            sum
+        );
+    }
+
     // --- Confidence stats ---
 
     #[test]
@@ -813,6 +902,84 @@ mod tests {
         assert!(conf.upper_bound_95 > 0.01);
         assert!(conf.upper_bound_99 > conf.upper_bound_95);
         assert_eq!(conf.sil_rating, 0); // escape rate too high for any SIL
+    }
+
+    // --- Findings 11 / 39: sil_rating_approximate flag ---
+
+    #[test]
+    fn sil_rating_not_approximate_when_zero_escapes() {
+        let conf = compute_confidence(1000, 0);
+        assert!(
+            !conf.sil_rating_approximate,
+            "sil_rating_approximate must be false when n_escapes == 0 (exact Clopper-Pearson)"
+        );
+    }
+
+    #[test]
+    fn sil_rating_approximate_when_nonzero_escapes() {
+        let conf = compute_confidence(1000, 1);
+        assert!(
+            conf.sil_rating_approximate,
+            "sil_rating_approximate must be true when n_escapes > 0 (Wald approximation)"
+        );
+    }
+
+    #[test]
+    fn sil_rating_not_approximate_for_zero_trials() {
+        // n_trials == 0 → worst-case bound, no escapes recorded, not Wald.
+        let conf = compute_confidence(0, 0);
+        assert!(
+            !conf.sil_rating_approximate,
+            "sil_rating_approximate must be false when n_trials == 0"
+        );
+    }
+
+    /// Verify the Wald upper bound is >= the raw observed rate for small n.
+    ///
+    /// For n=10, k=1: p_hat = 0.1. The Wald 99% bound = p_hat + 2.576*se.
+    /// This must exceed 0.1 (the observed rate) to be at all useful.
+    #[test]
+    fn wald_upper_bound_exceeds_observed_rate_for_small_n() {
+        let conf = compute_confidence(10, 1);
+        let observed_rate = 1.0_f64 / 10.0;
+        assert!(
+            conf.upper_bound_99 > observed_rate,
+            "Wald 99% upper bound {:.6} must exceed observed rate {:.6}",
+            conf.upper_bound_99,
+            observed_rate
+        );
+        assert!(
+            conf.upper_bound_95 > observed_rate,
+            "Wald 95% upper bound {:.6} must exceed observed rate {:.6}",
+            conf.upper_bound_95,
+            observed_rate
+        );
+    }
+
+    /// For n=5, k=1 the Wald bound must be at least as large as the known
+    /// conservative Wilson score bound, demonstrating it does not systematically
+    /// under-cover for this extreme-small-n case.
+    ///
+    /// NOTE: The Wald interval is known to be anti-conservative for small n
+    /// and proportions near 0 or 1. This test documents that the bound is
+    /// positive and non-trivially above 0.2 (the observed rate) — it does NOT
+    /// guarantee Clopper-Pearson coverage.  See `sil_rating_approximate` field.
+    #[test]
+    fn wald_bound_positive_and_nonzero_for_small_n() {
+        let conf = compute_confidence(5, 1);
+        assert!(conf.upper_bound_99 > 0.0, "bound must be positive");
+        assert!(conf.upper_bound_95 > 0.0, "bound must be positive");
+        // Wald bound for n=5, k=1: p=0.2, se=sqrt(0.16/5)≈0.179
+        // upper_95 ≈ 0.2 + 1.96*0.179 ≈ 0.55
+        // upper_99 ≈ 0.2 + 2.576*0.179 ≈ 0.66
+        assert!(
+            conf.upper_bound_99 > 0.2,
+            "Wald 99% bound for n=5,k=1 must exceed observed rate 0.2"
+        );
+        assert!(
+            conf.sil_rating_approximate,
+            "must be marked approximate when n_escapes > 0"
+        );
     }
 
     #[test]

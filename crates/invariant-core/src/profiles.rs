@@ -234,6 +234,21 @@ mod tests {
     }
 
     #[test]
+    fn load_from_json_exactly_at_limit() {
+        // Finding 48: a string of exactly MAX_PROFILE_JSON_BYTES bytes must
+        // NOT be rejected by the InputTooLarge guard (the guard is `> max`,
+        // not `>= max`). It will fail with a parse error, but never InputTooLarge.
+        let at_limit = "x".repeat(MAX_PROFILE_JSON_BYTES);
+        assert_eq!(at_limit.len(), MAX_PROFILE_JSON_BYTES);
+        let result = load_from_json(&at_limit);
+        assert!(result.is_err());
+        assert!(
+            !matches!(result.unwrap_err(), ProfileError::InputTooLarge { .. }),
+            "a string of exactly MAX_PROFILE_JSON_BYTES bytes must not return InputTooLarge"
+        );
+    }
+
+    #[test]
     fn load_from_json_validation_failure() {
         // Profile with inverted joint limits
         let json = r#"{

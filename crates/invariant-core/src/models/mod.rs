@@ -308,6 +308,13 @@ mod tests {
             global_velocity_scale: 1.0,
             watchdog_timeout_ms: 50,
             safe_stop_profile: SafeStopProfile::default(),
+            profile_signature: None,
+            profile_signer_kid: None,
+            config_sequence: None,
+            real_world_margins: None,
+            task_envelope: None,
+            locomotion: None,
+            end_effectors: vec![],
         }
     }
 
@@ -419,6 +426,13 @@ mod tests {
             global_velocity_scale: 1.0,
             watchdog_timeout_ms: 50,
             safe_stop_profile: SafeStopProfile::default(),
+            profile_signature: None,
+            profile_signer_kid: None,
+            config_sequence: None,
+            real_world_margins: None,
+            task_envelope: None,
+            locomotion: None,
+            end_effectors: vec![],
         };
         assert!(matches!(
             profile.validate(),

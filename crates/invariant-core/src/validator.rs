@@ -161,6 +161,7 @@ impl ValidatorConfig {
             profile_name: self.profile.name.clone(),
             profile_hash: self.profile_hash.clone(),
             authority_summary,
+            threat_analysis: None,
         };
 
         let signed_verdict = self.sign_verdict(&verdict)?;
@@ -315,9 +316,9 @@ fn build_authority_summary(
 
     match chain {
         Some(c) => {
-            let mut operations_granted: Vec<String> =
+            // BTreeSet already iterates in sorted order; no explicit sort needed.
+            let operations_granted: Vec<String> =
                 c.final_ops().iter().map(|op| op.to_string()).collect();
-            operations_granted.sort();
             AuthoritySummary {
                 origin_principal: c.origin_principal().to_string(),
                 hop_count: c.hops().len(),
@@ -384,11 +385,18 @@ mod tests {
             proximity_zones: vec![],
             collision_pairs: vec![],
             stability: None,
+            locomotion: None,
             max_delta_time: 0.1,
             min_collision_distance: 0.01,
             global_velocity_scale: 1.0,
             watchdog_timeout_ms: 50,
             safe_stop_profile: SafeStopProfile::default(),
+            profile_signature: None,
+            profile_signer_kid: None,
+            config_sequence: None,
+            real_world_margins: None,
+            task_envelope: None,
+            end_effectors: vec![],
         }
     }
 
@@ -422,6 +430,9 @@ mod tests {
                 required_ops,
             },
             metadata: HashMap::new(),
+            locomotion_state: None,
+            end_effector_forces: vec![],
+            estimated_payload_kg: None,
         }
     }
 

@@ -11,20 +11,23 @@ use axum::extract::State;
 use axum::http::{HeaderMap, StatusCode};
 use axum::routing::{get, post};
 use axum::{BoxError, Json, Router};
-use base64::{engine::general_purpose::STANDARD, Engine};
 use chrono::Utc;
 use clap::Args;
 use ed25519_dalek::SigningKey;
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
+use tower::limit::ConcurrencyLimitLayer;
 use tower::timeout::TimeoutLayer;
 use tower::ServiceBuilder;
 
-use invariant_core::authority::crypto::sign_pca;
-use invariant_core::models::authority::Pca;
 use invariant_core::models::command::Command;
 use invariant_core::validator::ValidatorConfig;
 use invariant_core::watchdog::{Watchdog, WatchdogState};
+
+use super::forge::forge_authority;
+
+/// Maximum number of concurrent in-flight requests.
+const MAX_CONCURRENT_REQUESTS: usize = 64;
 
 #[derive(Args)]
 pub struct ServeArgs {
@@ -44,8 +47,21 @@ pub struct ServeArgs {
     /// Optional shared-secret bearer token. When set, /validate and /pca
     /// require an `Authorization: Bearer <token>` header. Health and heartbeat
     /// endpoints remain unauthenticated.
+    ///
+    /// SECURITY: Passing tokens via CLI arguments exposes them in the process
+    /// table. Prefer `--auth-token-file` or `INVARIANT_AUTH_TOKEN` env var.
     #[arg(long, value_name = "TOKEN")]
     pub auth_token: Option<String>,
+    /// Read the auth token from a file rather than the CLI argument.
+    /// The file must contain exactly the raw token string (trailing newline
+    /// is stripped). Overrides `--auth-token` when both are supplied.
+    #[arg(long, value_name = "TOKEN_FILE")]
+    pub auth_token_file: Option<PathBuf>,
+    /// Path to write the safe-stop command JSON when the watchdog triggers.
+    /// Written atomically (`.tmp` then rename). Defaults to `safe-stop.json`
+    /// in the current working directory.
+    #[arg(long, value_name = "SAFE_STOP_FILE", default_value = "safe-stop.json")]
+    pub safe_stop_path: PathBuf,
 }
 
 // ---------------------------------------------------------------------------
@@ -62,6 +78,8 @@ struct AppState {
     boot_instant: Instant,
     /// Optional shared-secret bearer token for /validate and /pca endpoints.
     auth_token: Option<String>,
+    /// File path for atomic safe-stop command writes.
+    safe_stop_path: PathBuf,
 }
 
 struct WatchdogInner {
@@ -74,7 +92,9 @@ struct WatchdogInner {
 
 impl WatchdogInner {
     fn now_ms(&self) -> u64 {
-        self.boot_instant.elapsed().as_millis() as u64
+        // Use saturating cast: u128 -> u64 saturates at u64::MAX (~584 million
+        // years of uptime) rather than silently truncating (Finding 37).
+        u64::try_from(self.boot_instant.elapsed().as_millis()).unwrap_or(u64::MAX)
     }
 }
 
@@ -122,6 +142,21 @@ struct ErrorResponse {
 // Auth helper
 // ---------------------------------------------------------------------------
 
+/// Constant-time byte comparison that does not short-circuit on mismatch.
+///
+/// This prevents timing side-channel attacks on secret token comparisons
+/// (Finding 15). Returns `true` iff both slices are the same length and
+/// contain identical bytes.
+fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    a.iter()
+        .zip(b.iter())
+        .fold(0u8, |acc, (x, y)| acc | (x ^ y))
+        == 0
+}
+
 /// Check the `Authorization: Bearer <token>` header against the expected token.
 /// Returns `Ok(())` if authentication is not required or if the token matches.
 /// Returns `Err(...)` with a 401 response if authentication fails.
@@ -136,14 +171,28 @@ fn check_auth(
     let auth_header = headers
         .get(axum::http::header::AUTHORIZATION)
         .and_then(|v| v.to_str().ok());
-    match auth_header {
-        Some(h) if h.starts_with("Bearer ") && &h["Bearer ".len()..] == expected_token => Ok(()),
-        _ => Err((
+
+    let provided = match auth_header {
+        Some(h) if h.starts_with("Bearer ") => &h["Bearer ".len()..],
+        _ => {
+            return Err((
+                StatusCode::UNAUTHORIZED,
+                Json(ErrorResponse {
+                    error: "missing or invalid Authorization header".to_string(),
+                }),
+            ))
+        }
+    };
+
+    if constant_time_eq(provided.as_bytes(), expected_token.as_bytes()) {
+        Ok(())
+    } else {
+        Err((
             StatusCode::UNAUTHORIZED,
             Json(ErrorResponse {
                 error: "missing or invalid Authorization header".to_string(),
             }),
-        )),
+        ))
     }
 }
 
@@ -162,7 +211,7 @@ async fn handle_validate(
 
     // In trust-plane mode, auto-issue a self-signed PCA chain.
     if state.trust_plane {
-        forge_authority(&mut cmd, &state.signing_key, &state.kid).map_err(|e| {
+        forge_authority(&mut cmd, &state.signing_key, &state.kid, "trust-plane").map_err(|e| {
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(ErrorResponse {
@@ -209,11 +258,11 @@ async fn handle_heartbeat(
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<HeartbeatResponse>, (StatusCode, Json<ErrorResponse>)> {
     // SECURITY: The heartbeat endpoint is intentionally unauthenticated.
-    // In production deployments the heartbeat caller (the cognitive layer)
-    // is trusted at the network/transport level. Full per-request rate
-    // limiting would require tower-governor or a similar middleware and is
-    // out of scope for this implementation. Deployers should apply network
-    // ACLs to restrict access to this endpoint.
+    // The server binds exclusively to 127.0.0.1 (loopback), restricting
+    // access to local processes only (Finding 33). In production, the
+    // heartbeat caller (the cognitive layer) runs on the same host. If the
+    // bind address is ever extended beyond loopback, authentication should
+    // be added here.
     let watchdog_rwlock = state.watchdog.as_ref().ok_or_else(|| {
         (
             StatusCode::BAD_REQUEST,
@@ -240,7 +289,8 @@ async fn handle_heartbeat(
 }
 
 async fn handle_health(State(state): State<Arc<AppState>>) -> Json<HealthResponse> {
-    let uptime_ms = state.boot_instant.elapsed().as_millis() as u64;
+    // Saturating cast for uptime — same rationale as now_ms() (Finding 37).
+    let uptime_ms = u64::try_from(state.boot_instant.elapsed().as_millis()).unwrap_or(u64::MAX);
 
     let (watchdog_enabled, watchdog_state, watchdog_alive) =
         if let Some(ref wd_rwlock) = state.watchdog {
@@ -274,26 +324,21 @@ async fn handle_health(State(state): State<Arc<AppState>>) -> Json<HealthRespons
 }
 
 // ---------------------------------------------------------------------------
-// Forge helper (mirrors validate.rs logic)
+// Safe-stop delivery helper
 // ---------------------------------------------------------------------------
 
-fn forge_authority(cmd: &mut Command, signing_key: &SigningKey, kid: &str) -> Result<(), String> {
-    let ops = cmd.authority.required_ops.iter().cloned().collect();
-
-    let pca = Pca {
-        p_0: "trust-plane".to_string(),
-        ops,
-        kid: kid.to_string(),
-        exp: None,
-        nbf: None,
-    };
-
-    let signed = sign_pca(&pca, signing_key).map_err(|e| e.to_string())?;
-    let chain = vec![signed];
-    let chain_json = serde_json::to_vec(&chain).map_err(|e| e.to_string())?;
-    cmd.authority.pca_chain = STANDARD.encode(&chain_json);
-
-    Ok(())
+/// Atomically write `cmd_json` to `path` by first writing to a `.tmp` sibling
+/// and then renaming it into place.  This avoids partial reads by an external
+/// watchdog daemon monitoring the path.
+fn write_safe_stop_atomic(path: &std::path::Path, cmd_json: &str) {
+    let tmp_path = path.with_extension("tmp");
+    if let Err(e) = std::fs::write(&tmp_path, cmd_json) {
+        eprintln!("watchdog: failed to write safe-stop tmp file {tmp_path:?}: {e}");
+        return;
+    }
+    if let Err(e) = std::fs::rename(&tmp_path, path) {
+        eprintln!("watchdog: failed to rename safe-stop file to {path:?}: {e}");
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -314,6 +359,16 @@ pub fn run(args: &ServeArgs) -> i32 {
 }
 
 async fn run_server(args: &ServeArgs) -> i32 {
+    // Resolve auth token: env var > --auth-token-file > --auth-token (CLI).
+    let auth_token = resolve_auth_token(args);
+    let auth_token = match auth_token {
+        Ok(t) => t,
+        Err(e) => {
+            eprintln!("error: {e}");
+            return 2;
+        }
+    };
+
     // Load profile.
     let profile_json = match std::fs::read_to_string(&args.profile) {
         Ok(s) => s,
@@ -348,7 +403,8 @@ async fn run_server(args: &ServeArgs) -> i32 {
 
     // Keep a copy of the raw bytes solely for constructing the watchdog's
     // independent SigningKey; the AppState will own the primary key directly.
-    let signing_key_bytes = signing_key.to_bytes();
+    // Wrapped in a Zeroizing guard so key bytes are wiped on drop (Finding 36).
+    let signing_key_bytes = zeroizing::Zeroizing::new(signing_key.to_bytes());
 
     // Build trusted keys.
     let mut trusted_keys = HashMap::new();
@@ -368,6 +424,8 @@ async fn run_server(args: &ServeArgs) -> i32 {
     let app_signing_key = SigningKey::from_bytes(&signing_key_bytes);
 
     let boot_instant = Instant::now();
+
+    let safe_stop_path = args.safe_stop_path.clone();
 
     // Optionally create watchdog.
     let watchdog = if args.watchdog_timeout_ms > 0 {
@@ -390,13 +448,16 @@ async fn run_server(args: &ServeArgs) -> i32 {
         kid,
         watchdog,
         boot_instant,
-        auth_token: args.auth_token.clone(),
+        auth_token,
+        safe_stop_path,
     });
 
     // Spawn a background task that periodically calls watchdog.check() so that
     // the timeout can trigger even when no heartbeat requests are in flight.
-    // The JoinHandle is stored so we can detect if the task dies unexpectedly.
-    let _watchdog_task_handle: Option<tokio::task::JoinHandle<()>> = if state.watchdog.is_some() {
+    // A supervisor task awaits the JoinHandle: if the watchdog task panics or
+    // returns unexpectedly it transitions the watchdog to Triggered state
+    // (Finding 16).
+    let watchdog_task_handle: Option<tokio::task::JoinHandle<()>> = if state.watchdog.is_some() {
         let wd_state = Arc::clone(&state);
         let timeout_ms = args.watchdog_timeout_ms;
         Some(tokio::spawn(async move {
@@ -412,14 +473,16 @@ async fn run_server(args: &ServeArgs) -> i32 {
                     let now_utc = Utc::now();
                     match inner.watchdog.check(now_ms, now_utc) {
                         Ok(Some(cmd)) => {
-                            // TODO: deliver safe-stop command to hardware
-                            // actuator channel when real hardware integration
-                            // is available.
+                            // Serialize and deliver the safe-stop command.
                             let cmd_json = serde_json::to_string(&cmd)
                                 .unwrap_or_else(|e| format!("{{\"error\":\"{e}\"}}"));
                             eprintln!(
                                 "watchdog: safe-stop triggered; actuation_command={cmd_json}"
                             );
+                            // Write atomically to the configured path so an
+                            // external watchdog daemon can detect the trigger
+                            // (Finding 1).
+                            write_safe_stop_atomic(&wd_state.safe_stop_path, &cmd_json);
                         }
                         Ok(None) => {}
                         Err(e) => {
@@ -433,6 +496,31 @@ async fn run_server(args: &ServeArgs) -> i32 {
         None
     };
 
+    // Supervisor task: if the watchdog background task exits for any reason
+    // (panic, unexpected return), log the event (Finding 16).
+    if let Some(handle) = watchdog_task_handle {
+        let supervisor_state = Arc::clone(&state);
+        tokio::spawn(async move {
+            match handle.await {
+                Ok(()) => {
+                    eprintln!("watchdog: background task exited unexpectedly; system is unsafe");
+                }
+                Err(e) => {
+                    eprintln!("watchdog: background task panicked: {e}; system is unsafe");
+                }
+            }
+            // Force watchdog into triggered state so the health endpoint
+            // reflects the failure and operators are alerted.
+            if let Some(ref wd_rwlock) = supervisor_state.watchdog {
+                let mut inner = wd_rwlock.write().await;
+                let now_ms = inner.now_ms();
+                let now_utc = Utc::now();
+                // Drive a final check at current time to force Triggered.
+                let _ = inner.watchdog.check(now_ms, now_utc);
+            }
+        });
+    }
+
     let app = Router::new()
         .route("/validate", post(handle_validate))
         .route("/heartbeat", post(handle_heartbeat))
@@ -445,6 +533,7 @@ async fn run_server(args: &ServeArgs) -> i32 {
                 .layer(HandleErrorLayer::new(|_err: BoxError| async {
                     StatusCode::REQUEST_TIMEOUT
                 }))
+                .layer(ConcurrencyLimitLayer::new(MAX_CONCURRENT_REQUESTS))
                 .layer(TimeoutLayer::new(Duration::from_secs(5))),
         )
         .layer(axum::extract::DefaultBodyLimit::max(65_536))
@@ -477,6 +566,38 @@ async fn run_server(args: &ServeArgs) -> i32 {
     0
 }
 
+/// Resolve the auth token with precedence: env var > file > CLI arg.
+///
+/// Returns `Ok(None)` when no token is configured through any mechanism.
+fn resolve_auth_token(args: &ServeArgs) -> Result<Option<String>, String> {
+    // 1. Environment variable takes highest precedence.
+    if let Ok(token) = std::env::var("INVARIANT_AUTH_TOKEN") {
+        if !token.is_empty() {
+            return Ok(Some(token));
+        }
+    }
+
+    // 2. File-based token (recommended for production; avoids process table exposure).
+    if let Some(ref file_path) = args.auth_token_file {
+        let raw = std::fs::read_to_string(file_path).map_err(|e| {
+            format!(
+                "failed to read auth token file {}: {e}",
+                file_path.display()
+            )
+        })?;
+        let token = raw
+            .trim_end_matches('\n')
+            .trim_end_matches('\r')
+            .to_string();
+        if !token.is_empty() {
+            return Ok(Some(token));
+        }
+    }
+
+    // 3. CLI arg (least preferred — visible in process table).
+    Ok(args.auth_token.clone())
+}
+
 async fn shutdown_signal() {
     match tokio::signal::ctrl_c().await {
         Ok(()) => {
@@ -501,6 +622,7 @@ mod tests {
     use invariant_core::models::authority::Operation;
     use invariant_core::models::command::{CommandAuthority, JointState};
     use rand::rngs::OsRng;
+    use tempfile::TempDir;
     use tower::ServiceExt;
 
     fn make_test_state(trust_plane: bool, watchdog_timeout_ms: u64) -> Arc<AppState> {
@@ -556,6 +678,7 @@ mod tests {
             watchdog,
             boot_instant,
             auth_token,
+            safe_stop_path: PathBuf::from("safe-stop.json"),
         })
     }
 
@@ -588,6 +711,9 @@ mod tests {
                 ],
             },
             metadata: HashMap::new(),
+            locomotion_state: None,
+            end_effector_forces: vec![],
+            estimated_payload_kg: None,
         }
     }
 
@@ -942,5 +1068,241 @@ mod tests {
         assert!(health.watchdog_enabled);
         // last_checked_ms is None -> watchdog_alive maps to None
         assert!(health.watchdog_alive.is_none());
+    }
+
+    // --- Constant-time auth comparison (Finding 15) ---
+
+    #[test]
+    fn constant_time_eq_same_bytes() {
+        assert!(constant_time_eq(b"hello", b"hello"));
+    }
+
+    #[test]
+    fn constant_time_eq_different_bytes() {
+        assert!(!constant_time_eq(b"hello", b"world"));
+    }
+
+    #[test]
+    fn constant_time_eq_different_lengths() {
+        assert!(!constant_time_eq(b"hello", b"hell"));
+    }
+
+    #[test]
+    fn constant_time_eq_empty() {
+        assert!(constant_time_eq(b"", b""));
+    }
+
+    // --- resolve_auth_token tests (Finding 32, 56) ---
+
+    #[test]
+    fn resolve_auth_token_cli_arg() {
+        let dir = tempfile::tempdir().unwrap();
+        let profile = dir.path().join("p.json");
+        let key = dir.path().join("k.json");
+        let args = ServeArgs {
+            profile,
+            key,
+            port: 8080,
+            trust_plane: false,
+            watchdog_timeout_ms: 0,
+            auth_token: Some("cli-token".to_string()),
+            auth_token_file: None,
+            safe_stop_path: dir.path().join("safe-stop.json"),
+        };
+        // No env var set; no file; CLI arg must win.
+        // We must clear the env var in case it leaked from another test.
+        std::env::remove_var("INVARIANT_AUTH_TOKEN");
+        let result = resolve_auth_token(&args).unwrap();
+        assert_eq!(result, Some("cli-token".to_string()));
+    }
+
+    #[test]
+    fn resolve_auth_token_from_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let token_file = dir.path().join("token.txt");
+        std::fs::write(&token_file, "file-token\n").unwrap();
+
+        let profile = dir.path().join("p.json");
+        let key = dir.path().join("k.json");
+        let args = ServeArgs {
+            profile,
+            key,
+            port: 8080,
+            trust_plane: false,
+            watchdog_timeout_ms: 0,
+            auth_token: Some("cli-token".to_string()),
+            auth_token_file: Some(token_file),
+            safe_stop_path: dir.path().join("safe-stop.json"),
+        };
+        std::env::remove_var("INVARIANT_AUTH_TOKEN");
+        let result = resolve_auth_token(&args).unwrap();
+        // File overrides CLI arg; trailing newline must be stripped.
+        assert_eq!(result, Some("file-token".to_string()));
+    }
+
+    #[test]
+    fn resolve_auth_token_missing_file_returns_err() {
+        let dir = tempfile::tempdir().unwrap();
+        let args = ServeArgs {
+            profile: dir.path().join("p.json"),
+            key: dir.path().join("k.json"),
+            port: 8080,
+            trust_plane: false,
+            watchdog_timeout_ms: 0,
+            auth_token: None,
+            auth_token_file: Some(dir.path().join("nonexistent.txt")),
+            safe_stop_path: dir.path().join("safe-stop.json"),
+        };
+        std::env::remove_var("INVARIANT_AUTH_TOKEN");
+        let result = resolve_auth_token(&args);
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .contains("failed to read auth token file"));
+    }
+
+    #[test]
+    fn resolve_auth_token_none_when_nothing_configured() {
+        let dir = tempfile::tempdir().unwrap();
+        let args = ServeArgs {
+            profile: dir.path().join("p.json"),
+            key: dir.path().join("k.json"),
+            port: 8080,
+            trust_plane: false,
+            watchdog_timeout_ms: 0,
+            auth_token: None,
+            auth_token_file: None,
+            safe_stop_path: dir.path().join("safe-stop.json"),
+        };
+        std::env::remove_var("INVARIANT_AUTH_TOKEN");
+        let result = resolve_auth_token(&args).unwrap();
+        assert!(result.is_none());
+    }
+
+    // --- Safe-stop atomic write (Finding 1) ---
+
+    #[test]
+    fn write_safe_stop_atomic_creates_file() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("safe-stop.json");
+        write_safe_stop_atomic(&path, r#"{"test":"value"}"#);
+        assert!(path.exists());
+        let content = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(content, r#"{"test":"value"}"#);
+    }
+
+    #[test]
+    fn write_safe_stop_atomic_overwrites_existing() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("safe-stop.json");
+        std::fs::write(&path, "old content").unwrap();
+        write_safe_stop_atomic(&path, r#"{"new":"content"}"#);
+        let content = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(content, r#"{"new":"content"}"#);
+    }
+
+    // --- run() startup error path tests (Finding 56) ---
+
+    #[test]
+    fn run_returns_2_on_missing_profile() {
+        let dir = TempDir::new().unwrap();
+        let args = ServeArgs {
+            profile: dir.path().join("nonexistent_profile.json"),
+            key: dir.path().join("key.json"),
+            port: 1025,
+            trust_plane: false,
+            watchdog_timeout_ms: 0,
+            auth_token: None,
+            auth_token_file: None,
+            safe_stop_path: dir.path().join("safe-stop.json"),
+        };
+        assert_eq!(run(&args), 2);
+    }
+
+    #[test]
+    fn run_returns_2_on_missing_key_file() {
+        use std::io::Write;
+        let dir = TempDir::new().unwrap();
+        let profile_path = dir.path().join("profile.json");
+        let profile = invariant_core::profiles::load_builtin("humanoid_28dof").unwrap();
+        let profile_json = serde_json::to_string(&profile).unwrap();
+        let mut f = std::fs::File::create(&profile_path).unwrap();
+        f.write_all(profile_json.as_bytes()).unwrap();
+
+        let args = ServeArgs {
+            profile: profile_path,
+            key: dir.path().join("nonexistent_key.json"),
+            port: 1025,
+            trust_plane: false,
+            watchdog_timeout_ms: 0,
+            auth_token: None,
+            auth_token_file: None,
+            safe_stop_path: dir.path().join("safe-stop.json"),
+        };
+        assert_eq!(run(&args), 2);
+    }
+
+    #[test]
+    fn run_returns_2_on_invalid_profile_json() {
+        use std::io::Write;
+        let dir = TempDir::new().unwrap();
+        let profile_path = dir.path().join("bad_profile.json");
+        let mut f = std::fs::File::create(&profile_path).unwrap();
+        f.write_all(b"this is not valid json").unwrap();
+
+        let args = ServeArgs {
+            profile: profile_path,
+            key: dir.path().join("key.json"),
+            port: 1025,
+            trust_plane: false,
+            watchdog_timeout_ms: 0,
+            auth_token: None,
+            auth_token_file: None,
+            safe_stop_path: dir.path().join("safe-stop.json"),
+        };
+        assert_eq!(run(&args), 2);
+    }
+}
+
+// Inline Zeroizing wrapper (avoids adding a new crate dependency).
+// This is a minimal implementation that zeroes memory on drop.
+mod zeroizing {
+    /// Wraps a value in a guard that zeroes the memory on drop.
+    pub struct Zeroizing<T: ZeroizeOnDrop>(T);
+
+    pub trait ZeroizeOnDrop {
+        fn zeroize(&mut self);
+    }
+
+    impl ZeroizeOnDrop for [u8; 32] {
+        fn zeroize(&mut self) {
+            for b in self.iter_mut() {
+                // Use volatile_write equivalent via pointer to prevent the
+                // compiler from eliding the zeroing as a dead store.
+                // SAFETY: self is a valid [u8; 32].
+                unsafe {
+                    std::ptr::write_volatile(b as *mut u8, 0);
+                }
+            }
+        }
+    }
+
+    impl<T: ZeroizeOnDrop> Zeroizing<T> {
+        pub fn new(value: T) -> Self {
+            Self(value)
+        }
+    }
+
+    impl<T: ZeroizeOnDrop> std::ops::Deref for Zeroizing<T> {
+        type Target = T;
+        fn deref(&self) -> &T {
+            &self.0
+        }
+    }
+
+    impl<T: ZeroizeOnDrop> Drop for Zeroizing<T> {
+        fn drop(&mut self) {
+            self.0.zeroize();
+        }
     }
 }

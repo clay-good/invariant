@@ -12,6 +12,8 @@ path = "src/main.rs"
 [dependencies]
 invariant-core = { path = "../invariant-core" }
 invariant-eval = { path = "../invariant-eval" }
+invariant-fuzz = { path = "../invariant-fuzz" }
+invariant-sim = { path = "../invariant-sim" }
 clap.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
@@ -25,7 +27,7 @@ sha2.workspace = true
 rand.workspace = true
 chrono.workspace = true
 axum.workspace = true
-tower = { version = "0.5", features = ["timeout", "util"] }
+tower = { version = "0.5", features = ["timeout", "util", "limit"] }
 
 [dev-dependencies]
 tempfile = "3"

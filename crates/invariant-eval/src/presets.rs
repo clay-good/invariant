@@ -3,7 +3,7 @@
 // Each preset evaluates a Trace and returns an EvalReport containing per-step
 // findings and an overall pass/fail verdict. Presets are pure functions — no I/O.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 use invariant_core::models::trace::Trace;
 use serde::{Deserialize, Serialize};
@@ -233,7 +233,22 @@ fn completeness_check(trace: &Trace) -> EvalReport {
         let prev = &window[0];
         let curr = &window[1];
 
-        if curr.step != prev.step + 1 {
+        if curr.step <= prev.step {
+            // curr.step == prev.step  → duplicate step number
+            // curr.step <  prev.step  → backwards / out-of-order step
+            all_passed = false;
+            gap_count += 1;
+            findings.push(EvalFinding {
+                step: curr.step,
+                severity: Severity::Error,
+                message: format!(
+                    "duplicate or backwards step: {} -> {} (expected {})",
+                    prev.step,
+                    curr.step,
+                    prev.step + 1
+                ),
+            });
+        } else if curr.step > prev.step + 1 {
             all_passed = false;
             gap_count += 1;
             findings.push(EvalFinding {
@@ -304,11 +319,29 @@ fn completeness_check(trace: &Trace) -> EvalReport {
 // ---------------------------------------------------------------------------
 
 /// When run on a single trace, regression-check verifies internal consistency:
+/// - The trace is non-empty (empty traces indicate a data-pipeline problem)
 /// - `verdict.approved` matches whether all checks passed
 /// - Command sequence numbers match step sequence numbers
 fn regression_check_single(trace: &Trace) -> EvalReport {
     let mut findings = Vec::new();
     let mut all_passed = true;
+
+    // An empty trace cannot be internally consistent — there is nothing to
+    // verify.  Fail fast so downstream consumers are not misled by a vacuous
+    // pass result.
+    if trace.steps.is_empty() {
+        return EvalReport {
+            preset: PRESET_REGRESSION_CHECK.into(),
+            trace_id: trace.id.clone(),
+            passed: false,
+            findings: vec![EvalFinding {
+                step: 0,
+                severity: Severity::Error,
+                message: "trace contains no steps; cannot verify internal consistency".into(),
+            }],
+            summary: "0 steps checked for internal consistency".into(),
+        };
+    }
 
     for step in &trace.steps {
         let verdict = &step.verdict.verdict;
@@ -371,6 +404,10 @@ fn is_valid_trace_id(id: &str) -> bool {
 /// fallback that strips disallowed characters and truncates to the maximum
 /// allowed length. A `<sanitized>` suffix is appended to the fallback so
 /// callers can detect that the original value was untrusted.
+///
+/// If stripping all disallowed characters leaves an empty string (e.g. the
+/// input consists entirely of disallowed characters), the prefix `"unknown"`
+/// is used instead so the returned value is always non-empty.
 fn sanitize_trace_id(id: &str) -> String {
     if is_valid_trace_id(id) {
         id.to_string()
@@ -380,7 +417,12 @@ fn sanitize_trace_id(id: &str) -> String {
             .filter(|c| c.is_alphanumeric() || *c == '-' || *c == '_' || *c == '.')
             .take(TRACE_ID_MAX_LEN.saturating_sub("<sanitized>".len()))
             .collect();
-        format!("{}<sanitized>", cleaned)
+        let prefix = if cleaned.is_empty() {
+            "unknown"
+        } else {
+            &cleaned
+        };
+        format!("{}<sanitized>", prefix)
     }
 }
 
@@ -452,28 +494,51 @@ fn regression_check(baseline: &Trace, candidate: &Trace) -> EvalReport {
             });
         }
 
-        // Check per-check result differences using a HashMap for O(n) lookup.
-        let cand_checks: HashMap<&str, bool> = cand_step
-            .verdict
-            .verdict
-            .checks
-            .iter()
-            .map(|c| (c.name.as_str(), c.passed))
-            .collect();
-
+        // Check per-check result differences.
+        //
+        // Linear scan over the candidate checks for each baseline check.
+        // With at most 11 checks per verdict (1 authority + 10 physics),
+        // linear search avoids the per-step HashMap allocation overhead.
         for base_check in &base_step.verdict.verdict.checks {
-            if let Some(&cand_pass) = cand_checks.get(base_check.name.as_str()) {
-                if base_check.passed != cand_pass {
+            if let Some(cand_check) = cand_step
+                .verdict
+                .verdict
+                .checks
+                .iter()
+                .find(|c| c.name == base_check.name)
+            {
+                if base_check.passed != cand_check.passed {
                     all_passed = false;
                     findings.push(EvalFinding {
                         step: base_step.step,
                         severity: Severity::Error,
                         message: format!(
                             "check '{}' changed: baseline={}, candidate={}",
-                            base_check.name, base_check.passed, cand_pass
+                            base_check.name, base_check.passed, cand_check.passed
                         ),
                     });
                 }
+            }
+        }
+
+        // Report checks present in the candidate but absent from the baseline
+        // as informational findings (not regressions).
+        for cand_check in &cand_step.verdict.verdict.checks {
+            let in_baseline = base_step
+                .verdict
+                .verdict
+                .checks
+                .iter()
+                .any(|c| c.name == cand_check.name);
+            if !in_baseline {
+                findings.push(EvalFinding {
+                    step: base_step.step,
+                    severity: Severity::Info,
+                    message: format!(
+                        "check '{}' present in candidate but absent from baseline",
+                        cand_check.name
+                    ),
+                });
             }
         }
     }
@@ -570,6 +635,9 @@ mod tests {
                 required_ops: vec![],
             },
             metadata: HashMap::new(),
+            locomotion_state: None,
+            end_effector_forces: vec![],
+            estimated_payload_kg: None,
         }
     }
 
@@ -583,6 +651,7 @@ mod tests {
                 checks: all_checks(approved),
                 profile_name: "test_profile".into(),
                 profile_hash: "profile_hash".into(),
+                threat_analysis: None,
                 authority_summary: AuthoritySummary {
                     origin_principal: "operator".into(),
                     hop_count: 1,
@@ -778,6 +847,7 @@ mod tests {
 
     #[test]
     fn test_completeness_gap_in_steps() {
+        // Step jumps from 0 to 2 — a sequence gap.
         let trace = make_trace(vec![make_step(0, true), make_step(2, true)]);
         let report = completeness_check(&trace);
         assert!(!report.passed);
@@ -787,6 +857,51 @@ mod tests {
             .filter(|f| f.message.contains("gap"))
             .collect();
         assert_eq!(gap_findings.len(), 1);
+        assert!(
+            gap_findings[0].message.contains("step sequence gap"),
+            "unexpected message: {}",
+            gap_findings[0].message
+        );
+    }
+
+    #[test]
+    fn test_completeness_duplicate_step_number() {
+        // Two consecutive steps with the same sequence number — duplicate.
+        let trace = make_trace(vec![make_step(0, true), make_step(0, true)]);
+        let report = completeness_check(&trace);
+        assert!(!report.passed);
+        let dup_findings: Vec<_> = report
+            .findings
+            .iter()
+            .filter(|f| f.message.contains("duplicate or backwards step"))
+            .collect();
+        assert_eq!(
+            dup_findings.len(),
+            1,
+            "expected exactly one duplicate finding, got: {:?}",
+            report.findings
+        );
+    }
+
+    #[test]
+    fn test_completeness_backwards_step_number() {
+        // Step decreases from 1 to 0 — out-of-order / backwards.
+        let trace = make_trace(vec![make_step(1, true), make_step(0, true)]);
+        let report = completeness_check(&trace);
+        assert!(!report.passed);
+        // The first-step-must-be-0 check fires too, but the backwards check must
+        // also appear.
+        let backwards_findings: Vec<_> = report
+            .findings
+            .iter()
+            .filter(|f| f.message.contains("duplicate or backwards step"))
+            .collect();
+        assert_eq!(
+            backwards_findings.len(),
+            1,
+            "expected exactly one backwards-step finding, got: {:?}",
+            report.findings
+        );
     }
 
     #[test]
@@ -843,6 +958,31 @@ mod tests {
         // Sequence mismatch is an error: it indicates a structural inconsistency.
         assert!(!report.passed);
         assert_eq!(report.findings[0].severity, Severity::Error);
+    }
+
+    /// An empty trace must produce a failed report — a vacuous pass would be
+    /// misleading for a safety/consistency check.
+    #[test]
+    fn test_regression_single_empty_trace_fails() {
+        let trace = make_trace(vec![]);
+        let report = regression_check_single(&trace);
+        assert!(
+            !report.passed,
+            "regression_check_single must fail for an empty trace"
+        );
+        assert_eq!(
+            report.findings.len(),
+            1,
+            "expected exactly one finding for empty trace"
+        );
+        assert_eq!(report.findings[0].severity, Severity::Error);
+        assert!(
+            report.findings[0]
+                .message
+                .contains("trace contains no steps"),
+            "unexpected message: {}",
+            report.findings[0].message
+        );
     }
 
     // --- regression-check (two traces) ---
@@ -939,6 +1079,76 @@ mod tests {
             .contains("check 'joint_limits' changed"));
     }
 
+    /// A check present in the candidate but absent from the baseline is reported
+    /// as an informational finding rather than a regression error.
+    #[test]
+    fn test_regression_candidate_check_absent_from_baseline_is_info() {
+        let baseline = make_trace(vec![make_step(0, true)]);
+        let mut candidate = make_trace(vec![make_step(0, true)]);
+        // Add an extra check to the candidate that is not in the baseline.
+        candidate.steps[0]
+            .verdict
+            .verdict
+            .checks
+            .push(make_check("new_check", "physics", true));
+
+        let report = run_regression(&baseline, &candidate);
+        // The extra check must not cause a failure.
+        assert!(
+            report.passed,
+            "extra check in candidate should not cause failure, findings: {:?}",
+            report.findings
+        );
+        // It must appear as an Info finding.
+        let info_findings: Vec<_> = report
+            .findings
+            .iter()
+            .filter(|f| f.severity == Severity::Info && f.message.contains("new_check"))
+            .collect();
+        assert_eq!(
+            info_findings.len(),
+            1,
+            "expected exactly one Info finding for the new check, got: {:?}",
+            report.findings
+        );
+        assert!(
+            info_findings[0]
+                .message
+                .contains("present in candidate but absent from baseline"),
+            "unexpected message: {}",
+            info_findings[0].message
+        );
+    }
+
+    /// Two empty traces produce a vacuous passed=true result with no findings
+    /// (the regression loop has nothing to iterate over).  This test documents
+    /// that behaviour so it is visible and deliberate rather than accidental.
+    ///
+    /// Note: if a stricter policy is desired (fail on empty traces), a guard
+    /// analogous to the one in `regression_check_single` should be added to
+    /// `regression_check`.
+    #[test]
+    fn test_run_regression_both_empty_traces_passes() {
+        let baseline = make_trace(vec![]);
+        let candidate = make_trace(vec![]);
+        let report = run_regression(&baseline, &candidate);
+        // Document the current behaviour: vacuous pass on two empty traces.
+        assert!(
+            report.passed,
+            "run_regression on two empty traces currently returns passed=true (vacuous)"
+        );
+        assert!(
+            report.findings.is_empty(),
+            "expected no findings for two empty traces, got: {:?}",
+            report.findings
+        );
+        assert_eq!(
+            report.summary, "compared 0 steps, 0 regressions found",
+            "unexpected summary: {}",
+            report.summary
+        );
+    }
+
     // --- trace ID validation helpers ---
 
     #[test]
@@ -974,9 +1184,18 @@ mod tests {
 
     #[test]
     fn test_sanitize_trace_id_strips_invalid_chars() {
+        // "trace/001 bad" → strip '/', ' ' → "trace001bad" → append "<sanitized>"
         let result = sanitize_trace_id("trace/001 bad");
-        assert!(result.ends_with("<sanitized>"));
-        assert!(result.contains("trace001bad") || result.starts_with("trace"));
+        assert_eq!(result, "trace001bad<sanitized>");
+    }
+
+    #[test]
+    fn test_sanitize_trace_id_all_disallowed_chars_uses_unknown_prefix() {
+        // Input consists entirely of disallowed characters; after stripping,
+        // cleaned is empty.  The result must use "unknown" as the prefix so
+        // the returned value is always non-empty.
+        let result = sanitize_trace_id("!@#$%^&*()");
+        assert_eq!(result, "unknown<sanitized>");
     }
 
     #[test]

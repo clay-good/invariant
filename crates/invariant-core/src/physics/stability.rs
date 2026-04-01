@@ -147,29 +147,37 @@ mod tests {
 
     #[test]
     fn com_at_vertex_of_polygon() {
-        // A vertex of the polygon is geometrically on the boundary.  The
-        // ray-casting algorithm may classify this as inside or on-boundary;
-        // we assert it does not panic and returns a definite result.
+        // Canonical boundary behavior: the ray-casting half-open interval
+        // convention `(yi > py) != (yj > py)` classifies vertex (0,0) of the
+        // unit square as INSIDE.  The right edge (1,0)->(1,1) crosses the
+        // horizontal ray at y=0 at x=1, which is to the right of px=0,
+        // flipping inside to true.  This is the defined behavior for this
+        // algorithm and is explicitly asserted here.
         let cfg = unit_square();
-        // Bottom-left vertex (0, 0).
         let result = check_stability(Some(&[0.0, 0.0, 0.0]), Some(&cfg));
         assert_eq!(result.name, "stability");
-        // The result (pass/fail) is implementation-defined for exact vertices;
-        // we just verify the function returns without panic.
-        assert!(!result.details.is_empty());
+        assert!(
+            result.passed,
+            "boundary vertex (0,0) is classified as inside by ray-casting: {}",
+            result.details
+        );
     }
 
     #[test]
     fn com_on_edge_of_polygon_passes() {
-        // A point clearly on an edge (midpoint of the bottom edge of the unit
-        // square).  The ray-caster may classify this as inside or outside
-        // depending on the half-open interval convention, but the call must not
-        // panic and must produce a valid result.
+        // Canonical boundary behavior: the midpoint of the bottom edge (0.5, 0.0)
+        // is classified as INSIDE by the ray-casting algorithm.  The right edge
+        // (1,0)->(1,1) crosses the horizontal ray at y=0 at x=1, which is to
+        // the right of px=0.5, flipping inside to true.  This is the defined
+        // behavior and is explicitly asserted here.
         let cfg = unit_square();
-        // Mid-point of bottom edge: (0.5, 0.0).
         let result = check_stability(Some(&[0.5, 0.0, 0.0]), Some(&cfg));
         assert_eq!(result.name, "stability");
-        assert!(!result.details.is_empty());
+        assert!(
+            result.passed,
+            "boundary edge midpoint (0.5,0.0) is classified as inside by ray-casting: {}",
+            result.details
+        );
     }
 
     #[test]

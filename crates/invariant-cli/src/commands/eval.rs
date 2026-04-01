@@ -32,19 +32,11 @@ pub fn run(args: &EvalArgs) -> i32 {
         return 0;
     }
 
-    if args.rubric.is_some() {
-        eprintln!("invariant eval: --rubric not yet implemented (Step 13)");
+    if args.preset.is_none() && args.rubric.is_none() {
+        eprintln!("invariant eval: specify --preset or --rubric");
+        eprintln!("Available presets: {}", presets::list_presets().join(", "));
         return 2;
     }
-
-    let preset_name = match &args.preset {
-        Some(name) => name.as_str(),
-        None => {
-            eprintln!("invariant eval: specify --preset or --rubric");
-            eprintln!("Available presets: {}", presets::list_presets().join(", "));
-            return 2;
-        }
-    };
 
     // Read trace file
     let trace_data = match std::fs::read_to_string(&args.trace) {
@@ -63,12 +55,31 @@ pub fn run(args: &EvalArgs) -> i32 {
         }
     };
 
-    // Run the preset
-    let report = match presets::run_preset(preset_name, &trace) {
-        Ok(r) => r,
-        Err(e) => {
-            eprintln!("error: {}", e);
-            return 2;
+    // Run rubric or preset
+    let report = if let Some(rubric_path) = &args.rubric {
+        let rubric_data = match std::fs::read_to_string(rubric_path) {
+            Ok(data) => data,
+            Err(e) => {
+                eprintln!("error: could not read rubric file: {}", e);
+                return 2;
+            }
+        };
+        let rubric = match invariant_eval::rubric::load_rubric_json(&rubric_data) {
+            Ok(r) => r,
+            Err(e) => {
+                eprintln!("error: {}", e);
+                return 2;
+            }
+        };
+        invariant_eval::rubric::run_rubric(&rubric, &trace)
+    } else {
+        let preset_name = args.preset.as_deref().unwrap();
+        match presets::run_preset(preset_name, &trace) {
+            Ok(r) => r,
+            Err(e) => {
+                eprintln!("error: {}", e);
+                return 2;
+            }
         }
     };
 

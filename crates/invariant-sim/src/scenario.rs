@@ -271,6 +271,11 @@ impl<'a> ScenarioGenerator<'a> {
         // Pre-compute once — identical for every command in this scenario.
         let joint_states = self.baseline_joint_states();
         let meta_template = Self::metadata_template(self.scenario);
+        // F24: build CommandAuthority once and clone it per command (avoids
+        // repeated ops.to_vec() allocations inside the closure).
+        let authority = Self::authority(pca_chain_b64, ops);
+        // F26: allocate source String once before the iterator.
+        let source = "baseline_agent".to_owned();
 
         (0..count)
             .map(|i| {
@@ -280,14 +285,17 @@ impl<'a> ScenarioGenerator<'a> {
                     ));
                 Command {
                     timestamp,
-                    source: "baseline_agent".to_owned(),
+                    source: source.clone(),
                     sequence: i as u64,
                     joint_states: joint_states.clone(),
                     delta_time,
                     end_effector_positions: end_effector_positions.clone(),
                     center_of_mass: None,
-                    authority: Self::authority(pca_chain_b64, ops),
+                    authority: authority.clone(),
                     metadata: Self::metadata_stamp(&meta_template, i),
+                    locomotion_state: None,
+                    end_effector_forces: vec![],
+                    estimated_payload_kg: None,
                 }
             })
             .collect()
@@ -364,6 +372,9 @@ impl<'a> ScenarioGenerator<'a> {
                     center_of_mass: None,
                     authority: Self::authority(pca_chain_b64, ops),
                     metadata: Self::metadata_stamp(&meta_template, i),
+                    locomotion_state: None,
+                    end_effector_forces: vec![],
+                    estimated_payload_kg: None,
                 }
             })
             .collect()
@@ -396,6 +407,9 @@ impl<'a> ScenarioGenerator<'a> {
                     center_of_mass: None,
                     authority: Self::authority(pca_chain_b64, ops),
                     metadata: Self::metadata_stamp(&meta_template, i),
+                    locomotion_state: None,
+                    end_effector_forces: vec![],
+                    estimated_payload_kg: None,
                 }
             })
             .collect()
@@ -433,6 +447,9 @@ impl<'a> ScenarioGenerator<'a> {
                         required_ops: ops.to_vec(),
                     },
                     metadata: Self::metadata_stamp(&meta_template, i),
+                    locomotion_state: None,
+                    end_effector_forces: vec![],
+                    estimated_payload_kg: None,
                 }
             })
             .collect()
@@ -472,6 +489,9 @@ impl<'a> ScenarioGenerator<'a> {
                         required_ops: ops.to_vec(),
                     },
                     metadata: Self::metadata_stamp(&meta_template, i),
+                    locomotion_state: None,
+                    end_effector_forces: vec![],
+                    estimated_payload_kg: None,
                 }
             })
             .collect()
@@ -537,6 +557,9 @@ impl<'a> ScenarioGenerator<'a> {
                     center_of_mass: None,
                     authority: Self::authority(pca_chain_b64, ops),
                     metadata: Self::metadata_stamp(&meta_template, i),
+                    locomotion_state: None,
+                    end_effector_forces: vec![],
+                    estimated_payload_kg: None,
                 }
             })
             .collect()
@@ -595,6 +618,9 @@ impl<'a> ScenarioGenerator<'a> {
                     center_of_mass: None,
                     authority: Self::authority(pca_chain_b64, ops),
                     metadata: Self::metadata_stamp(&meta_template, i),
+                    locomotion_state: None,
+                    end_effector_forces: vec![],
+                    estimated_payload_kg: None,
                 }
             })
             .collect()
@@ -639,7 +665,8 @@ fn point_in_exclusion_zone(point: [f64; 3], zone: &ExclusionZone) -> bool {
             let dx = point[0] - center[0];
             let dy = point[1] - center[1];
             let dz = point[2] - center[2];
-            (dx * dx + dy * dy + dz * dz).sqrt() <= *radius
+            // F27: compare squared distance to avoid unnecessary sqrt().
+            dx * dx + dy * dy + dz * dz <= radius * radius
         }
         // Non-exhaustive: unknown variants do not contribute a hit.
         _ => false,
@@ -915,6 +942,144 @@ mod tests {
             let back: ScenarioType = serde_json::from_str(&json).unwrap();
             assert_eq!(variant, back);
         }
+    }
+
+    // --- Finding 79: safe_end_effector behaviour when exclusion zone covers workspace centre ---
+
+    /// Build a minimal `RobotProfile` with one joint and a given workspace and
+    /// exclusion zones, without a collision distance constraint.
+    fn minimal_profile_with_exclusion(
+        workspace_min: [f64; 3],
+        workspace_max: [f64; 3],
+        exclusion_zones: Vec<invariant_core::models::profile::ExclusionZone>,
+    ) -> RobotProfile {
+        use invariant_core::models::profile::{
+            JointDefinition, JointType, RobotProfile, SafeStopProfile, WorkspaceBounds,
+        };
+        RobotProfile {
+            name: "test_robot".to_owned(),
+            version: "1.0.0".to_owned(),
+            joints: vec![JointDefinition {
+                name: "j1".to_owned(),
+                joint_type: JointType::Revolute,
+                min: -1.0,
+                max: 1.0,
+                max_velocity: 1.0,
+                max_torque: 10.0,
+                max_acceleration: 5.0,
+            }],
+            workspace: WorkspaceBounds::Aabb {
+                min: workspace_min,
+                max: workspace_max,
+            },
+            exclusion_zones,
+            proximity_zones: vec![],
+            collision_pairs: vec![],
+            stability: None,
+            locomotion: None,
+            end_effectors: vec![],
+            max_delta_time: 0.1,
+            min_collision_distance: 0.01,
+            global_velocity_scale: 1.0,
+            watchdog_timeout_ms: 50,
+            safe_stop_profile: SafeStopProfile::default(),
+            profile_signature: None,
+            profile_signer_kid: None,
+            config_sequence: None,
+            real_world_margins: None,
+            task_envelope: None,
+        }
+    }
+
+    /// When the workspace centre is NOT inside any exclusion zone, the safe
+    /// end-effector should return the centre itself.
+    #[test]
+    fn safe_end_effector_returns_centre_when_no_exclusion_zone_covers_it() {
+        use invariant_core::models::profile::ExclusionZone;
+
+        let profile = minimal_profile_with_exclusion(
+            [-1.0, -1.0, -1.0],
+            [1.0, 1.0, 1.0],
+            vec![ExclusionZone::Aabb {
+                name: "corner_zone".to_owned(),
+                min: [0.8, 0.8, 0.8],
+                max: [1.0, 1.0, 1.0],
+            }],
+        );
+        let centre = ScenarioGenerator::workspace_centre(&profile);
+        let safe = ScenarioGenerator::safe_end_effector(&profile);
+        // Centre is [0,0,0], which is NOT in the corner zone.
+        assert_eq!(
+            safe, centre,
+            "should return workspace centre when it is safe"
+        );
+    }
+
+    /// When the exclusion zone covers ALL five candidate points (centre and the
+    /// four ±0.1 offsets), `safe_end_effector` falls back to the workspace centre
+    /// as a last resort.  This documents the known limitation: the returned point
+    /// may still be inside an exclusion zone when no candidate is clear.
+    ///
+    /// LIMITATION: `safe_end_effector` tries only 5 candidate points.  If the
+    /// exclusion zone is large enough to cover all of them the function falls
+    /// back to the workspace centre rather than expanding its search.  This is
+    /// acceptable for test/campaign use where profiles are not expected to have
+    /// exclusion zones that entirely cover the workspace interior, but callers
+    /// that require a guaranteed clear position should verify the result.
+    #[test]
+    fn safe_end_effector_falls_back_to_centre_when_all_candidates_blocked() {
+        use invariant_core::models::profile::ExclusionZone;
+
+        // Workspace: [-0.5, -0.5, -0.5] to [0.5, 0.5, 0.5].
+        // Centre: [0, 0, 0].  All five candidates are within 0.1 m of centre.
+        // Use a sphere exclusion zone of radius 0.5 centred at the origin,
+        // which covers all five candidate points.
+        let profile = minimal_profile_with_exclusion(
+            [-0.5, -0.5, -0.5],
+            [0.5, 0.5, 0.5],
+            vec![ExclusionZone::Sphere {
+                name: "full_coverage".to_owned(),
+                center: [0.0, 0.0, 0.0],
+                radius: 0.5, // covers everything within 0.5 m of origin
+            }],
+        );
+        let centre = ScenarioGenerator::workspace_centre(&profile);
+        let safe = ScenarioGenerator::safe_end_effector(&profile);
+        // All candidates are blocked; fallback must be the workspace centre.
+        assert_eq!(
+            safe, centre,
+            "fallback must be workspace centre when all candidates are in exclusion zone"
+        );
+        // Document that the result IS inside the exclusion zone (known limitation).
+        assert!(
+            point_in_any_exclusion_zone(safe, &profile.exclusion_zones),
+            "known limitation: fallback point is inside exclusion zone when no candidate is clear"
+        );
+    }
+
+    /// When the exclusion zone covers only the workspace centre, one of the
+    /// offset candidates should be outside the zone.
+    #[test]
+    fn safe_end_effector_finds_clear_point_when_only_centre_blocked() {
+        use invariant_core::models::profile::ExclusionZone;
+
+        // Workspace: [-1.0, -1.0, -1.0] to [1.0, 1.0, 1.0].
+        // Centre: [0, 0, 0]. Exclusion sphere radius 0.05 — only covers the centre.
+        let profile = minimal_profile_with_exclusion(
+            [-1.0, -1.0, -1.0],
+            [1.0, 1.0, 1.0],
+            vec![ExclusionZone::Sphere {
+                name: "small_zone".to_owned(),
+                center: [0.0, 0.0, 0.0],
+                radius: 0.05, // covers centre but not the ±0.1 offsets
+            }],
+        );
+        let safe = ScenarioGenerator::safe_end_effector(&profile);
+        // The result must be outside the exclusion zone.
+        assert!(
+            !point_in_any_exclusion_zone(safe, &profile.exclusion_zones),
+            "safe_end_effector must find a point outside the exclusion zone when one exists"
+        );
     }
 
     // --- Zero commands ---

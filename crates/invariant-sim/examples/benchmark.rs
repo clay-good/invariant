@@ -63,6 +63,9 @@ fn make_valid_command(profile: &RobotProfile, chain: &str, seq: u64) -> Command 
             required_ops: ops,
         },
         metadata: HashMap::new(),
+        locomotion_state: None,
+        end_effector_forces: vec![],
+        estimated_payload_kg: None,
     }
 }
 
@@ -182,7 +185,7 @@ fn benchmark_campaign() {
         };
 
         let start = Instant::now();
-        let report = run_dry_campaign(&config).unwrap();
+        let report = run_dry_campaign(&config, None).unwrap();
         let elapsed = start.elapsed();
 
         eprintln!("Profile: {profile_name}");

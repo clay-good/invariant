@@ -28,12 +28,17 @@ impl TraceCollector {
     /// * `environment_id` -- environment index in the campaign.
     /// * `scenario` -- name of the scenario that generated this episode.
     /// * `profile_name` -- name of the robot profile in use.
+    /// * `expected_steps` -- expected number of steps in this episode.
+    ///   Used to pre-allocate the internal step buffer with
+    ///   `Vec::with_capacity(expected_steps)` to avoid repeated reallocations.
+    ///   Pass `0` if the count is unknown.
     pub fn new(
         trace_id: String,
         episode: u64,
         environment_id: u32,
         scenario: String,
         profile_name: String,
+        expected_steps: usize,
     ) -> Self {
         TraceCollector {
             trace_id,
@@ -41,7 +46,7 @@ impl TraceCollector {
             environment_id,
             scenario,
             profile_name,
-            steps: Vec::new(),
+            steps: Vec::with_capacity(expected_steps),
         }
     }
 
@@ -106,6 +111,9 @@ mod tests {
                 required_ops: vec![],
             },
             metadata: std::collections::HashMap::new(),
+            locomotion_state: None,
+            end_effector_forces: vec![],
+            estimated_payload_kg: None,
         }
     }
 
@@ -124,6 +132,7 @@ mod tests {
                 }],
                 profile_name: "test_robot".into(),
                 profile_hash: "sha256:abc".into(),
+                threat_analysis: None,
                 authority_summary: AuthoritySummary {
                     origin_principal: "alice".into(),
                     hop_count: 1,
@@ -144,6 +153,7 @@ mod tests {
             0,
             "Baseline".into(),
             "franka_panda".into(),
+            0,
         );
         let trace = collector.finalize();
         assert_eq!(trace.id, "trace-1");
@@ -163,6 +173,7 @@ mod tests {
             3,
             "PositionViolation".into(),
             "ur10".into(),
+            5,
         );
 
         for i in 0..5u64 {
@@ -185,6 +196,7 @@ mod tests {
             0,
             "Baseline".into(),
             "franka_panda".into(),
+            2,
         );
         collector.record_step(0, make_command(0), make_verdict(true, 0));
         collector.record_step(1, make_command(1), make_verdict(false, 1));
@@ -202,6 +214,7 @@ mod tests {
             7,
             "VelocityViolation".into(),
             "humanoid_28dof".into(),
+            0,
         );
         let trace = collector.finalize();
         assert_eq!(trace.id, "my-id");

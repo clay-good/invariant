@@ -4,6 +4,7 @@ members = [
     "crates/invariant-cli",
     "crates/invariant-sim",
     "crates/invariant-eval",
+    "crates/invariant-fuzz",
 ]
 resolver = "2"
 

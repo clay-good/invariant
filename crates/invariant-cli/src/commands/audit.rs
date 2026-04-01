@@ -35,11 +35,11 @@ pub fn run(args: &AuditArgs) -> i32 {
                     return 2;
                 }
             };
-            let trimmed = line.trim().to_owned();
+            let trimmed = line.trim();
             if trimmed.is_empty() {
                 continue;
             }
-            match serde_json::from_str::<SignedAuditEntry>(&trimmed) {
+            match serde_json::from_str::<SignedAuditEntry>(trimmed) {
                 Ok(entry) => {
                     if ring.len() == last_n {
                         ring.pop_front();
@@ -71,11 +71,11 @@ pub fn run(args: &AuditArgs) -> i32 {
                     return 2;
                 }
             };
-            let trimmed = line.trim().to_owned();
+            let trimmed = line.trim();
             if trimmed.is_empty() {
                 continue;
             }
-            match serde_json::from_str::<SignedAuditEntry>(&trimmed) {
+            match serde_json::from_str::<SignedAuditEntry>(trimmed) {
                 Ok(entry) => match serde_json::to_string_pretty(&entry) {
                     Ok(json) => println!("{json}"),
                     Err(e) => {
@@ -134,6 +134,9 @@ mod tests {
                 required_ops: vec![Operation::new("actuate:j1").unwrap()],
             },
             metadata: HashMap::new(),
+            locomotion_state: None,
+            end_effector_forces: vec![],
+            estimated_payload_kg: None,
         }
     }
 
@@ -151,6 +154,7 @@ mod tests {
             }],
             profile_name: "test_robot".into(),
             profile_hash: "sha256:def".into(),
+            threat_analysis: None,
             authority_summary: AuthoritySummary {
                 origin_principal: "alice".into(),
                 hop_count: 1,
@@ -258,5 +262,107 @@ mod tests {
         write_audit_entries(&mut tmp, 2);
         let args = args_for(tmp.path(), Some(10));
         assert_eq!(run(&args), 0);
+    }
+
+    // -----------------------------------------------------------------------
+    // Finding 58: Output content assertions
+    //
+    // We test output content by parsing the JSONL log file directly and
+    // verifying that the entries contain the expected fields rather than
+    // capturing stdout (which would require refactoring the run() function).
+    // -----------------------------------------------------------------------
+
+    /// Parse all audit entries from a JSONL temp file and return them.
+    fn parse_entries(file: &NamedTempFile) -> Vec<SignedAuditEntry> {
+        use std::io::BufRead;
+        let f = std::fs::File::open(file.path()).unwrap();
+        let reader = std::io::BufReader::new(f);
+        reader
+            .lines()
+            .filter_map(|l| {
+                let line = l.unwrap();
+                let trimmed = line.trim().to_string();
+                if trimmed.is_empty() {
+                    None
+                } else {
+                    Some(serde_json::from_str::<SignedAuditEntry>(&trimmed).unwrap())
+                }
+            })
+            .collect()
+    }
+
+    #[test]
+    fn audit_entries_contain_expected_profile_name() {
+        let mut tmp = NamedTempFile::new().unwrap();
+        write_audit_entries(&mut tmp, 2);
+
+        let entries = parse_entries(&tmp);
+        assert_eq!(entries.len(), 2, "should have 2 entries");
+        for entry in &entries {
+            // Each entry wraps a SignedVerdict; verify the profile_name field.
+            assert_eq!(
+                entry.entry.verdict.verdict.profile_name, "test_robot",
+                "entry profile_name must equal the test verdict profile_name"
+            );
+        }
+    }
+
+    #[test]
+    fn audit_entries_contain_signer_kid() {
+        let mut tmp = NamedTempFile::new().unwrap();
+        write_audit_entries(&mut tmp, 1);
+
+        let entries = parse_entries(&tmp);
+        assert_eq!(entries.len(), 1);
+        // signer_kid on the SignedAuditEntry is the audit logger's kid.
+        assert_eq!(
+            entries[0].signer_kid, "test-kid",
+            "SignedAuditEntry signer_kid must be 'test-kid'"
+        );
+    }
+
+    #[test]
+    fn audit_entries_have_non_empty_entry_hash() {
+        let mut tmp = NamedTempFile::new().unwrap();
+        write_audit_entries(&mut tmp, 1);
+
+        let entries = parse_entries(&tmp);
+        assert_eq!(entries.len(), 1);
+        // entry_hash is on the AuditEntry (inside .entry).
+        assert!(
+            !entries[0].entry.entry_hash.is_empty(),
+            "entry_hash must not be empty"
+        );
+        assert!(
+            entries[0].entry.entry_hash.starts_with("sha256:"),
+            "entry_hash must start with 'sha256:'"
+        );
+    }
+
+    #[test]
+    fn audit_entries_have_non_empty_entry_signature() {
+        let mut tmp = NamedTempFile::new().unwrap();
+        write_audit_entries(&mut tmp, 1);
+
+        let entries = parse_entries(&tmp);
+        assert_eq!(entries.len(), 1);
+        assert!(
+            !entries[0].entry_signature.is_empty(),
+            "entry_signature must not be empty"
+        );
+    }
+
+    #[test]
+    fn audit_entries_approved_flag_matches_verdict() {
+        let mut tmp = NamedTempFile::new().unwrap();
+        write_audit_entries(&mut tmp, 1);
+
+        let entries = parse_entries(&tmp);
+        assert_eq!(entries.len(), 1);
+        // The test verdict is always approved=true.
+        assert!(
+            entries[0].entry.verdict.verdict.approved,
+            "test verdict must be approved"
+        );
     }
 }
