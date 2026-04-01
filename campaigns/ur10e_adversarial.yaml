@@ -1,0 +1,60 @@
+# UR10e + Haas VF-2 Cell — Full Adversarial Campaign
+#
+# Throws everything at the safety system: forged authority chains,
+# hallucinated commands, NaN injection, replay attacks, velocity
+# overshoots, torque spikes. Every attack must be caught.
+#
+# This is the campaign you run to generate the proof package
+# for the equipment loan application.
+#
+# Usage:
+#   invariant campaign --config campaigns/ur10e_adversarial.yaml --key keys.json --dry-run
+
+name: ur10e_adversarial_proof
+profile: ur10e_haas_cell
+environments: 1
+episodes_per_env: 100
+steps_per_episode: 1000
+scenarios:
+  # 30% normal operations (baseline — should pass)
+  - scenario_type: baseline
+    weight: 0.30
+
+  # 10% boundary stress (near limits — should mostly pass)
+  - scenario_type: aggressive
+    weight: 0.10
+
+  # 15% spatial attacks (exclusion zone + workspace escape)
+  - scenario_type: exclusion_zone
+    weight: 0.10
+  - scenario_type: baseline
+    weight: 0.05
+    injections:
+      - workspace_escape
+
+  # 15% authority attacks
+  - scenario_type: authority_escalation
+    weight: 0.05
+  - scenario_type: chain_forgery
+    weight: 0.05
+  - scenario_type: multi_agent_handoff
+    weight: 0.05
+
+  # 10% LLM hallucination
+  - scenario_type: prompt_injection
+    weight: 0.10
+
+  # 10% fault injection (velocity, torque, NaN)
+  - scenario_type: baseline
+    weight: 0.10
+    injections:
+      - velocity_overshoot
+      - torque_spike
+      - nan_injection
+      - position_violation
+      - self_collision
+
+success_criteria:
+  min_legitimate_pass_rate: 0.95
+  max_violation_escape_rate: 0.0
+  max_false_rejection_rate: 0.05

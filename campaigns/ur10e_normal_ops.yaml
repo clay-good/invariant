@@ -1,0 +1,23 @@
+# UR10e + Haas VF-2 Cell — Normal Operations Campaign
+#
+# Simulates 100,000 normal production cycles: pick billet from stock pallet,
+# load into vise, wait for machining, unload finished part, place on done pallet.
+# All commands should be APPROVED. Any rejection is a false positive.
+#
+# Usage:
+#   invariant campaign --config campaigns/ur10e_normal_ops.yaml --key keys.json --dry-run
+
+name: ur10e_normal_operations
+profile: ur10e_haas_cell
+environments: 1
+episodes_per_env: 200
+steps_per_episode: 500
+scenarios:
+  # 100% baseline — all safe mid-range movements
+  - scenario_type: baseline
+    weight: 1.0
+
+success_criteria:
+  min_legitimate_pass_rate: 0.99
+  max_violation_escape_rate: 0.0
+  max_false_rejection_rate: 0.01

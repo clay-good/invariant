@@ -1,0 +1,41 @@
+# UR10e + Haas VF-2 Cell — Spindle Safety Campaign
+#
+# The critical safety scenario: what happens when the robot tries to enter
+# the Haas enclosure while the spindle is running?
+#
+# Tests exclusion zone enforcement (P6) — the arm must NEVER reach into
+# the haas_spindle_zone or haas_enclosure_interior zones.
+#
+# Also tests what happens when a software bug, prompt injection, or
+# hallucination tries to command the arm into the danger zone.
+#
+# Usage:
+#   invariant campaign --config campaigns/ur10e_spindle_safety.yaml --key keys.json --dry-run
+
+name: ur10e_spindle_safety
+profile: ur10e_haas_cell
+environments: 1
+episodes_per_env: 50
+steps_per_episode: 1000
+scenarios:
+  # 40% normal operations (should pass)
+  - scenario_type: baseline
+    weight: 0.4
+  # 30% exclusion zone attacks (arm reaching into spindle area — must reject)
+  - scenario_type: exclusion_zone
+    weight: 0.3
+  # 15% workspace escape (arm reaching outside cell bounds — must reject)
+  - scenario_type: baseline
+    weight: 0.15
+    injections:
+      - workspace_escape
+  # 15% position violations (joints commanded past limits — must reject)
+  - scenario_type: baseline
+    weight: 0.15
+    injections:
+      - position_violation
+
+success_criteria:
+  min_legitimate_pass_rate: 0.95
+  max_violation_escape_rate: 0.0
+  max_false_rejection_rate: 0.05

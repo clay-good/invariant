@@ -1,0 +1,35 @@
+# UR10e + Haas VF-2 Cell — Watchdog / Brain Crash Campaign
+#
+# What happens when the Beelink crashes, hangs, or loses network?
+# The watchdog must trigger safe-stop within 100ms.
+#
+# Tests the handoff scenario: what if the cognitive layer disappears
+# mid-cycle while the arm is inside the CNC enclosure?
+#
+# Usage:
+#   invariant campaign --config campaigns/ur10e_watchdog.yaml --key keys.json --dry-run
+
+name: ur10e_watchdog_test
+profile: ur10e_haas_cell
+environments: 1
+episodes_per_env: 20
+steps_per_episode: 500
+scenarios:
+  # 50% normal operations
+  - scenario_type: baseline
+    weight: 0.5
+  # 30% authority strip (simulates brain crash — no valid PCA chain)
+  - scenario_type: baseline
+    weight: 0.3
+    injections:
+      - authority_strip
+  # 20% replay attacks (stale commands from a hung process)
+  - scenario_type: baseline
+    weight: 0.2
+    injections:
+      - replay_attack
+
+success_criteria:
+  min_legitimate_pass_rate: 0.90
+  max_violation_escape_rate: 0.0
+  max_false_rejection_rate: 0.10

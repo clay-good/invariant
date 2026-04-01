@@ -1,6 +1,6 @@
 # Invariant
 
-[![Tests](https://img.shields.io/badge/tests-994_passing-brightgreen)]()
+[![Tests](https://img.shields.io/badge/tests-1005_passing-brightgreen)]()
 [![Clippy](https://img.shields.io/badge/clippy-zero_warnings-brightgreen)]()
 [![Unsafe](https://img.shields.io/badge/unsafe-forbidden-brightgreen)]()
 [![License](https://img.shields.io/badge/license-MIT-blue)]()
@@ -120,7 +120,8 @@ cargo install --path crates/invariant-cli
 | `humanoid_28dof` | 28 | Revolute | Full humanoid with stability/ZMP, exclusion zones, proximity scaling |
 | `franka_panda` | 7 | Revolute | Franka Emika Panda arm with operator proximity zones |
 | `quadruped_12dof` | 12 | Revolute | Quadruped with stability polygon |
-| `ur10` | 6 | Revolute | Universal Robots UR10/UR10e — **our production deployment target** |
+| `ur10` | 6 | Revolute | Universal Robots UR10/UR10e generic |
+| `ur10e_haas_cell` | 6 | Revolute | **Production target:** UR10e + Haas VF-2 CNC cell with spindle exclusion zone, operator proximity, gripper force limits |
 
 ---
 
@@ -248,12 +249,34 @@ BEELINK (Invariant)          UR10e                    HAAS VF-2
 └─ SMS alerting (5G)
 ```
 
-**The UR10 profile (`profiles/ur10.json`) is the production target.** It has:
+**The cell profile (`profiles/ur10e_haas_cell.json`) is the production target.** It has:
 - 6 joints with real UR10e spec limits
-- Exclusion zone covering the Haas spindle area
-- Operator proximity zone with velocity scaling
-- 100ms watchdog timeout
-- Safe-stop to park position
+- 4 exclusion zones: Haas spindle zone, Haas enclosure interior, operator standing area, Beelink enclosure
+- 3 proximity zones: human warning (1.2m, 50% speed), human critical (0.6m, 10% speed), Haas door zone (0.4m, 30% speed)
+- Gripper force limits: 140N max force, 100N max grasp, 10kg max payload
+- 100ms watchdog timeout with park position safe-stop
+
+### Stress Test Campaigns
+
+```sh
+# Generate keys first
+./target/release/invariant keygen --kid ur10e-001 --output keys.json
+
+# Normal production cycles (100K commands — all should pass)
+./target/release/invariant campaign --config campaigns/ur10e_normal_ops.yaml --key keys.json --dry-run
+
+# Spindle safety (50K commands — arm tries to enter CNC enclosure)
+./target/release/invariant campaign --config campaigns/ur10e_spindle_safety.yaml --key keys.json --dry-run
+
+# Full adversarial (100K commands — every attack type)
+./target/release/invariant campaign --config campaigns/ur10e_adversarial.yaml --key keys.json --dry-run
+
+# Watchdog / brain crash (10K commands — Beelink crash simulation)
+./target/release/invariant campaign --config campaigns/ur10e_watchdog.yaml --key keys.json --dry-run
+
+# 1 MILLION command proof package (~50 seconds on MacBook)
+./target/release/invariant campaign --config campaigns/ur10e_million_proof.yaml --key keys.json --dry-run
+```
 
 ---
 
@@ -261,7 +284,7 @@ BEELINK (Invariant)          UR10e                    HAAS VF-2
 
 ```sh
 cargo build --release
-cargo test                    # 994 tests
+cargo test                    # 1005 tests
 cargo clippy -- -D warnings   # zero warnings
 ./examples/demo.sh            # five-minute proof
 ```

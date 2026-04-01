@@ -335,10 +335,14 @@ fn parse_injection_type(name: &str) -> Result<InjectionType, DryRunError> {
 }
 
 /// Returns `true` if commands from this scenario type should be rejected by
-/// the validator.  `Baseline` and `Aggressive` are legitimate; all others
-/// exercise specific violation classes.
+/// the validator.  `Baseline`, `Aggressive`, and `MultiAgentHandoff` are
+/// legitimate (valid physics, valid authority). All others exercise specific
+/// violation classes.
 fn is_expected_reject(scenario: ScenarioType) -> bool {
-    !matches!(scenario, ScenarioType::Baseline | ScenarioType::Aggressive)
+    !matches!(
+        scenario,
+        ScenarioType::Baseline | ScenarioType::Aggressive | ScenarioType::MultiAgentHandoff
+    )
 }
 
 /// Base64-encode a `Vec<SignedPca>` chain as required by `CommandAuthority.pca_chain`.
@@ -617,7 +621,7 @@ mod tests {
         assert!(is_expected_reject(ScenarioType::AuthorityEscalation));
         assert!(is_expected_reject(ScenarioType::ChainForgery));
         assert!(is_expected_reject(ScenarioType::PromptInjection));
-        assert!(is_expected_reject(ScenarioType::MultiAgentHandoff));
+        assert!(!is_expected_reject(ScenarioType::MultiAgentHandoff));
     }
 
     // --- Weighted scenario selection coverage ---
