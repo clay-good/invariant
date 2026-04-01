@@ -806,7 +806,7 @@ mod tests {
         };
 
         let results = crate::physics::run_all_checks(&command, &profile, None);
-        assert_eq!(results.len(), 10);
+        assert_eq!(results.len(), 11);
 
         // All should pass for this valid command
         for result in &results {
@@ -833,6 +833,7 @@ mod tests {
                 "delta_time",
                 "stability",
                 "proximity_velocity",
+                "iso15066_force_limits",
             ]
         );
     }
@@ -894,7 +895,7 @@ mod tests {
         };
 
         let results = crate::physics::run_all_checks(&command, &profile, None);
-        assert_eq!(results.len(), 10);
+        assert_eq!(results.len(), 11);
 
         // P1: joint_limits — position 2.0 > max 1.0 => fail
         assert!(!results[0].passed);
@@ -986,7 +987,7 @@ mod tests {
         let prev_joints = vec![joint_state("j1", 0.0, 0.0, 0.0)]; // velocity = 0 rad/s
 
         let results = crate::physics::run_all_checks(&command, &profile, Some(&prev_joints));
-        assert_eq!(results.len(), 10);
+        assert_eq!(results.len(), 11);
 
         // P4: acceleration_limits — 1000 rad/s² >> 25 => fail
         let accel_check = &results[3];

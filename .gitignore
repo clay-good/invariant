@@ -1,28 +1,32 @@
-# OS
+# Rust build artifacts
+/target/
+
+# OS files
 .DS_Store
 Thumbs.db
 
-# Editors / IDEs
+# IDE
+.idea/
+.vscode/
 *.swp
 *.swo
-*~
-.vscode/
-.idea/
-*.sublime-project
-*.sublime-workspace
 
-# Rust
-/target/
-*.rs.bk
-**/*.rs.bk
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
 
-# Build scaffolding
-.codelicious/
+# Lean 4 build
+formal/build/
+formal/lake-packages/
+formal/.lake/
+
+# Claude Code / Codelicious tooling (local-only)
 .claude/
+.codelicious/
 
-# Environment & Secrets
-.env
-.env.*
-*.pem
-*.key
-*.crt
+# Private / not for public repo
+business_plan/
+
+# Test artifacts (generated at runtime)
+keys.json

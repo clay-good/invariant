@@ -9,24 +9,24 @@
 name: five_minute_proof
 profile: franka_panda
 environments: 1
-episodes_per_env: 1
-steps_per_episode: 1000
+episodes_per_env: 10
+steps_per_episode: 100
 scenarios:
-  - scenario_type: Baseline
-    weight: 0.7
-  - scenario_type: Aggressive
+  - scenario_type: baseline
+    weight: 0.5
+  - scenario_type: aggressive
     weight: 0.1
     injections:
-      - VelocityOvershoot
-      - PositionViolation
-  - scenario_type: ExclusionZone
-    weight: 0.05
-  - scenario_type: AuthorityEscalation
-    weight: 0.05
-  - scenario_type: ChainForgery
-    weight: 0.05
-  - scenario_type: PromptInjection
-    weight: 0.05
+      - velocity_overshoot
+      - position_violation
+  - scenario_type: exclusion_zone
+    weight: 0.1
+  - scenario_type: authority_escalation
+    weight: 0.1
+  - scenario_type: chain_forgery
+    weight: 0.1
+  - scenario_type: prompt_injection
+    weight: 0.1
 
 success_criteria:
   min_legitimate_pass_rate: 0.90

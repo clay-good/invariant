@@ -15,6 +15,7 @@ chrono.workspace = true
 base64.workspace = true
 rand.workspace = true
 thiserror.workspace = true
+quick-xml.workspace = true
 
 [dev-dependencies]
 tempfile = "3"

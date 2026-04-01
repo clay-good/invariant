@@ -32,6 +32,8 @@ enum Commands {
     Eval(commands::eval::EvalArgs),
     /// Compare two trace files step-by-step
     Diff(commands::diff::DiffArgs),
+    /// Dual-instance differential validation (IEC 61508 dual-channel pattern)
+    Differential(commands::differential::DifferentialArgs),
     /// Run a simulation campaign
     Campaign(commands::campaign::CampaignArgs),
     /// Generate a new Ed25519 key pair
@@ -52,6 +54,8 @@ enum Commands {
     Transfer(commands::transfer::TransferArgs),
     /// Detect sequence gaps in audit logs
     AuditGaps(commands::audit_gaps::AuditGapsArgs),
+    /// Generate a signed PCA from intent (template or direct specification)
+    Intent(commands::intent::IntentArgs),
     /// Verify the integrity of the Invariant binary (Section 10.3)
     VerifySelf,
 }
@@ -74,6 +78,7 @@ fn main() {
         Some(Commands::Keygen(args)) => commands::keygen::run(&args),
         Some(Commands::Eval(args)) => commands::eval::run(&args),
         Some(Commands::Diff(args)) => commands::diff::run(&args),
+        Some(Commands::Differential(args)) => commands::differential::run(&args),
         Some(Commands::Campaign(args)) => commands::campaign::run(&args),
         Some(Commands::Serve(args)) => commands::serve::run(&args),
         Some(Commands::Adversarial(args)) => commands::adversarial::run(&args),
@@ -83,6 +88,7 @@ fn main() {
         Some(Commands::VerifyPackage(args)) => commands::verify_package::run(&args),
         Some(Commands::Transfer(args)) => commands::transfer::run(&args),
         Some(Commands::AuditGaps(args)) => commands::audit_gaps::run(&args),
+        Some(Commands::Intent(args)) => commands::intent::run(&args),
         Some(Commands::VerifySelf) => commands::verify_self::run(),
         None => {
             // No subcommand and no --verify-self: print help.

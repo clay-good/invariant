@@ -5,6 +5,7 @@ members = [
     "crates/invariant-sim",
     "crates/invariant-eval",
     "crates/invariant-fuzz",
+    "crates/invariant-coordinator",
 ]
 resolver = "2"
 
@@ -34,3 +35,5 @@ axum = "0.8"
 # Sim + eval
 serde_yaml = "0.9"
 regex = "1.11"
+# URDF parsing (forward kinematics)
+quick-xml = "0.37"

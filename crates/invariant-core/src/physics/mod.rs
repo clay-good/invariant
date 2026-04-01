@@ -8,6 +8,7 @@ pub mod friction_cone;
 pub mod grasp_force;
 pub mod ground_reaction;
 pub mod heading_rate;
+pub mod iso15066;
 pub mod joint_limits;
 pub mod locomotion_velocity;
 pub mod payload;
@@ -101,9 +102,18 @@ pub fn run_all_checks(
     let mut loco_results = run_locomotion_checks(command, profile);
     results.append(&mut loco_results);
 
-    // P11–P14: Manipulation checks — only when the profile defines end-effectors.
+    // P11–P14 + ISO/TS 15066: Manipulation checks — only when the profile defines end-effectors.
     let mut manip_results = run_manipulation_checks(command, profile, None);
     results.append(&mut manip_results);
+
+    // ISO/TS 15066: Proximity-triggered force limiting (Step 45).
+    // Active when both proximity zones and force data are present.
+    results.push(iso15066::check_iso15066_force_limits(
+        &command.end_effector_positions,
+        &command.end_effector_forces,
+        &profile.proximity_zones,
+        None, // body region override from task envelope (future)
+    ));
 
     results
 }

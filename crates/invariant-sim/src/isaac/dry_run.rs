@@ -299,6 +299,10 @@ fn parse_scenario_type(name: &str) -> Result<ScenarioType, DryRunError> {
         "ChainForgery" | "chain_forgery" => Ok(ScenarioType::ChainForgery),
         "PromptInjection" | "prompt_injection" => Ok(ScenarioType::PromptInjection),
         "MultiAgentHandoff" | "multi_agent_handoff" => Ok(ScenarioType::MultiAgentHandoff),
+        "LocomotionRunaway" | "locomotion_runaway" => Ok(ScenarioType::LocomotionRunaway),
+        "LocomotionSlip" | "locomotion_slip" => Ok(ScenarioType::LocomotionSlip),
+        "LocomotionTrip" | "locomotion_trip" => Ok(ScenarioType::LocomotionTrip),
+        "LocomotionFall" | "locomotion_fall" => Ok(ScenarioType::LocomotionFall),
         other => Err(DryRunError::UnknownScenario(other.to_string())),
     }
 }
@@ -320,6 +324,12 @@ fn parse_injection_type(name: &str) -> Result<InjectionType, DryRunError> {
         "AuthorityStrip" | "authority_strip" => Ok(InjectionType::AuthorityStrip),
         "ReplayAttack" | "replay_attack" => Ok(InjectionType::ReplayAttack),
         "NanInjection" | "nan_injection" => Ok(InjectionType::NanInjection),
+        "LocomotionOverspeed" | "locomotion_overspeed" => Ok(InjectionType::LocomotionOverspeed),
+        "SlipViolation" | "slip_violation" => Ok(InjectionType::SlipViolation),
+        "FootClearanceViolation" | "foot_clearance_violation" => Ok(InjectionType::FootClearanceViolation),
+        "StepOverextension" | "step_overextension" => Ok(InjectionType::StepOverextension),
+        "HeadingSpinout" | "heading_spinout" => Ok(InjectionType::HeadingSpinout),
+        "GroundReactionSpike" | "ground_reaction_spike" => Ok(InjectionType::GroundReactionSpike),
         other => Err(DryRunError::UnknownInjection(other.to_string())),
     }
 }

@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 // InjectionType
 // ---------------------------------------------------------------------------
 
-/// The ten fault-injection modes.
+/// The sixteen fault-injection modes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum InjectionType {
@@ -35,6 +35,19 @@ pub enum InjectionType {
     ReplayAttack,
     /// Replace numeric fields with `NaN` / `Infinity`.
     NanInjection,
+    // -- Locomotion adversarial injections (Step 52) --
+    /// Set base velocity to 3× max locomotion velocity (P15 runaway).
+    LocomotionOverspeed,
+    /// Violate friction cone constraint: tangential >> normal (P18 slip).
+    SlipViolation,
+    /// Set swing foot height to 0 or below ground (P16 trip).
+    FootClearanceViolation,
+    /// Set step length to 3× max (P19 overextension).
+    StepOverextension,
+    /// Set heading rate to 5× max (P20 spinout).
+    HeadingSpinout,
+    /// Set ground reaction force to 5× max (P17 stomp).
+    GroundReactionSpike,
 }
 
 /// All injection types in a fixed order, for iteration.
@@ -49,6 +62,12 @@ const ALL_INJECTIONS: &[InjectionType] = &[
     InjectionType::AuthorityStrip,
     InjectionType::ReplayAttack,
     InjectionType::NanInjection,
+    InjectionType::LocomotionOverspeed,
+    InjectionType::SlipViolation,
+    InjectionType::FootClearanceViolation,
+    InjectionType::StepOverextension,
+    InjectionType::HeadingSpinout,
+    InjectionType::GroundReactionSpike,
 ];
 
 /// Returns a slice of every known `InjectionType`.
@@ -76,6 +95,12 @@ pub fn inject(cmd: &mut Command, injection: InjectionType, profile: &RobotProfil
         InjectionType::AuthorityStrip => inject_authority_strip(cmd),
         InjectionType::ReplayAttack => inject_replay_attack(cmd),
         InjectionType::NanInjection => inject_nan(cmd),
+        InjectionType::LocomotionOverspeed => inject_locomotion_overspeed(cmd, profile),
+        InjectionType::SlipViolation => inject_slip_violation(cmd, profile),
+        InjectionType::FootClearanceViolation => inject_foot_clearance_violation(cmd),
+        InjectionType::StepOverextension => inject_step_overextension(cmd, profile),
+        InjectionType::HeadingSpinout => inject_heading_spinout(cmd, profile),
+        InjectionType::GroundReactionSpike => inject_ground_reaction_spike(cmd, profile),
     }
 }
 
@@ -240,6 +265,148 @@ fn inject_nan(cmd: &mut Command) {
 }
 
 // ---------------------------------------------------------------------------
+// Locomotion injection implementations (Step 52)
+// ---------------------------------------------------------------------------
+
+use invariant_core::models::command::{FootState, LocomotionState};
+
+/// Ensure the command has a locomotion_state; create a default one if absent.
+fn ensure_locomotion_state<'a>(cmd: &'a mut Command, profile: &RobotProfile) -> &'a mut LocomotionState {
+    if cmd.locomotion_state.is_none() {
+        let max_vel = profile
+            .locomotion
+            .as_ref()
+            .map(|l| l.max_locomotion_velocity)
+            .unwrap_or(1.5);
+        cmd.locomotion_state = Some(LocomotionState {
+            base_velocity: [max_vel * 0.5, 0.0, 0.0],
+            heading_rate: 0.0,
+            feet: vec![
+                FootState {
+                    name: "left_foot".into(),
+                    position: [-0.15, 0.1, 0.0],
+                    contact: true,
+                    ground_reaction_force: Some([0.0, 0.0, 400.0]),
+                },
+                FootState {
+                    name: "right_foot".into(),
+                    position: [0.15, -0.1, 0.05],
+                    contact: false,
+                    ground_reaction_force: None,
+                },
+            ],
+            step_length: 0.3,
+        });
+    }
+    cmd.locomotion_state.as_mut().unwrap()
+}
+
+/// P15 attack: set base velocity to 3× the max locomotion velocity (runaway).
+fn inject_locomotion_overspeed(cmd: &mut Command, profile: &RobotProfile) {
+    let loco = ensure_locomotion_state(cmd, profile);
+    let max_vel = profile
+        .locomotion
+        .as_ref()
+        .map(|l| l.max_locomotion_velocity)
+        .unwrap_or(1.5);
+    loco.base_velocity = [max_vel * 3.0, 0.0, 0.0];
+}
+
+/// P18 attack: set tangential GRF much larger than normal GRF to violate
+/// the friction cone constraint (slip).
+fn inject_slip_violation(cmd: &mut Command, profile: &RobotProfile) {
+    let loco = ensure_locomotion_state(cmd, profile);
+    let friction = profile
+        .locomotion
+        .as_ref()
+        .map(|l| l.friction_coefficient)
+        .unwrap_or(0.6);
+    // Create a foot with tangential force >> friction_coefficient * normal_force.
+    // Normal = 400 N, tangential = friction * 400 * 3 = well above the cone.
+    let tangential = friction * 400.0 * 3.0;
+    for foot in &mut loco.feet {
+        foot.contact = true;
+        foot.ground_reaction_force = Some([tangential, 0.0, 400.0]);
+    }
+}
+
+/// P16 attack: set swing foot height to 0 (on the ground) or negative,
+/// violating the minimum foot clearance (trip).
+fn inject_foot_clearance_violation(cmd: &mut Command) {
+    if cmd.locomotion_state.is_none() {
+        cmd.locomotion_state = Some(LocomotionState {
+            base_velocity: [0.5, 0.0, 0.0],
+            heading_rate: 0.0,
+            feet: vec![
+                FootState {
+                    name: "left_foot".into(),
+                    position: [-0.15, 0.1, 0.0],
+                    contact: true,
+                    ground_reaction_force: Some([0.0, 0.0, 400.0]),
+                },
+                FootState {
+                    name: "right_foot".into(),
+                    position: [0.15, -0.1, -0.01], // below ground!
+                    contact: false,
+                    ground_reaction_force: None,
+                },
+            ],
+            step_length: 0.3,
+        });
+    } else if let Some(loco) = cmd.locomotion_state.as_mut() {
+        // Set all non-contact feet to zero clearance.
+        for foot in &mut loco.feet {
+            if !foot.contact {
+                foot.position[2] = -0.01; // below ground
+            }
+        }
+        // Ensure at least one foot is in swing phase.
+        if loco.feet.iter().all(|f| f.contact) {
+            if let Some(foot) = loco.feet.last_mut() {
+                foot.contact = false;
+                foot.position[2] = -0.01;
+            }
+        }
+    }
+}
+
+/// P19 attack: set step length to 3× the max (overextension leading to fall).
+fn inject_step_overextension(cmd: &mut Command, profile: &RobotProfile) {
+    let loco = ensure_locomotion_state(cmd, profile);
+    let max_step = profile
+        .locomotion
+        .as_ref()
+        .map(|l| l.max_step_length)
+        .unwrap_or(0.6);
+    loco.step_length = max_step * 3.0;
+}
+
+/// P20 attack: set heading rate to 5× max (spinning out of control).
+fn inject_heading_spinout(cmd: &mut Command, profile: &RobotProfile) {
+    let loco = ensure_locomotion_state(cmd, profile);
+    let max_heading = profile
+        .locomotion
+        .as_ref()
+        .map(|l| l.max_heading_rate)
+        .unwrap_or(1.0);
+    loco.heading_rate = max_heading * 5.0;
+}
+
+/// P17 attack: set ground reaction force to 5× max (stomping).
+fn inject_ground_reaction_spike(cmd: &mut Command, profile: &RobotProfile) {
+    let loco = ensure_locomotion_state(cmd, profile);
+    let max_grf = profile
+        .locomotion
+        .as_ref()
+        .map(|l| l.max_ground_reaction_force)
+        .unwrap_or(800.0);
+    for foot in &mut loco.feet {
+        foot.contact = true;
+        foot.ground_reaction_force = Some([0.0, 0.0, max_grf * 5.0]);
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -303,9 +470,9 @@ mod tests {
     // --- list_injections ---
 
     #[test]
-    fn list_injections_contains_all_ten() {
+    fn list_injections_contains_all_sixteen() {
         let injections = list_injections();
-        assert_eq!(injections.len(), 10);
+        assert_eq!(injections.len(), 16);
     }
 
     #[test]
@@ -537,5 +704,89 @@ mod tests {
         for &inj in list_injections() {
             inject(&mut cmd, inj, &profile);
         }
+    }
+
+    // --- Locomotion injections (Step 52) ---
+
+    #[test]
+    fn locomotion_overspeed_exceeds_max() {
+        let profile = panda();
+        let mut cmd = make_cmd(&profile);
+        inject(&mut cmd, InjectionType::LocomotionOverspeed, &profile);
+        let loco = cmd.locomotion_state.as_ref().unwrap();
+        let [vx, vy, vz] = loco.base_velocity;
+        let speed = (vx * vx + vy * vy + vz * vz).sqrt();
+        // Default max is 1.5, injected 3x = 4.5
+        assert!(speed > 1.5, "LocomotionOverspeed: speed {speed:.2} should exceed default max");
+    }
+
+    #[test]
+    fn slip_violation_produces_friction_cone_violation() {
+        let profile = panda();
+        let mut cmd = make_cmd(&profile);
+        inject(&mut cmd, InjectionType::SlipViolation, &profile);
+        let loco = cmd.locomotion_state.as_ref().unwrap();
+        for foot in &loco.feet {
+            if let Some(grf) = &foot.ground_reaction_force {
+                let tangential = (grf[0] * grf[0] + grf[1] * grf[1]).sqrt();
+                let normal = grf[2];
+                if normal > 0.0 {
+                    // friction_coefficient default = 0.6
+                    // tangential / normal should exceed 0.6
+                    assert!(
+                        tangential / normal > 0.6,
+                        "SlipViolation: tangential/normal ratio {:.2} should exceed friction coefficient",
+                        tangential / normal
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn foot_clearance_violation_below_ground() {
+        let profile = panda();
+        let mut cmd = make_cmd(&profile);
+        inject(&mut cmd, InjectionType::FootClearanceViolation, &profile);
+        let loco = cmd.locomotion_state.as_ref().unwrap();
+        let any_below = loco.feet.iter().any(|f| !f.contact && f.position[2] < 0.0);
+        assert!(any_below, "FootClearanceViolation: at least one swing foot must be below ground");
+    }
+
+    #[test]
+    fn step_overextension_exceeds_max() {
+        let profile = panda();
+        let mut cmd = make_cmd(&profile);
+        inject(&mut cmd, InjectionType::StepOverextension, &profile);
+        let loco = cmd.locomotion_state.as_ref().unwrap();
+        // Default max_step_length = 0.6, injected 3x = 1.8
+        assert!(loco.step_length > 0.6, "StepOverextension: step_length {:.2} should exceed default max", loco.step_length);
+    }
+
+    #[test]
+    fn heading_spinout_exceeds_max() {
+        let profile = panda();
+        let mut cmd = make_cmd(&profile);
+        inject(&mut cmd, InjectionType::HeadingSpinout, &profile);
+        let loco = cmd.locomotion_state.as_ref().unwrap();
+        // Default max_heading_rate = 1.0, injected 5x = 5.0
+        assert!(loco.heading_rate.abs() > 1.0, "HeadingSpinout: heading_rate {:.2} should exceed default max", loco.heading_rate);
+    }
+
+    #[test]
+    fn ground_reaction_spike_exceeds_max() {
+        let profile = panda();
+        let mut cmd = make_cmd(&profile);
+        inject(&mut cmd, InjectionType::GroundReactionSpike, &profile);
+        let loco = cmd.locomotion_state.as_ref().unwrap();
+        let any_spike = loco.feet.iter().any(|f| {
+            if let Some(grf) = &f.ground_reaction_force {
+                let norm = (grf[0] * grf[0] + grf[1] * grf[1] + grf[2] * grf[2]).sqrt();
+                norm > 800.0 // default max_ground_reaction_force
+            } else {
+                false
+            }
+        });
+        assert!(any_spike, "GroundReactionSpike: at least one foot must have GRF > max");
     }
 }

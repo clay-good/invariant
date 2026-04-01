@@ -8,7 +8,9 @@ use std::collections::{HashMap, HashSet};
 
 use chrono::{DateTime, Duration, Utc};
 use invariant_core::models::authority::Operation;
-use invariant_core::models::command::{Command, CommandAuthority, EndEffectorPosition, JointState};
+use invariant_core::models::command::{
+    Command, CommandAuthority, EndEffectorPosition, FootState, JointState, LocomotionState,
+};
 use invariant_core::models::profile::{ExclusionZone, RobotProfile, WorkspaceBounds};
 use serde::{Deserialize, Serialize};
 
@@ -16,7 +18,7 @@ use serde::{Deserialize, Serialize};
 // ScenarioType
 // ---------------------------------------------------------------------------
 
-/// The seven built-in scenario classes.
+/// The eleven built-in scenario classes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ScenarioType {
@@ -34,6 +36,15 @@ pub enum ScenarioType {
     PromptInjection,
     /// Sequence disorder: alternating sources with non-monotonic sequence numbers.
     MultiAgentHandoff,
+    // -- Locomotion adversarial scenarios (Step 52) --
+    /// Runaway: base velocity gradually increases past the locomotion limit (P15).
+    LocomotionRunaway,
+    /// Slip: foot forces exceed friction cone while walking (P18).
+    LocomotionSlip,
+    /// Trip: swing foot clearance drops below minimum during gait (P16).
+    LocomotionTrip,
+    /// Fall: centre-of-mass + base velocity combine to cause instability (P9+P15+P19).
+    LocomotionFall,
 }
 
 // ---------------------------------------------------------------------------
@@ -71,6 +82,12 @@ impl<'a> ScenarioGenerator<'a> {
             ScenarioType::ChainForgery => self.chain_forgery(count, ops),
             ScenarioType::PromptInjection => self.prompt_injection(count, pca_chain_b64, ops),
             ScenarioType::MultiAgentHandoff => self.multi_agent_handoff(count, pca_chain_b64, ops),
+            ScenarioType::LocomotionRunaway => {
+                self.locomotion_runaway(count, pca_chain_b64, ops)
+            }
+            ScenarioType::LocomotionSlip => self.locomotion_slip(count, pca_chain_b64, ops),
+            ScenarioType::LocomotionTrip => self.locomotion_trip(count, pca_chain_b64, ops),
+            ScenarioType::LocomotionFall => self.locomotion_fall(count, pca_chain_b64, ops),
         }
     }
 
@@ -619,6 +636,250 @@ impl<'a> ScenarioGenerator<'a> {
                     authority: Self::authority(pca_chain_b64, ops),
                     metadata: Self::metadata_stamp(&meta_template, i),
                     locomotion_state: None,
+                    end_effector_forces: vec![],
+                    estimated_payload_kg: None,
+                }
+            })
+            .collect()
+    }
+
+    // -----------------------------------------------------------------------
+    // Locomotion adversarial scenarios (Step 52)
+    // -----------------------------------------------------------------------
+
+    /// Build a default locomotion state for scenarios (safe baseline values).
+    fn baseline_locomotion_state() -> LocomotionState {
+        LocomotionState {
+            base_velocity: [0.5, 0.0, 0.0],
+            heading_rate: 0.1,
+            feet: vec![
+                FootState {
+                    name: "left_foot".into(),
+                    position: [-0.15, 0.1, 0.0],
+                    contact: true,
+                    ground_reaction_force: Some([0.0, 0.0, 400.0]),
+                },
+                FootState {
+                    name: "right_foot".into(),
+                    position: [0.15, -0.1, 0.05],
+                    contact: false,
+                    ground_reaction_force: None,
+                },
+            ],
+            step_length: 0.3,
+        }
+    }
+
+    /// Runaway: base velocity gradually ramps from safe to 3× max over the
+    /// command sequence. Early commands pass P15; later commands must be rejected.
+    fn locomotion_runaway(
+        &self,
+        count: usize,
+        pca_chain_b64: &str,
+        ops: &[Operation],
+    ) -> Vec<Command> {
+        let base_ts: DateTime<Utc> = Utc::now();
+        let delta_time = self.profile.max_delta_time * 0.5;
+        let ee_pos = Self::safe_end_effector(self.profile);
+        let joint_states = self.baseline_joint_states();
+        let meta_template = Self::metadata_template(self.scenario);
+        let max_vel = self
+            .profile
+            .locomotion
+            .as_ref()
+            .map(|l| l.max_locomotion_velocity)
+            .unwrap_or(1.5);
+
+        (0..count)
+            .map(|i| {
+                let t = i as f64 / count.max(1) as f64;
+                // Ramp from 0.5*max to 3*max over the scenario.
+                let speed = max_vel * (0.5 + t * 2.5);
+                let timestamp = base_ts
+                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                        i as f64 * delta_time * 1_000.0,
+                    ));
+                let mut loco = Self::baseline_locomotion_state();
+                loco.base_velocity = [speed, 0.0, 0.0];
+                Command {
+                    timestamp,
+                    source: "locomotion_runaway_agent".to_owned(),
+                    sequence: i as u64 + 1,
+                    joint_states: joint_states.clone(),
+                    delta_time,
+                    end_effector_positions: vec![EndEffectorPosition {
+                        name: "end_effector".to_owned(),
+                        position: ee_pos,
+                    }],
+                    center_of_mass: None,
+                    authority: Self::authority(pca_chain_b64, ops),
+                    metadata: Self::metadata_stamp(&meta_template, i),
+                    locomotion_state: Some(loco),
+                    end_effector_forces: vec![],
+                    estimated_payload_kg: None,
+                }
+            })
+            .collect()
+    }
+
+    /// Slip: tangential foot forces gradually exceed the friction cone (P18).
+    fn locomotion_slip(
+        &self,
+        count: usize,
+        pca_chain_b64: &str,
+        ops: &[Operation],
+    ) -> Vec<Command> {
+        let base_ts: DateTime<Utc> = Utc::now();
+        let delta_time = self.profile.max_delta_time * 0.5;
+        let ee_pos = Self::safe_end_effector(self.profile);
+        let joint_states = self.baseline_joint_states();
+        let meta_template = Self::metadata_template(self.scenario);
+        let friction = self
+            .profile
+            .locomotion
+            .as_ref()
+            .map(|l| l.friction_coefficient)
+            .unwrap_or(0.6);
+
+        (0..count)
+            .map(|i| {
+                let t = i as f64 / count.max(1) as f64;
+                let timestamp = base_ts
+                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                        i as f64 * delta_time * 1_000.0,
+                    ));
+                // Normal force = 400 N. Tangential ramps from 0 to 3× friction limit.
+                let normal = 400.0;
+                let tangential = friction * normal * t * 3.0;
+                let mut loco = Self::baseline_locomotion_state();
+                for foot in &mut loco.feet {
+                    foot.contact = true;
+                    foot.ground_reaction_force = Some([tangential, 0.0, normal]);
+                }
+                Command {
+                    timestamp,
+                    source: "locomotion_slip_agent".to_owned(),
+                    sequence: i as u64 + 1,
+                    joint_states: joint_states.clone(),
+                    delta_time,
+                    end_effector_positions: vec![EndEffectorPosition {
+                        name: "end_effector".to_owned(),
+                        position: ee_pos,
+                    }],
+                    center_of_mass: None,
+                    authority: Self::authority(pca_chain_b64, ops),
+                    metadata: Self::metadata_stamp(&meta_template, i),
+                    locomotion_state: Some(loco),
+                    end_effector_forces: vec![],
+                    estimated_payload_kg: None,
+                }
+            })
+            .collect()
+    }
+
+    /// Trip: swing foot clearance drops to zero and below over the sequence (P16).
+    fn locomotion_trip(
+        &self,
+        count: usize,
+        pca_chain_b64: &str,
+        ops: &[Operation],
+    ) -> Vec<Command> {
+        let base_ts: DateTime<Utc> = Utc::now();
+        let delta_time = self.profile.max_delta_time * 0.5;
+        let ee_pos = Self::safe_end_effector(self.profile);
+        let joint_states = self.baseline_joint_states();
+        let meta_template = Self::metadata_template(self.scenario);
+        let min_clearance = self
+            .profile
+            .locomotion
+            .as_ref()
+            .map(|l| l.min_foot_clearance)
+            .unwrap_or(0.02);
+
+        (0..count)
+            .map(|i| {
+                let t = i as f64 / count.max(1) as f64;
+                let timestamp = base_ts
+                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                        i as f64 * delta_time * 1_000.0,
+                    ));
+                // Clearance ramps from 3× min_clearance to -min_clearance.
+                let clearance = min_clearance * (3.0 - t * 4.0);
+                let mut loco = Self::baseline_locomotion_state();
+                // Right foot in swing with decreasing clearance.
+                loco.feet[1].contact = false;
+                loco.feet[1].position[2] = clearance;
+                Command {
+                    timestamp,
+                    source: "locomotion_trip_agent".to_owned(),
+                    sequence: i as u64 + 1,
+                    joint_states: joint_states.clone(),
+                    delta_time,
+                    end_effector_positions: vec![EndEffectorPosition {
+                        name: "end_effector".to_owned(),
+                        position: ee_pos,
+                    }],
+                    center_of_mass: None,
+                    authority: Self::authority(pca_chain_b64, ops),
+                    metadata: Self::metadata_stamp(&meta_template, i),
+                    locomotion_state: Some(loco),
+                    end_effector_forces: vec![],
+                    estimated_payload_kg: None,
+                }
+            })
+            .collect()
+    }
+
+    /// Fall: combined attack — overspeed + overextended step + COM instability.
+    /// Every command violates multiple locomotion checks simultaneously (P15+P19+P9).
+    fn locomotion_fall(
+        &self,
+        count: usize,
+        pca_chain_b64: &str,
+        ops: &[Operation],
+    ) -> Vec<Command> {
+        let base_ts: DateTime<Utc> = Utc::now();
+        let delta_time = self.profile.max_delta_time * 0.5;
+        let ee_pos = Self::safe_end_effector(self.profile);
+        let joint_states = self.baseline_joint_states();
+        let meta_template = Self::metadata_template(self.scenario);
+        let max_vel = self
+            .profile
+            .locomotion
+            .as_ref()
+            .map(|l| l.max_locomotion_velocity)
+            .unwrap_or(1.5);
+        let max_step = self
+            .profile
+            .locomotion
+            .as_ref()
+            .map(|l| l.max_step_length)
+            .unwrap_or(0.6);
+
+        (0..count)
+            .map(|i| {
+                let timestamp = base_ts
+                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                        i as f64 * delta_time * 1_000.0,
+                    ));
+                let mut loco = Self::baseline_locomotion_state();
+                loco.base_velocity = [max_vel * 2.5, 0.0, 0.0]; // P15: runaway
+                loco.step_length = max_step * 2.5; // P19: overextension
+                Command {
+                    timestamp,
+                    source: "locomotion_fall_agent".to_owned(),
+                    sequence: i as u64 + 1,
+                    joint_states: joint_states.clone(),
+                    delta_time,
+                    end_effector_positions: vec![EndEffectorPosition {
+                        name: "end_effector".to_owned(),
+                        position: ee_pos,
+                    }],
+                    // COM far outside support polygon -> P9 failure.
+                    center_of_mass: Some([10.0, 10.0, 2.0]),
+                    authority: Self::authority(pca_chain_b64, ops),
+                    metadata: Self::metadata_stamp(&meta_template, i),
+                    locomotion_state: Some(loco),
                     end_effector_forces: vec![],
                     estimated_payload_kg: None,
                 }

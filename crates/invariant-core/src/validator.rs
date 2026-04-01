@@ -137,11 +137,11 @@ impl ValidatorConfig {
             now,
         );
 
-        // Run 10 physics checks.
+        // Run physics checks (P1-P10 + ISO/TS 15066 = 11 base, plus optional P11-P20).
         let physics_checks = physics::run_all_checks(command, &self.profile, previous_joints);
 
-        // Assemble all 11 check results and determine approval.
-        let mut checks = Vec::with_capacity(11);
+        // Assemble check results (1 authority + N physics) and determine approval.
+        let mut checks = Vec::with_capacity(1 + physics_checks.len());
         checks.push(authority_result);
         checks.extend(physics_checks);
 
@@ -464,7 +464,7 @@ mod tests {
 
         let result = config.validate(&cmd, now, None).unwrap();
         assert!(result.signed_verdict.verdict.approved);
-        assert_eq!(result.signed_verdict.verdict.checks.len(), 11);
+        assert_eq!(result.signed_verdict.verdict.checks.len(), 12);
         assert!(result.actuation_command.is_some());
         assert_eq!(result.signed_verdict.signer_kid, "invariant-test");
 
@@ -486,7 +486,7 @@ mod tests {
 
         assert!(!result.signed_verdict.verdict.approved);
         assert!(result.actuation_command.is_none());
-        assert_eq!(result.signed_verdict.verdict.checks.len(), 11);
+        assert_eq!(result.signed_verdict.verdict.checks.len(), 12);
 
         let auth_check = &result.signed_verdict.verdict.checks[0];
         assert_eq!(auth_check.name, "authority");
