@@ -6,7 +6,6 @@
 #[cfg(test)]
 mod tests {
     use chrono::Utc;
-    use ed25519_dalek::SigningKey;
     use invariant_core::authority::crypto::generate_keypair;
     use invariant_core::models::command::{
         Command, CommandAuthority, EndEffectorPosition, JointState,

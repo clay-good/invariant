@@ -411,7 +411,6 @@ impl MonitorSuiteResults {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Write;
 
     // --- Binary hash ---
 

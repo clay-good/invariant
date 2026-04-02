@@ -10,10 +10,9 @@ mod tests {
     use base64::{engine::general_purpose::STANDARD, Engine};
     use chrono::Utc;
     use ed25519_dalek::SigningKey;
-    use invariant_core::audit::{verify_log, AuditLogger, AuditVerifyError};
+    use invariant_core::audit::{verify_log, AuditLogger};
     use invariant_core::authority::crypto::generate_keypair;
     use invariant_core::models::command::{Command, CommandAuthority, JointState};
-    use invariant_core::models::profile::RobotProfile;
     use invariant_core::models::verdict::{AuthoritySummary, CheckResult, SignedVerdict, Verdict};
     use rand::rngs::OsRng;
     use std::collections::HashMap;

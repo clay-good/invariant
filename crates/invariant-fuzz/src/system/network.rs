@@ -6,7 +6,6 @@
 #[cfg(test)]
 mod tests {
     use chrono::Utc;
-    use ed25519_dalek::SigningKey;
     use invariant_core::authority::crypto::generate_keypair;
     use invariant_core::models::command::{Command, CommandAuthority, JointState};
     use invariant_core::validator::ValidatorConfig;
@@ -24,7 +23,7 @@ mod tests {
         ValidatorConfig::new(profile, trusted, sk, kid).unwrap()
     }
 
-    fn minimal_command(profile_name: &str) -> Command {
+    fn minimal_command(_profile_name: &str) -> Command {
         Command {
             timestamp: Utc::now(),
             source: "impersonator".into(),

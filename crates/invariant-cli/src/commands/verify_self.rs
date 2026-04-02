@@ -148,7 +148,6 @@ pub fn run() -> i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Write;
 
     #[test]
     fn hash_file_produces_sha256_prefix() {

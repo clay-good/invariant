@@ -169,7 +169,9 @@ pub fn run_dry_campaign(
             .map(|s| parse_injection_type(s))
             .collect::<Result<Vec<_>, _>>()?;
 
-        let expected_reject = is_expected_reject(scenario_type);
+        // A scenario is expected to produce rejections if the scenario type
+        // itself is adversarial OR if fault injections are applied.
+        let expected_reject = is_expected_reject(scenario_type) || !injections.is_empty();
 
         // Generate commands for this episode.
         let gen = ScenarioGenerator::new(&profile, scenario_type);
