@@ -106,6 +106,22 @@ structure EndEffectorForce where
   force : Point3
   deriving Repr
 
+/-- Per-actuator temperature reading (P22). -/
+structure ActuatorTemperature where
+  jointName : String
+  temperatureCelsius : Float
+  deriving Repr
+
+/-- Environmental sensor state for P21–P25 checks. -/
+structure EnvironmentState where
+  imuPitchRad : Option Float
+  imuRollRad : Option Float
+  actuatorTemperatures : List ActuatorTemperature
+  batteryPercentage : Option Float
+  communicationLatencyMs : Option Float
+  eStopEngaged : Option Bool
+  deriving Repr
+
 /-- A motor command to be validated. -/
 structure Command where
   sequence : Nat
@@ -118,6 +134,7 @@ structure Command where
   locomotionState : Option LocomotionState
   endEffectorForces : List EndEffectorForce
   estimatedPayloadKg : Option Float
+  environmentState : Option EnvironmentState
   deriving Repr
 
 /-- Robot profile against which commands are validated. -/
@@ -142,6 +159,12 @@ structure RobotProfile where
   endEffectorMinGraspForce : Option Float
   endEffectorMaxForceRate : Option Float
   endEffectorMaxPayloadKg : Option Float
+  -- P21–P25: Environmental awareness config
+  envMaxSafePitchRad : Option Float
+  envMaxSafeRollRad : Option Float
+  envMaxOperatingTempC : Option Float
+  envCriticalBatteryPct : Option Float
+  envMaxLatencyMs : Option Float
   deriving Repr
 
 /-- Result of a single check. -/

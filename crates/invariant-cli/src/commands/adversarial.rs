@@ -116,9 +116,16 @@ pub fn run(args: &AdversarialArgs) -> i32 {
         run_authority_suite(&config, &profile, &kid, &raw_key_bytes, &mut aggregate);
     }
 
-    if suite != "protocol" && suite != "authority" && suite != "all" {
+    // -----------------------------------------------------------------------
+    // Environment suite: P21-P25 environmental hazard injection (Step 95)
+    // -----------------------------------------------------------------------
+    if suite == "environment" || suite == "all" {
+        run_environment_suite(&config, &profile, &kid, &raw_key_bytes, &mut aggregate);
+    }
+
+    if !matches!(suite, "protocol" | "authority" | "environment" | "all") {
         eprintln!(
-            "error: unknown suite {:?}; must be 'protocol', 'authority', or 'all'",
+            "error: unknown suite {:?}; must be 'protocol', 'authority', 'environment', or 'all'",
             args.suite
         );
         return 2;
@@ -445,6 +452,9 @@ fn build_valid_base_command(
         locomotion_state: None,
         end_effector_forces: vec![],
         estimated_payload_kg: None,
+        signed_sensor_readings: vec![],
+        zone_overrides: HashMap::new(),
+        environment_state: None,
     };
     attach_valid_chain(&mut cmd, &signing_key, kid, profile);
     Some(cmd)
@@ -486,8 +496,93 @@ fn build_base_command_with_chain(
         locomotion_state: None,
         end_effector_forces: vec![],
         estimated_payload_kg: None,
+        signed_sensor_readings: vec![],
+        zone_overrides: HashMap::new(),
+        environment_state: None,
     }
     .tap_kid(kid)
+}
+
+// ---------------------------------------------------------------------------
+// Environment suite: P21-P25 environmental hazard injection (Step 95)
+// ---------------------------------------------------------------------------
+
+fn run_environment_suite(
+    config: &ValidatorConfig,
+    profile: &invariant_core::models::profile::RobotProfile,
+    kid: &str,
+    raw_key_bytes: &[u8; 32],
+    report: &mut AdversarialReport,
+) {
+    use invariant_sim::injector::{inject, InjectionType};
+
+    let now = chrono::Utc::now();
+
+    let env_attacks: &[(&str, InjectionType)] = &[
+        ("ENV-P21-terrain-incline", InjectionType::TerrainIncline),
+        ("ENV-P22-temperature-spike", InjectionType::TemperatureSpike),
+        ("ENV-P23-battery-drain", InjectionType::BatteryDrain),
+        ("ENV-P24-latency-spike", InjectionType::LatencySpike),
+        ("ENV-P25-estop-engage", InjectionType::EStopEngage),
+    ];
+
+    // For P21-P24: also test with an explicit safe environment_state on the
+    // base command so the profile's environment config thresholds are exercised.
+    // For P25 (e-stop): always works regardless of profile config.
+    for &(attack_id, inj_type) in env_attacks {
+        let Some(mut cmd) = build_valid_base_command(profile, kid, raw_key_bytes) else {
+            report.record(
+                attack_id,
+                format!("{inj_type:?} (skipped — no base command)"),
+                "skipped",
+                false,
+            );
+            continue;
+        };
+
+        inject(&mut cmd, inj_type, profile);
+
+        match config.validate(&cmd, now, None) {
+            Ok(result) => {
+                let approved = result.signed_verdict.verdict.approved;
+                // P25 (e-stop) must always be rejected.
+                // P21-P24 are only rejected if the profile has environment config.
+                let needs_config = !matches!(inj_type, InjectionType::EStopEngage);
+                let profile_has_env = profile.environment.is_some();
+
+                let escaped = if needs_config && !profile_has_env {
+                    // No environment config → injection is a no-op, approval is correct
+                    false
+                } else {
+                    // Should be rejected
+                    approved
+                };
+
+                let outcome = if approved {
+                    "approved".to_string()
+                } else {
+                    let failed: Vec<&str> = result
+                        .signed_verdict
+                        .verdict
+                        .checks
+                        .iter()
+                        .filter(|c| !c.passed)
+                        .map(|c| c.name.as_str())
+                        .collect();
+                    format!("rejected [{}]", failed.join(", "))
+                };
+                report.record(attack_id, format!("{inj_type:?}"), outcome, escaped);
+            }
+            Err(e) => {
+                report.record(
+                    attack_id,
+                    format!("{inj_type:?}"),
+                    format!("error: {e}"),
+                    false,
+                );
+            }
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -680,6 +775,18 @@ mod tests {
         let args = make_args(profile_tmp.path(), key_tmp.path(), "all", None);
         let code = run(&args);
         assert_eq!(code, 0, "all suite must return 0 (all attacks detected)");
+    }
+
+    #[test]
+    fn environment_suite_returns_0_when_all_detected() {
+        let profile_tmp = write_profile();
+        let (key_tmp, _sk) = write_key_file();
+        let args = make_args(profile_tmp.path(), key_tmp.path(), "environment", None);
+        let code = run(&args);
+        assert_eq!(
+            code, 0,
+            "environment suite must return 0 (all attacks detected)"
+        );
     }
 
     #[test]

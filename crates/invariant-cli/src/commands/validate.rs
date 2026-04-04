@@ -451,6 +451,9 @@ mod tests {
             locomotion_state: None,
             end_effector_forces: vec![],
             estimated_payload_kg: None,
+            signed_sensor_readings: vec![],
+            zone_overrides: std::collections::HashMap::new(),
+            environment_state: None,
         };
         serde_json::to_string(&cmd).unwrap()
     }
@@ -479,6 +482,9 @@ mod tests {
             locomotion_state: None,
             end_effector_forces: vec![],
             estimated_payload_kg: None,
+            signed_sensor_readings: vec![],
+            zone_overrides: std::collections::HashMap::new(),
+            environment_state: None,
         };
         serde_json::to_string(&cmd).unwrap()
     }
@@ -560,6 +566,9 @@ mod tests {
             locomotion_state: None,
             end_effector_forces: vec![],
             estimated_payload_kg: None,
+            signed_sensor_readings: vec![],
+            zone_overrides: std::collections::HashMap::new(),
+            environment_state: None,
         };
         let mut cmd_file = NamedTempFile::new().unwrap();
         cmd_file
@@ -762,6 +771,9 @@ mod tests {
             locomotion_state: None,
             end_effector_forces: vec![],
             estimated_payload_kg: None,
+            signed_sensor_readings: vec![],
+            zone_overrides: std::collections::HashMap::new(),
+            environment_state: None,
         };
         let mut cmd_file = NamedTempFile::new().unwrap();
         cmd_file

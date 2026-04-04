@@ -118,12 +118,8 @@ pub fn run(args: &DifferentialArgs) -> i32 {
     trusted.insert(kid_a.clone(), vk_a);
     trusted.insert(kid_b.clone(), vk_b);
 
-    let config_a = match ValidatorConfig::new(
-        profile.clone(),
-        trusted.clone(),
-        sk_a,
-        kid_a.clone(),
-    ) {
+    let config_a = match ValidatorConfig::new(profile.clone(), trusted.clone(), sk_a, kid_a.clone())
+    {
         Ok(c) => c,
         Err(e) => {
             eprintln!("error: instance A config: {e}");

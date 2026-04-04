@@ -305,6 +305,8 @@ fn parse_scenario_type(name: &str) -> Result<ScenarioType, DryRunError> {
         "LocomotionSlip" | "locomotion_slip" => Ok(ScenarioType::LocomotionSlip),
         "LocomotionTrip" | "locomotion_trip" => Ok(ScenarioType::LocomotionTrip),
         "LocomotionFall" | "locomotion_fall" => Ok(ScenarioType::LocomotionFall),
+        "CncTending" | "cnc_tending" => Ok(ScenarioType::CncTending),
+        "EnvironmentFault" | "environment_fault" => Ok(ScenarioType::EnvironmentFault),
         other => Err(DryRunError::UnknownScenario(other.to_string())),
     }
 }
@@ -328,10 +330,17 @@ fn parse_injection_type(name: &str) -> Result<InjectionType, DryRunError> {
         "NanInjection" | "nan_injection" => Ok(InjectionType::NanInjection),
         "LocomotionOverspeed" | "locomotion_overspeed" => Ok(InjectionType::LocomotionOverspeed),
         "SlipViolation" | "slip_violation" => Ok(InjectionType::SlipViolation),
-        "FootClearanceViolation" | "foot_clearance_violation" => Ok(InjectionType::FootClearanceViolation),
+        "FootClearanceViolation" | "foot_clearance_violation" => {
+            Ok(InjectionType::FootClearanceViolation)
+        }
         "StepOverextension" | "step_overextension" => Ok(InjectionType::StepOverextension),
         "HeadingSpinout" | "heading_spinout" => Ok(InjectionType::HeadingSpinout),
         "GroundReactionSpike" | "ground_reaction_spike" => Ok(InjectionType::GroundReactionSpike),
+        "TerrainIncline" | "terrain_incline" => Ok(InjectionType::TerrainIncline),
+        "TemperatureSpike" | "temperature_spike" => Ok(InjectionType::TemperatureSpike),
+        "BatteryDrain" | "battery_drain" => Ok(InjectionType::BatteryDrain),
+        "LatencySpike" | "latency_spike" => Ok(InjectionType::LatencySpike),
+        "EStopEngage" | "e_stop_engage" => Ok(InjectionType::EStopEngage),
         other => Err(DryRunError::UnknownInjection(other.to_string())),
     }
 }
@@ -343,7 +352,10 @@ fn parse_injection_type(name: &str) -> Result<InjectionType, DryRunError> {
 fn is_expected_reject(scenario: ScenarioType) -> bool {
     !matches!(
         scenario,
-        ScenarioType::Baseline | ScenarioType::Aggressive | ScenarioType::MultiAgentHandoff
+        ScenarioType::Baseline
+            | ScenarioType::Aggressive
+            | ScenarioType::MultiAgentHandoff
+            | ScenarioType::CncTending
     )
 }
 
@@ -617,13 +629,21 @@ mod tests {
 
     #[test]
     fn expected_reject_classification() {
+        // Legitimate scenarios: commands are valid, should NOT be rejected.
         assert!(!is_expected_reject(ScenarioType::Baseline));
         assert!(!is_expected_reject(ScenarioType::Aggressive));
+        assert!(!is_expected_reject(ScenarioType::MultiAgentHandoff));
+        assert!(!is_expected_reject(ScenarioType::CncTending));
+        // Adversarial scenarios: commands violate invariants, SHOULD be rejected.
         assert!(is_expected_reject(ScenarioType::ExclusionZone));
         assert!(is_expected_reject(ScenarioType::AuthorityEscalation));
         assert!(is_expected_reject(ScenarioType::ChainForgery));
         assert!(is_expected_reject(ScenarioType::PromptInjection));
-        assert!(!is_expected_reject(ScenarioType::MultiAgentHandoff));
+        assert!(is_expected_reject(ScenarioType::LocomotionRunaway));
+        assert!(is_expected_reject(ScenarioType::LocomotionSlip));
+        assert!(is_expected_reject(ScenarioType::LocomotionTrip));
+        assert!(is_expected_reject(ScenarioType::LocomotionFall));
+        assert!(is_expected_reject(ScenarioType::EnvironmentFault));
     }
 
     // --- Weighted scenario selection coverage ---

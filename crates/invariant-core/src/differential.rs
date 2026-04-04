@@ -256,6 +256,7 @@ mod tests {
             config_sequence: None,
             real_world_margins: None,
             task_envelope: None,
+            environment: None,
             end_effectors: vec![],
         }
     }
@@ -290,6 +291,9 @@ mod tests {
             locomotion_state: None,
             end_effector_forces: vec![],
             estimated_payload_kg: None,
+            signed_sensor_readings: vec![],
+            zone_overrides: HashMap::new(),
+            environment_state: None,
         }
     }
 
@@ -303,10 +307,7 @@ mod tests {
 
     // -- Helper to build a valid PCA chain + trusted keys ----------------------
 
-    fn setup_authority() -> (
-        String,
-        HashMap<String, ed25519_dalek::VerifyingKey>,
-    ) {
+    fn setup_authority() -> (String, HashMap<String, ed25519_dalek::VerifyingKey>) {
         let (pca_sk, pca_vk) = make_keypair();
         let claim = Pca {
             p_0: "alice".into(),

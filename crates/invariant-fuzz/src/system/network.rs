@@ -46,6 +46,8 @@ mod tests {
             end_effector_forces: vec![],
             estimated_payload_kg: None,
             signed_sensor_readings: vec![],
+            zone_overrides: HashMap::new(),
+            environment_state: None,
         }
     }
 

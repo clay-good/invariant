@@ -4,8 +4,8 @@
 //! for the real UR10e robot using the official DH parameters from
 //! Universal Robots' ROS-Industrial package.
 
-use std::collections::HashMap;
 use invariant_core::urdf::{forward_kinematics, parse_urdf};
+use std::collections::HashMap;
 
 const UR10E_URDF: &str = include_str!("../../../profiles/ur10e.urdf");
 
@@ -77,7 +77,10 @@ fn ur10e_fk_home_tool_reachable() {
     assert!(
         reach < 1.4,
         "tool0 at home should be within 1.4m reach, got {:.3}m at [{:.3}, {:.3}, {:.3}]",
-        reach, tool[0], tool[1], tool[2]
+        reach,
+        tool[0],
+        tool[1],
+        tool[2]
     );
     assert!(
         reach > 0.1,
@@ -95,7 +98,10 @@ fn ur10e_fk_shoulder_pan_90_rotates_arm() {
     let model = parse_urdf(UR10E_URDF).unwrap();
 
     let mut angles = HashMap::new();
-    angles.insert("shoulder_pan_joint".to_string(), std::f64::consts::FRAC_PI_2);
+    angles.insert(
+        "shoulder_pan_joint".to_string(),
+        std::f64::consts::FRAC_PI_2,
+    );
 
     let pos = forward_kinematics(&model, &angles).unwrap();
 
@@ -108,10 +114,9 @@ fn ur10e_fk_shoulder_pan_90_rotates_arm() {
     let tool_rotated = pos.get("tool0").unwrap();
 
     // The tool should have moved significantly from its home position
-    let delta = (
-        (tool_home[0] - tool_rotated[0]).powi(2) +
-        (tool_home[1] - tool_rotated[1]).powi(2)
-    ).sqrt();
+    let delta = ((tool_home[0] - tool_rotated[0]).powi(2)
+        + (tool_home[1] - tool_rotated[1]).powi(2))
+    .sqrt();
     assert!(
         delta > 0.1,
         "90 deg shoulder pan should move tool significantly in XY, delta={:.3}m",
@@ -137,10 +142,13 @@ fn ur10e_fk_all_zeros_same_as_default() {
         let p1 = pos1.get(&link.name).unwrap();
         let p2 = pos2.get(&link.name).unwrap();
         assert!(
-            approx_eq(p1[0], p2[0], 1e-10) &&
-            approx_eq(p1[1], p2[1], 1e-10) &&
-            approx_eq(p1[2], p2[2], 1e-10),
-            "link {} differs: {:?} vs {:?}", link.name, p1, p2
+            approx_eq(p1[0], p2[0], 1e-10)
+                && approx_eq(p1[1], p2[1], 1e-10)
+                && approx_eq(p1[2], p2[2], 1e-10),
+            "link {} differs: {:?} vs {:?}",
+            link.name,
+            p1,
+            p2
         );
     }
 }
@@ -165,11 +173,9 @@ fn ur10e_fk_can_detect_tool_near_base() {
     let base = pos.get("base_link").unwrap();
     let tool = pos.get("tool0").unwrap();
 
-    let dist = (
-        (base[0] - tool[0]).powi(2) +
-        (base[1] - tool[1]).powi(2) +
-        (base[2] - tool[2]).powi(2)
-    ).sqrt();
+    let dist =
+        ((base[0] - tool[0]).powi(2) + (base[1] - tool[1]).powi(2) + (base[2] - tool[2]).powi(2))
+            .sqrt();
 
     // In a folded configuration, the tool should be close-ish to the base
     // (within reach envelope). This validates that FK produces meaningful
@@ -193,7 +199,8 @@ fn ur10e_fk_produces_positions_for_all_links() {
     for link in &model.links {
         assert!(
             pos.contains_key(&link.name),
-            "FK must produce a position for link '{}'", link.name
+            "FK must produce a position for link '{}'",
+            link.name
         );
     }
     assert_eq!(pos.len(), model.links.len());

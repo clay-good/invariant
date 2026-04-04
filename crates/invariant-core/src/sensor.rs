@@ -145,12 +145,13 @@ pub fn verify_sensor_reading(
             reason: e.to_string(),
         })?;
 
-    let sig_bytes = STANDARD.decode(&signed.signature).map_err(|e| {
-        SensorError::SignatureInvalid {
-            sensor_name: signed.reading.sensor_name.clone(),
-            reason: format!("base64 decode: {e}"),
-        }
-    })?;
+    let sig_bytes =
+        STANDARD
+            .decode(&signed.signature)
+            .map_err(|e| SensorError::SignatureInvalid {
+                sensor_name: signed.reading.sensor_name.clone(),
+                reason: format!("base64 decode: {e}"),
+            })?;
 
     let signature = ed25519_dalek::Signature::from_slice(&sig_bytes).map_err(|e| {
         SensorError::SignatureInvalid {
@@ -202,12 +203,13 @@ pub fn verify_sensor_batch(
 
     for signed in readings {
         // Look up the trusted key.
-        let vk = trusted_keys
-            .get(&signed.signer_kid)
-            .ok_or_else(|| SensorError::SignatureInvalid {
-                sensor_name: signed.reading.sensor_name.clone(),
-                reason: format!("unknown signer kid '{}'", signed.signer_kid),
-            })?;
+        let vk =
+            trusted_keys
+                .get(&signed.signer_kid)
+                .ok_or_else(|| SensorError::SignatureInvalid {
+                    sensor_name: signed.reading.sensor_name.clone(),
+                    reason: format!("unknown signer kid '{}'", signed.signer_kid),
+                })?;
 
         // Verify signature.
         verify_sensor_reading(signed, vk)?;
@@ -427,7 +429,10 @@ mod tests {
 
         let result = verify_sensor_batch(&[signed], &trusted, Utc::now(), 5000);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("unknown signer kid"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("unknown signer kid"));
     }
 
     #[test]
@@ -493,6 +498,9 @@ mod tests {
 
     #[test]
     fn default_policy_is_accept_unsigned() {
-        assert_eq!(SensorTrustPolicy::default(), SensorTrustPolicy::AcceptUnsigned);
+        assert_eq!(
+            SensorTrustPolicy::default(),
+            SensorTrustPolicy::AcceptUnsigned
+        );
     }
 }

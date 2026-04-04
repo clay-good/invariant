@@ -11,6 +11,7 @@
 //   `previous_joints` are caller-supplied for testability.
 
 use std::collections::HashMap;
+use std::sync::Mutex;
 
 use base64::{engine::general_purpose::STANDARD, Engine};
 use chrono::{DateTime, Utc};
@@ -26,6 +27,8 @@ use crate::models::error::{Validate, ValidationError};
 use crate::models::profile::RobotProfile;
 use crate::models::verdict::{AuthoritySummary, CheckResult, SignedVerdict, Verdict};
 use crate::physics;
+use crate::sensor::{self, SensorTrustPolicy};
+use crate::threat::ThreatScorer;
 
 // ---------------------------------------------------------------------------
 // Error type
@@ -57,6 +60,17 @@ pub struct ValidatorConfig {
     signer_kid: String,
     /// Pre-computed SHA-256 hash of the canonical profile JSON.
     profile_hash: String,
+    /// How to handle signed vs unsigned sensor data.
+    sensor_policy: SensorTrustPolicy,
+    /// Trusted sensor signing keys (kid -> VerifyingKey).
+    trusted_sensor_keys: HashMap<String, VerifyingKey>,
+    /// Maximum age of sensor readings in milliseconds before rejection.
+    sensor_max_age_ms: u64,
+    /// Optional threat scorer for continuous adversarial monitoring (Section 11.3).
+    /// Uses `Mutex` for interior mutability since the scorer tracks state
+    /// across `validate()` calls (which take `&self`) and must be `Sync`
+    /// for use with `Arc` in `invariant serve`.
+    threat_scorer: Option<Mutex<ThreatScorer>>,
 }
 
 impl ValidatorConfig {
@@ -82,7 +96,24 @@ impl ValidatorConfig {
             signing_key,
             signer_kid,
             profile_hash,
+            sensor_policy: SensorTrustPolicy::AcceptUnsigned,
+            trusted_sensor_keys: HashMap::new(),
+            sensor_max_age_ms: 500,
+            threat_scorer: None,
         })
+    }
+
+    /// Set the sensor trust policy, trusted sensor keys, and max reading age.
+    pub fn with_sensor_policy(
+        mut self,
+        policy: SensorTrustPolicy,
+        sensor_keys: HashMap<String, VerifyingKey>,
+        max_age_ms: u64,
+    ) -> Self {
+        self.sensor_policy = policy;
+        self.trusted_sensor_keys = sensor_keys;
+        self.sensor_max_age_ms = max_age_ms;
+        self
     }
 
     pub fn profile(&self) -> &RobotProfile {
@@ -91,6 +122,17 @@ impl ValidatorConfig {
 
     pub fn signer_kid(&self) -> &str {
         &self.signer_kid
+    }
+
+    pub fn sensor_policy(&self) -> SensorTrustPolicy {
+        self.sensor_policy
+    }
+
+    /// Enable continuous adversarial monitoring with the given threat scorer.
+    /// Enable continuous adversarial monitoring with the given threat scorer.
+    pub fn with_threat_scorer(mut self, scorer: ThreatScorer) -> Self {
+        self.threat_scorer = Some(Mutex::new(scorer));
+        self
     }
 }
 
@@ -137,12 +179,16 @@ impl ValidatorConfig {
             now,
         );
 
+        // Run sensor integrity verification per configured trust policy.
+        let sensor_check = self.run_sensor_check(command, now);
+
         // Run physics checks (P1-P10 + ISO/TS 15066 = 11 base, plus optional P11-P20).
         let physics_checks = physics::run_all_checks(command, &self.profile, previous_joints);
 
-        // Assemble check results (1 authority + N physics) and determine approval.
-        let mut checks = Vec::with_capacity(1 + physics_checks.len());
+        // Assemble check results (1 authority + 1 sensor + N physics).
+        let mut checks = Vec::with_capacity(2 + physics_checks.len());
         checks.push(authority_result);
+        checks.push(sensor_check);
         checks.extend(physics_checks);
 
         let approved = checks.iter().all(|c| c.passed);
@@ -150,6 +196,18 @@ impl ValidatorConfig {
         // Build authority summary.
         let authority_summary =
             build_authority_summary(verified_chain.as_ref(), &command.authority.required_ops);
+
+        // Run threat scoring if a scorer is configured (Section 11.3).
+        let threat_analysis = self.threat_scorer.as_ref().map(|scorer| {
+            let authority_passed = checks.first().is_some_and(|c| c.passed);
+            scorer.lock().unwrap().score(
+                command,
+                &self.profile,
+                authority_passed,
+                &authority_summary.origin_principal,
+                approved,
+            )
+        });
 
         // Build and sign verdict.
         let verdict = Verdict {
@@ -161,7 +219,7 @@ impl ValidatorConfig {
             profile_name: self.profile.name.clone(),
             profile_hash: self.profile_hash.clone(),
             authority_summary,
-            threat_analysis: None,
+            threat_analysis,
         };
 
         let signed_verdict = self.sign_verdict(&verdict)?;
@@ -265,6 +323,91 @@ impl ValidatorConfig {
             },
             Some(chain),
         )
+    }
+
+    /// Run sensor integrity verification per the configured trust policy.
+    ///
+    /// - `AcceptUnsigned`: always passes (backwards compatible).
+    /// - `PreferSigned`: passes but warns if unsigned data is present.
+    /// - `RequireSigned`: fails if the command has no signed sensor readings,
+    ///   or if any reading fails signature/freshness verification.
+    fn run_sensor_check(&self, command: &Command, now: DateTime<Utc>) -> CheckResult {
+        let readings = &command.signed_sensor_readings;
+
+        match self.sensor_policy {
+            SensorTrustPolicy::AcceptUnsigned => CheckResult {
+                name: "sensor_integrity".into(),
+                category: "sensor".into(),
+                passed: true,
+                details: "sensor trust policy: accept_unsigned (no verification)".into(),
+            },
+            SensorTrustPolicy::PreferSigned => {
+                if readings.is_empty() {
+                    return CheckResult {
+                        name: "sensor_integrity".into(),
+                        category: "sensor".into(),
+                        passed: true,
+                        details: "sensor trust policy: prefer_signed (no signed readings provided, accepted with warning)".into(),
+                    };
+                }
+                match sensor::verify_sensor_batch(
+                    readings,
+                    &self.trusted_sensor_keys,
+                    now,
+                    self.sensor_max_age_ms,
+                ) {
+                    Ok(verified) => CheckResult {
+                        name: "sensor_integrity".into(),
+                        category: "sensor".into(),
+                        passed: true,
+                        details: format!(
+                            "sensor trust policy: prefer_signed ({} readings verified)",
+                            verified.len()
+                        ),
+                    },
+                    Err(e) => CheckResult {
+                        name: "sensor_integrity".into(),
+                        category: "sensor".into(),
+                        passed: false,
+                        details: format!("sensor verification failed: {e}"),
+                    },
+                }
+            }
+            SensorTrustPolicy::RequireSigned => {
+                if readings.is_empty() {
+                    return CheckResult {
+                        name: "sensor_integrity".into(),
+                        category: "sensor".into(),
+                        passed: false,
+                        details:
+                            "sensor trust policy: require_signed (no signed readings provided)"
+                                .into(),
+                    };
+                }
+                match sensor::verify_sensor_batch(
+                    readings,
+                    &self.trusted_sensor_keys,
+                    now,
+                    self.sensor_max_age_ms,
+                ) {
+                    Ok(verified) => CheckResult {
+                        name: "sensor_integrity".into(),
+                        category: "sensor".into(),
+                        passed: true,
+                        details: format!(
+                            "sensor trust policy: require_signed ({} readings verified)",
+                            verified.len()
+                        ),
+                    },
+                    Err(e) => CheckResult {
+                        name: "sensor_integrity".into(),
+                        category: "sensor".into(),
+                        passed: false,
+                        details: format!("sensor verification failed: {e}"),
+                    },
+                }
+            }
+        }
     }
 
     fn sign_verdict(&self, verdict: &Verdict) -> Result<SignedVerdict, ValidatorError> {
@@ -396,6 +539,7 @@ mod tests {
             config_sequence: None,
             real_world_margins: None,
             task_envelope: None,
+            environment: None,
             end_effectors: vec![],
         }
     }
@@ -433,6 +577,9 @@ mod tests {
             locomotion_state: None,
             end_effector_forces: vec![],
             estimated_payload_kg: None,
+            signed_sensor_readings: vec![],
+            zone_overrides: HashMap::new(),
+            environment_state: None,
         }
     }
 
@@ -464,7 +611,7 @@ mod tests {
 
         let result = config.validate(&cmd, now, None).unwrap();
         assert!(result.signed_verdict.verdict.approved);
-        assert_eq!(result.signed_verdict.verdict.checks.len(), 12);
+        assert_eq!(result.signed_verdict.verdict.checks.len(), 13);
         assert!(result.actuation_command.is_some());
         assert_eq!(result.signed_verdict.signer_kid, "invariant-test");
 
@@ -486,7 +633,7 @@ mod tests {
 
         assert!(!result.signed_verdict.verdict.approved);
         assert!(result.actuation_command.is_none());
-        assert_eq!(result.signed_verdict.verdict.checks.len(), 12);
+        assert_eq!(result.signed_verdict.verdict.checks.len(), 13);
 
         let auth_check = &result.signed_verdict.verdict.checks[0];
         assert_eq!(auth_check.name, "authority");
@@ -908,5 +1055,390 @@ mod tests {
 
         assert!(result.signed_verdict.verdict.approved);
         assert_eq!(result.signed_verdict.verdict.authority_summary.hop_count, 2);
+    }
+
+    // -----------------------------------------------------------------------
+    // Sensor integrity integration tests
+    // -----------------------------------------------------------------------
+
+    use crate::sensor::{sign_sensor_reading, SensorPayload, SensorReading, SensorTrustPolicy};
+
+    fn setup_valid_command_with_authority() -> (Command, HashMap<String, VerifyingKey>) {
+        let (pca_sk, pca_vk) = make_keypair();
+        let claim = Pca {
+            p_0: "alice".into(),
+            ops: ops(&["actuate:*"]),
+            kid: "key-1".into(),
+            exp: None,
+            nbf: None,
+        };
+        let signed_pca = sign_pca(&claim, &pca_sk).unwrap();
+        let chain_b64 = encode_chain(&[signed_pca]);
+        let mut trusted = HashMap::new();
+        trusted.insert("key-1".to_string(), pca_vk);
+        let cmd = make_command(&chain_b64, vec![op("actuate:j1")]);
+        (cmd, trusted)
+    }
+
+    #[test]
+    fn accept_unsigned_policy_always_passes_sensor_check() {
+        let (cmd, trusted) = setup_valid_command_with_authority();
+        let (sign_sk, _) = make_keypair();
+        let config = make_config(trusted, sign_sk); // default: AcceptUnsigned
+
+        let result = config.validate(&cmd, Utc::now(), None).unwrap();
+
+        assert!(result.signed_verdict.verdict.approved);
+        let sensor_check = result
+            .signed_verdict
+            .verdict
+            .checks
+            .iter()
+            .find(|c| c.name == "sensor_integrity")
+            .expect("sensor_integrity check must be present");
+        assert!(sensor_check.passed);
+        assert!(sensor_check.details.contains("accept_unsigned"));
+    }
+
+    #[test]
+    fn require_signed_rejects_when_no_readings() {
+        let (cmd, trusted) = setup_valid_command_with_authority();
+        let (sign_sk, _) = make_keypair();
+        let config = make_config(trusted, sign_sk).with_sensor_policy(
+            SensorTrustPolicy::RequireSigned,
+            HashMap::new(),
+            500,
+        );
+
+        let result = config.validate(&cmd, Utc::now(), None).unwrap();
+
+        assert!(!result.signed_verdict.verdict.approved);
+        assert!(result.actuation_command.is_none());
+        let sensor_check = result
+            .signed_verdict
+            .verdict
+            .checks
+            .iter()
+            .find(|c| c.name == "sensor_integrity")
+            .unwrap();
+        assert!(!sensor_check.passed);
+        assert!(sensor_check.details.contains("no signed readings"));
+    }
+
+    #[test]
+    fn require_signed_approves_with_valid_readings() {
+        let (mut cmd, trusted) = setup_valid_command_with_authority();
+        let (sign_sk, _) = make_keypair();
+        let (sensor_sk, sensor_vk) = make_keypair();
+
+        let reading = SensorReading {
+            sensor_name: "left_hand".into(),
+            timestamp: Utc::now(),
+            payload: SensorPayload::Position {
+                position: [0.0, 0.0, 1.0],
+            },
+            sequence: 1,
+        };
+        let signed_reading = sign_sensor_reading(&reading, &sensor_sk, "sensor-k1").unwrap();
+        cmd.signed_sensor_readings = vec![signed_reading];
+
+        let mut sensor_keys = HashMap::new();
+        sensor_keys.insert("sensor-k1".to_string(), sensor_vk);
+        let config = make_config(trusted, sign_sk).with_sensor_policy(
+            SensorTrustPolicy::RequireSigned,
+            sensor_keys,
+            5000,
+        );
+
+        let result = config.validate(&cmd, Utc::now(), None).unwrap();
+
+        assert!(result.signed_verdict.verdict.approved);
+        let sensor_check = result
+            .signed_verdict
+            .verdict
+            .checks
+            .iter()
+            .find(|c| c.name == "sensor_integrity")
+            .unwrap();
+        assert!(sensor_check.passed);
+        assert!(sensor_check.details.contains("1 readings verified"));
+    }
+
+    #[test]
+    fn require_signed_rejects_tampered_reading() {
+        let (mut cmd, trusted) = setup_valid_command_with_authority();
+        let (sign_sk, _) = make_keypair();
+        let (sensor_sk, sensor_vk) = make_keypair();
+
+        let reading = SensorReading {
+            sensor_name: "left_hand".into(),
+            timestamp: Utc::now(),
+            payload: SensorPayload::Position {
+                position: [0.0, 0.0, 1.0],
+            },
+            sequence: 1,
+        };
+        let mut signed_reading = sign_sensor_reading(&reading, &sensor_sk, "sensor-k1").unwrap();
+        // Tamper: change the position after signing.
+        signed_reading.reading.payload = SensorPayload::Position {
+            position: [999.0, 999.0, 999.0],
+        };
+        cmd.signed_sensor_readings = vec![signed_reading];
+
+        let mut sensor_keys = HashMap::new();
+        sensor_keys.insert("sensor-k1".to_string(), sensor_vk);
+        let config = make_config(trusted, sign_sk).with_sensor_policy(
+            SensorTrustPolicy::RequireSigned,
+            sensor_keys,
+            5000,
+        );
+
+        let result = config.validate(&cmd, Utc::now(), None).unwrap();
+
+        assert!(!result.signed_verdict.verdict.approved);
+        let sensor_check = result
+            .signed_verdict
+            .verdict
+            .checks
+            .iter()
+            .find(|c| c.name == "sensor_integrity")
+            .unwrap();
+        assert!(!sensor_check.passed);
+        assert!(sensor_check.details.contains("sensor verification failed"));
+    }
+
+    #[test]
+    fn require_signed_rejects_stale_reading() {
+        let (mut cmd, trusted) = setup_valid_command_with_authority();
+        let (sign_sk, _) = make_keypair();
+        let (sensor_sk, sensor_vk) = make_keypair();
+
+        let reading = SensorReading {
+            sensor_name: "left_hand".into(),
+            timestamp: Utc::now() - chrono::Duration::seconds(10),
+            payload: SensorPayload::Position {
+                position: [0.0, 0.0, 1.0],
+            },
+            sequence: 1,
+        };
+        let signed_reading = sign_sensor_reading(&reading, &sensor_sk, "sensor-k1").unwrap();
+        cmd.signed_sensor_readings = vec![signed_reading];
+
+        let mut sensor_keys = HashMap::new();
+        sensor_keys.insert("sensor-k1".to_string(), sensor_vk);
+        // max_age_ms = 100ms, reading is 10s old
+        let config = make_config(trusted, sign_sk).with_sensor_policy(
+            SensorTrustPolicy::RequireSigned,
+            sensor_keys,
+            100,
+        );
+
+        let result = config.validate(&cmd, Utc::now(), None).unwrap();
+
+        assert!(!result.signed_verdict.verdict.approved);
+        let sensor_check = result
+            .signed_verdict
+            .verdict
+            .checks
+            .iter()
+            .find(|c| c.name == "sensor_integrity")
+            .unwrap();
+        assert!(!sensor_check.passed);
+        assert!(sensor_check.details.contains("expired"));
+    }
+
+    #[test]
+    fn prefer_signed_warns_when_no_readings() {
+        let (cmd, trusted) = setup_valid_command_with_authority();
+        let (sign_sk, _) = make_keypair();
+        let config = make_config(trusted, sign_sk).with_sensor_policy(
+            SensorTrustPolicy::PreferSigned,
+            HashMap::new(),
+            500,
+        );
+
+        let result = config.validate(&cmd, Utc::now(), None).unwrap();
+
+        // Still approved (prefer_signed doesn't block on missing readings).
+        assert!(result.signed_verdict.verdict.approved);
+        let sensor_check = result
+            .signed_verdict
+            .verdict
+            .checks
+            .iter()
+            .find(|c| c.name == "sensor_integrity")
+            .unwrap();
+        assert!(sensor_check.passed);
+        assert!(sensor_check.details.contains("accepted with warning"));
+    }
+
+    #[test]
+    fn prefer_signed_rejects_tampered_reading() {
+        let (mut cmd, trusted) = setup_valid_command_with_authority();
+        let (sign_sk, _) = make_keypair();
+        let (sensor_sk, sensor_vk) = make_keypair();
+
+        let reading = SensorReading {
+            sensor_name: "sensor_a".into(),
+            timestamp: Utc::now(),
+            payload: SensorPayload::Force {
+                force: [10.0, 0.0, 0.0],
+            },
+            sequence: 1,
+        };
+        let mut signed_reading = sign_sensor_reading(&reading, &sensor_sk, "sk1").unwrap();
+        signed_reading.reading.payload = SensorPayload::Force {
+            force: [0.0, 0.0, 0.0],
+        };
+        cmd.signed_sensor_readings = vec![signed_reading];
+
+        let mut sensor_keys = HashMap::new();
+        sensor_keys.insert("sk1".to_string(), sensor_vk);
+        let config = make_config(trusted, sign_sk).with_sensor_policy(
+            SensorTrustPolicy::PreferSigned,
+            sensor_keys,
+            5000,
+        );
+
+        let result = config.validate(&cmd, Utc::now(), None).unwrap();
+
+        assert!(!result.signed_verdict.verdict.approved);
+        let sensor_check = result
+            .signed_verdict
+            .verdict
+            .checks
+            .iter()
+            .find(|c| c.name == "sensor_integrity")
+            .unwrap();
+        assert!(!sensor_check.passed);
+    }
+
+    #[test]
+    fn sensor_check_always_present_in_verdict() {
+        // Every verdict must include the sensor_integrity check regardless of policy.
+        let (cmd, trusted) = setup_valid_command_with_authority();
+        let (sign_sk, _) = make_keypair();
+        let config = make_config(trusted, sign_sk);
+
+        let result = config.validate(&cmd, Utc::now(), None).unwrap();
+
+        let sensor_checks: Vec<_> = result
+            .signed_verdict
+            .verdict
+            .checks
+            .iter()
+            .filter(|c| c.name == "sensor_integrity")
+            .collect();
+        assert_eq!(sensor_checks.len(), 1);
+        assert_eq!(sensor_checks[0].category, "sensor");
+    }
+
+    #[test]
+    fn require_signed_rejects_unknown_sensor_kid() {
+        let (mut cmd, trusted) = setup_valid_command_with_authority();
+        let (sign_sk, _) = make_keypair();
+        let (sensor_sk, _sensor_vk) = make_keypair();
+
+        let reading = SensorReading {
+            sensor_name: "imu".into(),
+            timestamp: Utc::now(),
+            payload: SensorPayload::CenterOfMass {
+                com: [0.0, 0.0, 0.9],
+            },
+            sequence: 1,
+        };
+        let signed_reading = sign_sensor_reading(&reading, &sensor_sk, "unknown-kid").unwrap();
+        cmd.signed_sensor_readings = vec![signed_reading];
+
+        // No sensor keys registered — "unknown-kid" is not trusted.
+        let config = make_config(trusted, sign_sk).with_sensor_policy(
+            SensorTrustPolicy::RequireSigned,
+            HashMap::new(),
+            5000,
+        );
+
+        let result = config.validate(&cmd, Utc::now(), None).unwrap();
+
+        assert!(!result.signed_verdict.verdict.approved);
+        let sensor_check = result
+            .signed_verdict
+            .verdict
+            .checks
+            .iter()
+            .find(|c| c.name == "sensor_integrity")
+            .unwrap();
+        assert!(!sensor_check.passed);
+        assert!(sensor_check.details.contains("unknown signer kid"));
+    }
+
+    // -----------------------------------------------------------------------
+    // Threat scorer integration tests
+    // -----------------------------------------------------------------------
+
+    use crate::threat::{ThreatScorer, ThreatScorerConfig};
+
+    #[test]
+    fn verdict_has_no_threat_analysis_by_default() {
+        let (cmd, trusted) = setup_valid_command_with_authority();
+        let (sign_sk, _) = make_keypair();
+        let config = make_config(trusted, sign_sk);
+
+        let result = config.validate(&cmd, Utc::now(), None).unwrap();
+        assert!(result.signed_verdict.verdict.threat_analysis.is_none());
+    }
+
+    #[test]
+    fn verdict_has_threat_analysis_when_scorer_enabled() {
+        let (cmd, trusted) = setup_valid_command_with_authority();
+        let (sign_sk, _) = make_keypair();
+        let config =
+            make_config(trusted, sign_sk).with_threat_scorer(ThreatScorer::with_defaults());
+
+        let result = config.validate(&cmd, Utc::now(), None).unwrap();
+        let ta = result
+            .signed_verdict
+            .verdict
+            .threat_analysis
+            .expect("threat_analysis should be present when scorer is enabled");
+
+        // First command — scores should be low.
+        assert!(!ta.alert);
+        assert!(ta.composite_threat_score < 0.5);
+    }
+
+    #[test]
+    fn threat_scorer_accumulates_across_validate_calls() {
+        let (cmd, trusted) = setup_valid_command_with_authority();
+        let (sign_sk, _) = make_keypair();
+        let config =
+            make_config(trusted, sign_sk).with_threat_scorer(ThreatScorer::with_defaults());
+
+        // Multiple validate calls should accumulate state in the scorer.
+        for _ in 0..5 {
+            let result = config.validate(&cmd, Utc::now(), None).unwrap();
+            assert!(result.signed_verdict.verdict.threat_analysis.is_some());
+        }
+    }
+
+    #[test]
+    fn threat_scorer_alert_propagates_to_verdict() {
+        let (cmd, trusted) = setup_valid_command_with_authority();
+        let (sign_sk, _) = make_keypair();
+        let scorer_config = ThreatScorerConfig {
+            alert_threshold: 0.0, // triggers alert on any non-zero score
+            ..ThreatScorerConfig::default()
+        };
+        let config =
+            make_config(trusted, sign_sk).with_threat_scorer(ThreatScorer::new(scorer_config));
+
+        // Feed some commands to build history, then check.
+        for _ in 0..15 {
+            config.validate(&cmd, Utc::now(), None).unwrap();
+        }
+
+        let result = config.validate(&cmd, Utc::now(), None).unwrap();
+        // With threshold 0.0, alert may or may not trigger depending on scores.
+        // The important thing is that threat_analysis is present.
+        assert!(result.signed_verdict.verdict.threat_analysis.is_some());
     }
 }

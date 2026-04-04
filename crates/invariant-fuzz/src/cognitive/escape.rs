@@ -59,6 +59,9 @@ fn make_command(
         locomotion_state: None,
         end_effector_forces: vec![],
         estimated_payload_kg: None,
+        signed_sensor_readings: vec![],
+        zone_overrides: HashMap::new(),
+        environment_state: None,
     }
 }
 
@@ -251,6 +254,9 @@ pub fn ce4_authority_laundering(
         locomotion_state: None,
         end_effector_forces: vec![],
         estimated_payload_kg: None,
+        signed_sensor_readings: vec![],
+        zone_overrides: HashMap::new(),
+        environment_state: None,
     }]
 }
 
@@ -393,6 +399,9 @@ pub fn ce7_watchdog_manipulation(
         locomotion_state: None,
         end_effector_forces: vec![],
         estimated_payload_kg: None,
+        signed_sensor_readings: vec![],
+        zone_overrides: HashMap::new(),
+        environment_state: None,
     }]
 }
 

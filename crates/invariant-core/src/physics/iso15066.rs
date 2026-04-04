@@ -96,9 +96,7 @@ pub fn limit_for_region(region: &str) -> Option<&'static BodyRegionLimit> {
 /// Section 3.1 (`human_critical` proximity zone).
 fn is_human_critical(zone: &ProximityZone) -> bool {
     match zone {
-        ProximityZone::Sphere { name, .. } => {
-            name.to_ascii_lowercase().contains("human_critical")
-        }
+        ProximityZone::Sphere { name, .. } => name.to_ascii_lowercase().contains("human_critical"),
     }
 }
 
@@ -159,9 +157,9 @@ pub fn check_iso15066_force_limits(
         }
 
         let inside_critical = critical_zones.iter().any(|zone| match zone {
-            ProximityZone::Sphere {
-                center, radius, ..
-            } => point_in_sphere(&ee_pos.position, center, *radius),
+            ProximityZone::Sphere { center, radius, .. } => {
+                point_in_sphere(&ee_pos.position, center, *radius)
+            }
         });
 
         if !inside_critical {
@@ -368,8 +366,7 @@ mod tests {
         // 100 N would fail the default face limit (65 N) but passes chest limit (140 N).
         let forces = vec![ee_force("gripper", 100.0, 0.0, 0.0)];
 
-        let result =
-            check_iso15066_force_limits(&positions, &forces, &zones, Some("chest"));
+        let result = check_iso15066_force_limits(&positions, &forces, &zones, Some("chest"));
         assert!(result.passed);
         assert!(result.details.contains("140.0 N"));
         assert!(result.details.contains("chest"));
@@ -381,8 +378,7 @@ mod tests {
         let positions = vec![ee_pos("gripper", [1.0, 0.0, 1.0])];
         let forces = vec![ee_force("gripper", 100.0, 0.0, 0.0)];
 
-        let result =
-            check_iso15066_force_limits(&positions, &forces, &zones, Some("ankle"));
+        let result = check_iso15066_force_limits(&positions, &forces, &zones, Some("ankle"));
         assert!(!result.passed); // 100 > 65 (fallback)
     }
 
@@ -405,11 +401,11 @@ mod tests {
         let zones = vec![human_critical_zone([0.0, 0.0, 0.0], 1.0)];
         let positions = vec![
             ee_pos("left_hand", [0.0, 0.0, 0.0]),  // inside
-            ee_pos("right_hand", [5.0, 0.0, 0.0]),  // outside
+            ee_pos("right_hand", [5.0, 0.0, 0.0]), // outside
         ];
         let forces = vec![
             ee_force("left_hand", 30.0, 0.0, 0.0),   // safe
-            ee_force("right_hand", 200.0, 0.0, 0.0),  // would fail if inside
+            ee_force("right_hand", 200.0, 0.0, 0.0), // would fail if inside
         ];
 
         let result = check_iso15066_force_limits(&positions, &forces, &zones, None);

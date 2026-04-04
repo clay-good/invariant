@@ -33,11 +33,7 @@ fn make_signing_keys() -> (SigningKey, ed25519_dalek::VerifyingKey, String) {
     (sk, vk, "integration-test-key".to_string())
 }
 
-fn forge_chain(
-    sk: &SigningKey,
-    kid: &str,
-    ops: &[Operation],
-) -> String {
+fn forge_chain(sk: &SigningKey, kid: &str, ops: &[Operation]) -> String {
     let pca = Pca {
         p_0: "integration-test-operator".to_string(),
         ops: ops.iter().cloned().collect(),
@@ -101,6 +97,9 @@ fn safe_command(profile: &RobotProfile, chain_b64: &str, ops: Vec<Operation>) ->
         locomotion_state: None,
         end_effector_forces: vec![],
         estimated_payload_kg: None,
+        signed_sensor_readings: vec![],
+        zone_overrides: HashMap::new(),
+        environment_state: None,
     }
 }
 
@@ -121,8 +120,7 @@ fn end_to_end_safe_command_approved() {
     trusted.insert(kid.clone(), pca_vk);
 
     let config =
-        ValidatorConfig::new(profile.clone(), trusted, sign_sk, "signer-001".to_string())
-            .unwrap();
+        ValidatorConfig::new(profile.clone(), trusted, sign_sk, "signer-001".to_string()).unwrap();
 
     let cmd = safe_command(&profile, &chain_b64, vec![op]);
     let result = config.validate(&cmd, Utc::now(), None).unwrap();
@@ -162,8 +160,7 @@ fn end_to_end_dangerous_command_rejected() {
     trusted.insert(kid, pca_vk);
 
     let config =
-        ValidatorConfig::new(profile.clone(), trusted, sign_sk, "signer-001".to_string())
-            .unwrap();
+        ValidatorConfig::new(profile.clone(), trusted, sign_sk, "signer-001".to_string()).unwrap();
 
     // Dangerous: position way outside joint limits.
     let mut cmd = safe_command(&profile, &chain_b64, vec![op]);
@@ -208,9 +205,13 @@ fn end_to_end_authority_failure() {
     let sign_sk = generate_keypair(&mut OsRng);
 
     // Empty trusted keys = no key can verify the chain.
-    let config =
-        ValidatorConfig::new(profile.clone(), HashMap::new(), sign_sk, "signer".to_string())
-            .unwrap();
+    let config = ValidatorConfig::new(
+        profile.clone(),
+        HashMap::new(),
+        sign_sk,
+        "signer".to_string(),
+    )
+    .unwrap();
 
     let op = Operation::new("actuate:*").unwrap();
     // Forge a chain with an unknown key.
@@ -230,7 +231,10 @@ fn end_to_end_authority_failure() {
         .iter()
         .find(|c| c.name == "authority")
         .unwrap();
-    assert!(!auth_check.passed, "authority check must fail with unknown key");
+    assert!(
+        !auth_check.passed,
+        "authority check must fail with unknown key"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -283,7 +287,10 @@ fn end_to_end_audit_round_trip() {
         let parsed: serde_json::Value = serde_json::from_str(line)
             .unwrap_or_else(|e| panic!("audit line {i} is not valid JSON: {e}"));
         // Must have sequence, entry_hash, entry_signature fields.
-        assert!(parsed.get("sequence").is_some(), "line {i} missing sequence");
+        assert!(
+            parsed.get("sequence").is_some(),
+            "line {i} missing sequence"
+        );
         assert!(
             parsed.get("entry_hash").is_some(),
             "line {i} missing entry_hash"
@@ -303,7 +310,8 @@ fn end_to_end_audit_round_trip() {
         let prev_hash = entries[i - 1]["entry_hash"].as_str().unwrap();
         let curr_prev = entries[i]["previous_hash"].as_str().unwrap();
         assert_eq!(
-            curr_prev, prev_hash,
+            curr_prev,
+            prev_hash,
             "hash chain broken at entry {i}: previous_hash != entry[{prev}].entry_hash",
             prev = i - 1
         );

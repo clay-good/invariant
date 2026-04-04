@@ -20,6 +20,7 @@ use tower::limit::ConcurrencyLimitLayer;
 use tower::timeout::TimeoutLayer;
 use tower::ServiceBuilder;
 
+use invariant_core::digital_twin::{DivergenceDetector, DivergenceLevel, DivergenceSnapshot};
 use invariant_core::models::command::Command;
 use invariant_core::validator::ValidatorConfig;
 use invariant_core::watchdog::{Watchdog, WatchdogState};
@@ -62,6 +63,38 @@ pub struct ServeArgs {
     /// in the current working directory.
     #[arg(long, value_name = "SAFE_STOP_FILE", default_value = "safe-stop.json")]
     pub safe_stop_path: PathBuf,
+    /// Enable continuous adversarial monitoring (Section 11.3). Populates
+    /// `threat_analysis` in every verdict with behavioral threat scores.
+    #[arg(long)]
+    pub threat_scoring: bool,
+    /// Also start the Isaac Lab Unix socket bridge (Section 21.1) alongside
+    /// the HTTP server. Enables simultaneous HTTP + Unix socket validation.
+    #[arg(long)]
+    pub bridge: bool,
+    /// Path for the Unix socket when --bridge is enabled.
+    #[arg(
+        long,
+        value_name = "SOCKET_PATH",
+        default_value = "/tmp/invariant.sock"
+    )]
+    pub bridge_socket: String,
+    /// Enable periodic runtime integrity monitors (Section 10.5).
+    /// Runs binary hash, profile hash, memory canary, and clock drift checks
+    /// in a background task. Triggers incident lockdown on critical failures.
+    #[arg(long)]
+    pub monitors: bool,
+    /// Path for the audit log file. Every validation decision is logged as
+    /// signed, hash-chained JSONL (Section 10.1). If omitted, audit logging
+    /// is disabled.
+    #[arg(long, value_name = "AUDIT_FILE")]
+    pub audit_log: Option<PathBuf>,
+    /// Enable real-time digital twin divergence detection (Section 18.3,
+    /// Step 82). Compares commanded joint states against observed sensor
+    /// feedback to detect sim-to-real divergence. Feeds critical divergence
+    /// into the incident response pipeline. Requires --monitors for
+    /// automatic lockdown on catastrophic divergence.
+    #[arg(long)]
+    pub digital_twin: bool,
 }
 
 // ---------------------------------------------------------------------------
@@ -80,6 +113,31 @@ struct AppState {
     auth_token: Option<String>,
     /// File path for atomic safe-stop command writes.
     safe_stop_path: PathBuf,
+    /// Whether threat scoring is enabled (Step 68/75).
+    threat_scoring_enabled: bool,
+    /// Incident responder for lockdown on critical monitor failures (Section 10.6).
+    incident: Option<RwLock<invariant_core::incident::IncidentResponder>>,
+    /// Signed, hash-chained audit logger (Section 10.1). Every validation
+    /// decision is logged. Wrapped in std::sync::Mutex because AuditLogger
+    /// takes &mut self.
+    audit: Option<std::sync::Mutex<invariant_core::audit::AuditLogger<std::fs::File>>>,
+    /// Real-time digital twin divergence detector (Section 18.3, Step 83).
+    /// Compares commanded joint states against the previous command's joints
+    /// to track divergence over time. Wrapped in std::sync::Mutex for
+    /// mutable access from the validate handler.
+    digital_twin: Option<std::sync::Mutex<DigitalTwinState>>,
+}
+
+/// Wrapper holding the divergence detector and the last observed snapshot
+/// for health reporting.
+struct DigitalTwinState {
+    detector: DivergenceDetector,
+    /// Most recent divergence snapshot (for /health).
+    last_snapshot: Option<DivergenceSnapshot>,
+    /// Joint states from the most recent command (used as "observed" for
+    /// the next command's comparison in dry-run/Shadow mode where real
+    /// sensor feedback is the previous command's actual state).
+    previous_joints: Option<Vec<invariant_core::models::command::JointState>>,
 }
 
 struct WatchdogInner {
@@ -131,6 +189,26 @@ struct HealthResponse {
     /// Whether the watchdog background task appears alive (None when watchdog
     /// is disabled).
     watchdog_alive: Option<bool>,
+    /// Whether continuous adversarial monitoring is active (Step 68/75).
+    threat_scoring: bool,
+    /// Whether runtime integrity monitors are active (Step 78).
+    monitors_enabled: bool,
+    /// Whether the system is in incident lockdown (Step 78).
+    /// When true, all /validate requests return 503.
+    incident_locked_down: bool,
+    /// Number of incidents recorded in the current session.
+    incident_count: usize,
+    /// Whether real-time digital twin divergence detection is active (Step 83).
+    digital_twin_enabled: bool,
+    /// Current divergence level (null when digital twin is disabled).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    digital_twin_level: Option<String>,
+    /// Current max position error in radians (null when disabled).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    digital_twin_max_position_error: Option<f64>,
+    /// Total observations processed by the divergence detector.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    digital_twin_observations: Option<u64>,
 }
 
 #[derive(Serialize)]
@@ -207,6 +285,18 @@ async fn handle_validate(
 ) -> Result<Json<ValidateResponse>, (StatusCode, Json<ErrorResponse>)> {
     check_auth(&headers, &state.auth_token)?;
 
+    // Check incident lockdown — reject all commands if in lockdown (Section 10.6).
+    if let Some(ref incident) = state.incident {
+        if incident.read().await.is_locked_down() {
+            return Err((
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(ErrorResponse {
+                    error: "system in incident lockdown — all commands rejected".into(),
+                }),
+            ));
+        }
+    }
+
     let mut cmd = req.command;
 
     // In trust-plane mode, auto-issue a self-signed PCA chain.
@@ -222,6 +312,14 @@ async fn handle_validate(
     }
 
     let now = Utc::now();
+
+    // Clone command for audit logging and/or digital twin observation
+    // (the original moves into spawn_blocking).
+    let cmd_for_audit = if state.audit.is_some() || state.digital_twin.is_some() {
+        Some(cmd.clone())
+    } else {
+        None
+    };
 
     // Offload CPU-bound validation to a blocking thread to keep the async
     // runtime responsive for heartbeat and health handlers. ValidatorConfig is
@@ -241,10 +339,66 @@ async fn handle_validate(
             })?;
 
     match result {
-        Ok(result) => Ok(Json(ValidateResponse {
-            verdict: result.signed_verdict,
-            actuation_command: result.actuation_command,
-        })),
+        Ok(result) => {
+            // Log to audit trail if configured (Step 80).
+            if let (Some(ref audit_mutex), Some(ref audit_cmd)) = (&state.audit, &cmd_for_audit) {
+                if let Ok(mut logger) = audit_mutex.lock() {
+                    if let Err(e) = logger.log(audit_cmd, &result.signed_verdict) {
+                        eprintln!("audit: log error: {e}");
+                    }
+                }
+            }
+
+            // Digital twin divergence detection (Step 83).
+            // Compare the current command's joints against the previous
+            // command's joints. In Shadow/Guardian mode with real sensor
+            // feedback, the "observed" would come from signed sensor
+            // readings; here we use the previous command's joint states
+            // as the "predicted" and the current command's as "observed"
+            // to detect drift over time.
+            if let Some(ref dt_mutex) = state.digital_twin {
+                if let Some(ref audit_cmd) = cmd_for_audit {
+                    if let Ok(mut dt) = dt_mutex.lock() {
+                        let current_joints = &audit_cmd.joint_states;
+                        if let Some(prev_joints) = dt.previous_joints.take() {
+                            let snapshot = dt.detector.observe(&prev_joints, current_joints);
+
+                            // Feed critical/catastrophic divergence to incident responder.
+                            if matches!(
+                                snapshot.level,
+                                DivergenceLevel::Critical | DivergenceLevel::Catastrophic
+                            ) {
+                                let monitor_result = dt.detector.to_monitor_result(&snapshot);
+                                eprintln!(
+                                    "digital-twin: {} — {}",
+                                    monitor_result.monitor, monitor_result.detail
+                                );
+                                if let Some(ref incident) = state.incident {
+                                    if let Ok(mut responder) = incident.try_write() {
+                                        if let Some(record) =
+                                            responder.respond_to_monitor(&monitor_result)
+                                        {
+                                            eprintln!(
+                                                "digital-twin: INCIDENT LOCKDOWN triggered ({} steps)",
+                                                record.steps_completed.len()
+                                            );
+                                        }
+                                    }
+                                }
+                            }
+
+                            dt.last_snapshot = Some(snapshot);
+                        }
+                        dt.previous_joints = Some(current_joints.clone());
+                    }
+                }
+            }
+
+            Ok(Json(ValidateResponse {
+                verdict: result.signed_verdict,
+                actuation_command: result.actuation_command,
+            }))
+        }
         Err(e) => Err((
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(ErrorResponse {
@@ -312,14 +466,59 @@ async fn handle_health(State(state): State<Arc<AppState>>) -> Json<HealthRespons
             (false, None, None)
         };
 
+    // Query incident state.
+    let (incident_locked_down, incident_count) = if let Some(ref incident) = state.incident {
+        let responder = incident.read().await;
+        (responder.is_locked_down(), responder.history().len())
+    } else {
+        (false, 0)
+    };
+
+    // Determine overall status.
+    let status = if incident_locked_down {
+        Cow::Borrowed("lockdown")
+    } else if watchdog_state.as_deref() == Some("triggered") {
+        Cow::Borrowed("safe-stop")
+    } else {
+        Cow::Borrowed("ok")
+    };
+
+    // Query digital twin state.
+    let (dt_enabled, dt_level, dt_max_pos_err, dt_observations) =
+        if let Some(ref dt_mutex) = state.digital_twin {
+            if let Ok(dt) = dt_mutex.lock() {
+                match &dt.last_snapshot {
+                    Some(snap) => (
+                        true,
+                        Some(format!("{:?}", snap.level)),
+                        Some(snap.window_max_position_error),
+                        Some(snap.total_observations),
+                    ),
+                    None => (true, Some("Normal".into()), None, Some(0)),
+                }
+            } else {
+                (true, None, None, None)
+            }
+        } else {
+            (false, None, None, None)
+        };
+
     Json(HealthResponse {
-        status: Cow::Borrowed("ok"),
+        status,
         profile_name: state.config.profile().name.clone(),
         trust_plane: state.trust_plane,
         watchdog_enabled,
         watchdog_state,
         uptime_ms,
         watchdog_alive,
+        threat_scoring: state.threat_scoring_enabled,
+        monitors_enabled: state.incident.is_some(),
+        incident_locked_down,
+        incident_count,
+        digital_twin_enabled: dt_enabled,
+        digital_twin_level: dt_level,
+        digital_twin_max_position_error: dt_max_pos_err,
+        digital_twin_observations: dt_observations,
     })
 }
 
@@ -419,6 +618,14 @@ async fn run_server(args: &ServeArgs) -> i32 {
         }
     };
 
+    // Optionally enable continuous adversarial monitoring (Step 68/75).
+    let config = if args.threat_scoring {
+        eprintln!("info: threat scoring enabled (Section 11.3)");
+        config.with_threat_scorer(invariant_core::threat::ThreatScorer::with_defaults())
+    } else {
+        config
+    };
+
     // Reconstruct a separate SigningKey for AppState (ValidatorConfig consumed the
     // original above); the watchdog gets its own independent copy.
     let app_signing_key = SigningKey::from_bytes(&signing_key_bytes);
@@ -441,6 +648,52 @@ async fn run_server(args: &ServeArgs) -> i32 {
         None
     };
 
+    // Optionally create incident responder + monitors (Step 78).
+    let incident = if args.monitors {
+        eprintln!("info: runtime monitors enabled (Section 10.5/10.6)");
+        Some(RwLock::new(
+            invariant_core::incident::IncidentResponder::new(Box::new(
+                invariant_core::incident::LogAlertSink,
+            )),
+        ))
+    } else {
+        None
+    };
+
+    // Optionally create audit logger (Step 80).
+    let audit = if let Some(ref audit_path) = args.audit_log {
+        let file = match std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(audit_path)
+        {
+            Ok(f) => f,
+            Err(e) => {
+                eprintln!("error: failed to open audit log {:?}: {e}", audit_path);
+                return 2;
+            }
+        };
+        let audit_sk = SigningKey::from_bytes(&signing_key_bytes);
+        eprintln!("info: audit logging to {:?}", audit_path);
+        Some(std::sync::Mutex::new(
+            invariant_core::audit::AuditLogger::new(file, audit_sk, kid.clone()),
+        ))
+    } else {
+        None
+    };
+
+    // Optionally create digital twin divergence detector (Step 83).
+    let digital_twin = if args.digital_twin {
+        eprintln!("info: digital twin divergence detection enabled (Section 18.3)");
+        Some(std::sync::Mutex::new(DigitalTwinState {
+            detector: DivergenceDetector::with_defaults(),
+            last_snapshot: None,
+            previous_joints: None,
+        }))
+    } else {
+        None
+    };
+
     let state = Arc::new(AppState {
         config,
         trust_plane: args.trust_plane,
@@ -450,6 +703,10 @@ async fn run_server(args: &ServeArgs) -> i32 {
         boot_instant,
         auth_token,
         safe_stop_path,
+        threat_scoring_enabled: args.threat_scoring,
+        incident,
+        audit,
+        digital_twin,
     });
 
     // Spawn a background task that periodically calls watchdog.check() so that
@@ -519,6 +776,98 @@ async fn run_server(args: &ServeArgs) -> i32 {
                 let _ = inner.watchdog.check(now_ms, now_utc);
             }
         });
+    }
+
+    // Optionally spawn the runtime integrity monitor background task (Step 78).
+    if args.monitors {
+        let monitor_state = Arc::clone(&state);
+        let profile_path = args.profile.clone();
+        // Compute baseline binary hash at startup.
+        let binary_hash = std::env::current_exe()
+            .ok()
+            .and_then(|p| std::fs::read(p).ok())
+            .map(|b| invariant_core::util::sha256_hex(&b))
+            .unwrap_or_default();
+        // Compute baseline profile hash.
+        let profile_hash = std::fs::read(&profile_path)
+            .ok()
+            .map(|b| invariant_core::util::sha256_hex(&b))
+            .unwrap_or_default();
+        // Initialize monitors.
+        let memory_canary = invariant_core::monitors::MemoryCanary::new();
+        let wall_now_ms = Utc::now().timestamp_millis();
+        let clock_monitor = invariant_core::monitors::ClockMonitor::new(wall_now_ms, 500);
+
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(10));
+            loop {
+                interval.tick().await;
+                let results = vec![
+                    invariant_core::monitors::check_binary_hash(&binary_hash),
+                    invariant_core::monitors::check_profile_hash(&profile_hash, &profile_path),
+                    memory_canary.check(),
+                    clock_monitor.check(chrono::Utc::now().timestamp_millis()),
+                ];
+
+                let suite = invariant_core::monitors::MonitorSuiteResults { results };
+
+                if !suite.all_ok() {
+                    for failure in suite.failures() {
+                        eprintln!(
+                            "monitor: {} — {:?} — {}",
+                            failure.monitor, failure.action, failure.detail
+                        );
+                    }
+                    // Feed failures to incident responder.
+                    if let Some(ref incident) = monitor_state.incident {
+                        let mut responder = incident.write().await;
+                        for failure in suite.failures() {
+                            if let Some(record) = responder.respond_to_monitor(failure) {
+                                eprintln!(
+                                    "monitor: INCIDENT LOCKDOWN triggered by {} ({} steps)",
+                                    record.trigger.source,
+                                    record.steps_completed.len()
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    // Optionally spawn the Isaac Lab Unix socket bridge alongside HTTP (Step 69/75).
+    if args.bridge {
+        let bridge_validator = Arc::new(
+            ValidatorConfig::new(
+                state.config.profile().clone(),
+                {
+                    // Re-build trusted keys from the same key file for the bridge's
+                    // independent ValidatorConfig. The bridge gets its own config so
+                    // the HTTP AppState is not disturbed.
+                    let mut tk = HashMap::new();
+                    tk.insert(state.kid.clone(), state.signing_key.verifying_key());
+                    tk
+                },
+                SigningKey::from_bytes(&signing_key_bytes),
+                state.kid.clone(),
+            )
+            .expect("bridge validator config"),
+        );
+        let bridge_config = invariant_sim::isaac::bridge::BridgeConfig::new(
+            args.bridge_socket.clone(),
+            bridge_validator,
+            args.watchdog_timeout_ms,
+        );
+        tokio::spawn(async move {
+            if let Err(e) = invariant_sim::isaac::bridge::run_bridge(bridge_config).await {
+                eprintln!("bridge: error: {e}");
+            }
+        });
+        eprintln!(
+            "invariant serve: Isaac Lab bridge listening on {}",
+            args.bridge_socket
+        );
     }
 
     let app = Router::new()
@@ -679,6 +1028,10 @@ mod tests {
             boot_instant,
             auth_token,
             safe_stop_path: PathBuf::from("safe-stop.json"),
+            threat_scoring_enabled: false,
+            incident: None,
+            audit: None,
+            digital_twin: None,
         })
     }
 
@@ -714,6 +1067,9 @@ mod tests {
             locomotion_state: None,
             end_effector_forces: vec![],
             estimated_payload_kg: None,
+            signed_sensor_readings: vec![],
+            zone_overrides: HashMap::new(),
+            environment_state: None,
         }
     }
 
@@ -1108,6 +1464,12 @@ mod tests {
             auth_token: Some("cli-token".to_string()),
             auth_token_file: None,
             safe_stop_path: dir.path().join("safe-stop.json"),
+            threat_scoring: false,
+            bridge: false,
+            bridge_socket: "/tmp/invariant_test.sock".into(),
+            monitors: false,
+            audit_log: None,
+            digital_twin: false,
         };
         // No env var set; no file; CLI arg must win.
         // We must clear the env var in case it leaked from another test.
@@ -1133,6 +1495,12 @@ mod tests {
             auth_token: Some("cli-token".to_string()),
             auth_token_file: Some(token_file),
             safe_stop_path: dir.path().join("safe-stop.json"),
+            threat_scoring: false,
+            bridge: false,
+            bridge_socket: "/tmp/invariant_test.sock".into(),
+            monitors: false,
+            audit_log: None,
+            digital_twin: false,
         };
         std::env::remove_var("INVARIANT_AUTH_TOKEN");
         let result = resolve_auth_token(&args).unwrap();
@@ -1152,6 +1520,12 @@ mod tests {
             auth_token: None,
             auth_token_file: Some(dir.path().join("nonexistent.txt")),
             safe_stop_path: dir.path().join("safe-stop.json"),
+            threat_scoring: false,
+            bridge: false,
+            bridge_socket: "/tmp/invariant_test.sock".into(),
+            monitors: false,
+            audit_log: None,
+            digital_twin: false,
         };
         std::env::remove_var("INVARIANT_AUTH_TOKEN");
         let result = resolve_auth_token(&args);
@@ -1173,6 +1547,12 @@ mod tests {
             auth_token: None,
             auth_token_file: None,
             safe_stop_path: dir.path().join("safe-stop.json"),
+            threat_scoring: false,
+            bridge: false,
+            bridge_socket: "/tmp/invariant_test.sock".into(),
+            monitors: false,
+            audit_log: None,
+            digital_twin: false,
         };
         std::env::remove_var("INVARIANT_AUTH_TOKEN");
         let result = resolve_auth_token(&args).unwrap();
@@ -1215,6 +1595,12 @@ mod tests {
             auth_token: None,
             auth_token_file: None,
             safe_stop_path: dir.path().join("safe-stop.json"),
+            threat_scoring: false,
+            bridge: false,
+            bridge_socket: "/tmp/invariant_test.sock".into(),
+            monitors: false,
+            audit_log: None,
+            digital_twin: false,
         };
         assert_eq!(run(&args), 2);
     }
@@ -1238,6 +1624,12 @@ mod tests {
             auth_token: None,
             auth_token_file: None,
             safe_stop_path: dir.path().join("safe-stop.json"),
+            threat_scoring: false,
+            bridge: false,
+            bridge_socket: "/tmp/invariant_test.sock".into(),
+            monitors: false,
+            audit_log: None,
+            digital_twin: false,
         };
         assert_eq!(run(&args), 2);
     }
@@ -1259,6 +1651,12 @@ mod tests {
             auth_token: None,
             auth_token_file: None,
             safe_stop_path: dir.path().join("safe-stop.json"),
+            threat_scoring: false,
+            bridge: false,
+            bridge_socket: "/tmp/invariant_test.sock".into(),
+            monitors: false,
+            audit_log: None,
+            digital_twin: false,
         };
         assert_eq!(run(&args), 2);
     }

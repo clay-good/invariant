@@ -112,10 +112,7 @@ fn chain_forgery_all_rejected() {
     };
     let report = run_dry_campaign(&config, Some([42u8; 32])).unwrap();
     assert_eq!(report.total_commands, 10);
-    assert_eq!(
-        report.total_approved, 0,
-        "chain forgery must reject all"
-    );
+    assert_eq!(report.total_approved, 0, "chain forgery must reject all");
 }
 
 // ---------------------------------------------------------------------------

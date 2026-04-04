@@ -679,18 +679,18 @@ dependencies = [
 ]
 
 [[package]]
-name = "invariant-cli"
-version = "0.1.0"
+name = "invariant-robotics"
+version = "0.0.1"
 dependencies = [
  "axum",
  "base64",
  "chrono",
  "clap",
  "ed25519-dalek",
- "invariant-core",
- "invariant-eval",
- "invariant-fuzz",
- "invariant-sim",
+ "invariant-robotics-core",
+ "invariant-robotics-eval",
+ "invariant-robotics-fuzz",
+ "invariant-robotics-sim",
  "rand",
  "serde",
  "serde_json",
@@ -703,19 +703,19 @@ dependencies = [
 ]
 
 [[package]]
-name = "invariant-coordinator"
-version = "0.1.0"
+name = "invariant-robotics-coordinator"
+version = "0.0.1"
 dependencies = [
  "chrono",
- "invariant-core",
+ "invariant-robotics-core",
  "serde",
  "serde_json",
  "thiserror",
 ]
 
 [[package]]
-name = "invariant-core"
-version = "0.1.0"
+name = "invariant-robotics-core"
+version = "0.0.1"
 dependencies = [
  "base64",
  "chrono",
@@ -731,25 +731,25 @@ dependencies = [
 ]
 
 [[package]]
-name = "invariant-eval"
-version = "0.1.0"
+name = "invariant-robotics-eval"
+version = "0.0.1"
 dependencies = [
  "chrono",
- "invariant-core",
+ "invariant-robotics-core",
  "serde",
  "serde_json",
  "thiserror",
 ]
 
 [[package]]
-name = "invariant-fuzz"
-version = "0.1.0"
+name = "invariant-robotics-fuzz"
+version = "0.0.1"
 dependencies = [
  "base64",
  "chrono",
  "ed25519-dalek",
- "invariant-core",
- "invariant-sim",
+ "invariant-robotics-core",
+ "invariant-robotics-sim",
  "rand",
  "serde",
  "serde_json",
@@ -758,13 +758,13 @@ dependencies = [
 ]
 
 [[package]]
-name = "invariant-sim"
-version = "0.1.0"
+name = "invariant-robotics-sim"
+version = "0.0.1"
 dependencies = [
  "base64",
  "chrono",
  "ed25519-dalek",
- "invariant-core",
+ "invariant-robotics-core",
  "rand",
  "serde",
  "serde_json",

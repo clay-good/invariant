@@ -28,7 +28,12 @@ fn load_humanoid() -> RobotProfile {
     profiles::load_builtin("humanoid_28dof").unwrap()
 }
 
-fn setup_validator() -> (ValidatorConfig, ed25519_dalek::SigningKey, ed25519_dalek::VerifyingKey, String) {
+fn setup_validator() -> (
+    ValidatorConfig,
+    ed25519_dalek::SigningKey,
+    ed25519_dalek::VerifyingKey,
+    String,
+) {
     let pca_sk = generate_keypair(&mut OsRng);
     let pca_vk = pca_sk.verifying_key();
     let sign_sk = generate_keypair(&mut OsRng);
@@ -37,13 +42,8 @@ fn setup_validator() -> (ValidatorConfig, ed25519_dalek::SigningKey, ed25519_dal
     let mut trusted = HashMap::new();
     trusted.insert(kid.clone(), pca_vk);
 
-    let config = ValidatorConfig::new(
-        load_humanoid(),
-        trusted,
-        sign_sk,
-        "adv-signer".to_string(),
-    )
-    .unwrap();
+    let config =
+        ValidatorConfig::new(load_humanoid(), trusted, sign_sk, "adv-signer".to_string()).unwrap();
 
     (config, pca_sk, pca_vk, kid)
 }
@@ -110,6 +110,9 @@ fn safe_command(profile: &RobotProfile, chain_b64: &str, ops: Vec<Operation>) ->
         locomotion_state: None,
         end_effector_forces: vec![],
         estimated_payload_kg: None,
+        signed_sensor_readings: vec![],
+        zone_overrides: HashMap::new(),
+        environment_state: None,
     }
 }
 
@@ -125,7 +128,11 @@ fn attack_01_confused_deputy() {
     let profile = load_humanoid();
 
     // Operator authorizes ONLY left arm.
-    let chain = forge_chain(&pca_sk, &kid, &[Operation::new("actuate:left_arm:*").unwrap()]);
+    let chain = forge_chain(
+        &pca_sk,
+        &kid,
+        &[Operation::new("actuate:left_arm:*").unwrap()],
+    );
 
     // AI tries to actuate right arm (confused deputy).
     let cmd = safe_command(
@@ -135,9 +142,18 @@ fn attack_01_confused_deputy() {
     );
     let result = config.validate(&cmd, Utc::now(), None).unwrap();
 
-    assert!(!result.signed_verdict.verdict.approved, "confused deputy must be rejected");
+    assert!(
+        !result.signed_verdict.verdict.approved,
+        "confused deputy must be rejected"
+    );
     assert!(result.actuation_command.is_none());
-    let auth = result.signed_verdict.verdict.checks.iter().find(|c| c.name == "authority").unwrap();
+    let auth = result
+        .signed_verdict
+        .verdict
+        .checks
+        .iter()
+        .find(|c| c.name == "authority")
+        .unwrap();
     assert!(!auth.passed, "authority check must catch confused deputy");
 }
 
@@ -200,7 +216,10 @@ fn attack_02_privilege_escalation() {
     );
     let result = config.validate(&cmd, Utc::now(), None).unwrap();
 
-    assert!(!result.signed_verdict.verdict.approved, "privilege escalation must be rejected");
+    assert!(
+        !result.signed_verdict.verdict.approved,
+        "privilege escalation must be rejected"
+    );
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -252,10 +271,17 @@ fn attack_03_identity_spoofing() {
     let chain_json = serde_json::to_vec(&[s0, s1]).unwrap();
     let chain_b64 = STANDARD.encode(&chain_json);
 
-    let cmd = safe_command(&profile, &chain_b64, vec![Operation::new("actuate:j1").unwrap()]);
+    let cmd = safe_command(
+        &profile,
+        &chain_b64,
+        vec![Operation::new("actuate:j1").unwrap()],
+    );
     let result = config.validate(&cmd, Utc::now(), None).unwrap();
 
-    assert!(!result.signed_verdict.verdict.approved, "identity spoofing must be rejected");
+    assert!(
+        !result.signed_verdict.verdict.approved,
+        "identity spoofing must be rejected"
+    );
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -279,7 +305,10 @@ fn attack_04_chain_forgery() {
     );
     let result = config.validate(&cmd, Utc::now(), None).unwrap();
 
-    assert!(!result.signed_verdict.verdict.approved, "forged chain must be rejected");
+    assert!(
+        !result.signed_verdict.verdict.approved,
+        "forged chain must be rejected"
+    );
     assert!(result.actuation_command.is_none());
 }
 
@@ -312,10 +341,17 @@ fn attack_05_replay_with_expired_pca() {
     let chain_json = serde_json::to_vec(&[signed]).unwrap();
     let chain_b64 = STANDARD.encode(&chain_json);
 
-    let cmd = safe_command(&profile, &chain_b64, vec![Operation::new("actuate:j1").unwrap()]);
+    let cmd = safe_command(
+        &profile,
+        &chain_b64,
+        vec![Operation::new("actuate:j1").unwrap()],
+    );
     let result = config.validate(&cmd, Utc::now(), None).unwrap();
 
-    assert!(!result.signed_verdict.verdict.approved, "expired PCA must be rejected (replay defense)");
+    assert!(
+        !result.signed_verdict.verdict.approved,
+        "expired PCA must be rejected (replay defense)"
+    );
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -330,7 +366,11 @@ fn attack_06_cross_operator_access() {
     let profile = load_humanoid();
 
     // Alice authorized only left arm.
-    let chain = forge_chain(&pca_sk, &kid, &[Operation::new("actuate:left_arm:*").unwrap()]);
+    let chain = forge_chain(
+        &pca_sk,
+        &kid,
+        &[Operation::new("actuate:left_arm:*").unwrap()],
+    );
 
     // Command requires right arm (cross-operator boundary).
     let cmd = safe_command(
@@ -340,7 +380,10 @@ fn attack_06_cross_operator_access() {
     );
     let result = config.validate(&cmd, Utc::now(), None).unwrap();
 
-    assert!(!result.signed_verdict.verdict.approved, "cross-operator access must be rejected");
+    assert!(
+        !result.signed_verdict.verdict.approved,
+        "cross-operator access must be rejected"
+    );
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -552,14 +595,20 @@ fn attack_11_brain_crash_triggers_safe_stop() {
     for t in (10..=40).step_by(10) {
         watchdog.heartbeat(t).unwrap();
         let result = watchdog.check(t, Utc::now()).unwrap();
-        assert!(result.is_none(), "should not trigger while heartbeats arrive");
+        assert!(
+            result.is_none(),
+            "should not trigger while heartbeats arrive"
+        );
     }
 
     // Brain crashes: no more heartbeats. Advance past timeout.
     let crash_time = 40 + profile.watchdog_timeout_ms + 1;
     let safe_stop = watchdog.check(crash_time, Utc::now()).unwrap();
 
-    assert!(safe_stop.is_some(), "watchdog must produce signed safe-stop");
+    assert!(
+        safe_stop.is_some(),
+        "watchdog must produce signed safe-stop"
+    );
     assert_eq!(watchdog.state(), WatchdogState::Triggered);
 
     // Once triggered, heartbeats are rejected.
@@ -617,6 +666,16 @@ fn every_injection_type_produces_rejection() {
     ];
     let profile_has_locomotion = profile.locomotion.is_some();
 
+    // Environmental injections P21-P24 only trigger rejections when the profile
+    // has environment config. P25 (EStopEngage) always works.
+    let env_config_injections = [
+        InjectionType::TerrainIncline,
+        InjectionType::TemperatureSpike,
+        InjectionType::BatteryDrain,
+        InjectionType::LatencySpike,
+    ];
+    let profile_has_environment = profile.environment.is_some();
+
     for &inj_type in all_injections {
         let mut cmd = safe_command(&profile, &chain, vec![Operation::new("actuate:*").unwrap()]);
         inject(&mut cmd, inj_type, &profile);
@@ -627,14 +686,19 @@ fn every_injection_type_produces_rejection() {
         // locomotion config, and for ReplayAttack (sequence=0 doesn't fail
         // without stateful sequence tracking in the validator).
         let exempt = inj_type == InjectionType::ReplayAttack
-            || (!profile_has_locomotion && locomotion_injections.contains(&inj_type));
+            || (!profile_has_locomotion && locomotion_injections.contains(&inj_type))
+            || (!profile_has_environment && env_config_injections.contains(&inj_type));
 
         if !exempt {
             assert!(
                 !result.signed_verdict.verdict.approved,
                 "injection {inj_type:?} must produce a rejection (got approved={}, failed: {:?})",
                 result.signed_verdict.verdict.approved,
-                result.signed_verdict.verdict.checks.iter()
+                result
+                    .signed_verdict
+                    .verdict
+                    .checks
+                    .iter()
                     .filter(|c| !c.passed)
                     .map(|c| &c.name)
                     .collect::<Vec<_>>()

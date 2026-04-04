@@ -523,6 +523,7 @@ mod tests {
             config_sequence: None,
             real_world_margins: None,
             task_envelope: None,
+            environment: None,
         }
     }
 
@@ -553,6 +554,9 @@ mod tests {
             locomotion_state: None,
             end_effector_forces: vec![],
             estimated_payload_kg: None,
+            signed_sensor_readings: vec![],
+            zone_overrides: HashMap::new(),
+            environment_state: None,
         }
     }
 
@@ -652,6 +656,9 @@ mod tests {
             locomotion_state: None,
             end_effector_forces: vec![],
             estimated_payload_kg: None,
+            signed_sensor_readings: vec![],
+            zone_overrides: HashMap::new(),
+            environment_state: None,
         }
     }
 

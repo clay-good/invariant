@@ -1,13 +1,13 @@
 [package]
-name = "invariant-fuzz"
+name = "invariant-robotics-fuzz"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 description = "Adversarial testing framework for Invariant."
 
 [dependencies]
-invariant-core = { path = "../invariant-core" }
-invariant-sim = { path = "../invariant-sim" }
+invariant-core = { package = "invariant-robotics-core", path = "../invariant-core" }
+invariant-sim = { package = "invariant-robotics-sim", path = "../invariant-sim" }
 serde.workspace = true
 serde_json.workspace = true
 rand.workspace = true

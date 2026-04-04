@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 use super::authority::Operation;
+use crate::sensor::SignedSensorReading;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Command {
@@ -33,6 +34,58 @@ pub struct Command {
     /// Estimated mass of the grasped payload in kilograms, for payload limit check (P14).
     #[serde(default)]
     pub estimated_payload_kg: Option<f64>,
+    /// Sensor readings with cryptographic signatures, for attestation and anomaly detection.
+    #[serde(default)]
+    pub signed_sensor_readings: Vec<SignedSensorReading>,
+    /// Per-zone overrides for conditional exclusion zones (P6).
+    /// Keys are zone names; `true` = zone active (enforced), `false` = zone disabled.
+    /// Only applies to zones marked `conditional: true` in the profile.
+    /// Non-conditional zones ignore this map. Conditional zones with no entry
+    /// here default to active (fail-closed).
+    /// Set by the edge PC cycle coordinator based on Haas I/O state, NOT by
+    /// the cognitive layer.
+    #[serde(default)]
+    pub zone_overrides: HashMap<String, bool>,
+    /// Environmental awareness state for P21–P25 checks (terrain, temperature,
+    /// battery, latency, e-stop). Optional; environmental checks are skipped
+    /// when absent.
+    #[serde(default)]
+    pub environment_state: Option<EnvironmentState>,
+}
+
+/// Environmental sensor data for P21–P25 checks.
+///
+/// All fields are optional. Checks for absent fields are gracefully skipped
+/// (fail-open for advisory sensors, fail-closed for e-stop).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct EnvironmentState {
+    /// IMU pitch angle in radians (positive = nose up). (P21)
+    #[serde(default)]
+    pub imu_pitch_rad: Option<f64>,
+    /// IMU roll angle in radians (positive = right side down). (P21)
+    #[serde(default)]
+    pub imu_roll_rad: Option<f64>,
+    /// Per-actuator temperature readings. (P22)
+    #[serde(default)]
+    pub actuator_temperatures: Vec<ActuatorTemperature>,
+    /// Battery state of charge as a percentage (0.0–100.0). (P23)
+    #[serde(default)]
+    pub battery_percentage: Option<f64>,
+    /// Round-trip communication latency in milliseconds. (P24)
+    #[serde(default)]
+    pub communication_latency_ms: Option<f64>,
+    /// Whether the hardware emergency stop is engaged. (P25)
+    #[serde(default)]
+    pub e_stop_engaged: Option<bool>,
+}
+
+/// Temperature reading for a single actuator/joint motor. (P22)
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ActuatorTemperature {
+    /// Joint name matching the robot profile.
+    pub joint_name: String,
+    /// Temperature in degrees Celsius.
+    pub temperature_celsius: f64,
 }
 
 /// Locomotion state for a legged/mobile robot base (P15–P20).

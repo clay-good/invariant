@@ -113,6 +113,10 @@ pub struct RobotProfile {
     /// Task-scoped safety envelope overrides (Section 17).
     #[serde(default)]
     pub task_envelope: Option<TaskEnvelope>,
+    /// Environmental awareness limits for P21–P25 checks (terrain, temperature,
+    /// battery, latency). Optional; environmental checks are skipped when absent.
+    #[serde(default)]
+    pub environment: Option<EnvironmentConfig>,
 }
 
 fn default_min_collision_distance() -> f64 {
@@ -205,6 +209,159 @@ impl Validate for RobotProfile {
         // Validate proximity zone velocity scales (P2-6)
         for zone in &self.proximity_zones {
             zone.validate()?;
+        }
+
+        // Validate task envelope tighten-only constraints (Section 17.2)
+        if let Some(ref env) = self.task_envelope {
+            self.validate_task_envelope(env)?;
+        }
+
+        // Validate environment config consistency (P21-P25)
+        if let Some(ref env_cfg) = self.environment {
+            let err = |reason: String| ValidationError::EnvironmentConfigInvalid { reason };
+
+            if !env_cfg.max_safe_pitch_rad.is_finite() || env_cfg.max_safe_pitch_rad <= 0.0 {
+                return Err(err(format!(
+                    "max_safe_pitch_rad must be finite and positive, got {}",
+                    env_cfg.max_safe_pitch_rad
+                )));
+            }
+            if !env_cfg.max_safe_roll_rad.is_finite() || env_cfg.max_safe_roll_rad <= 0.0 {
+                return Err(err(format!(
+                    "max_safe_roll_rad must be finite and positive, got {}",
+                    env_cfg.max_safe_roll_rad
+                )));
+            }
+            if !env_cfg.max_operating_temperature_c.is_finite()
+                || env_cfg.max_operating_temperature_c <= 0.0
+            {
+                return Err(err(format!(
+                    "max_operating_temperature_c must be finite and positive, got {}",
+                    env_cfg.max_operating_temperature_c
+                )));
+            }
+            if env_cfg.critical_battery_pct >= env_cfg.low_battery_pct {
+                return Err(err(format!(
+                    "critical_battery_pct ({}) must be less than low_battery_pct ({})",
+                    env_cfg.critical_battery_pct, env_cfg.low_battery_pct
+                )));
+            }
+            if env_cfg.warning_latency_ms >= env_cfg.max_latency_ms {
+                return Err(err(format!(
+                    "warning_latency_ms ({}) must be less than max_latency_ms ({})",
+                    env_cfg.warning_latency_ms, env_cfg.max_latency_ms
+                )));
+            }
+            if !env_cfg.max_latency_ms.is_finite() || env_cfg.max_latency_ms <= 0.0 {
+                return Err(err(format!(
+                    "max_latency_ms must be finite and positive, got {}",
+                    env_cfg.max_latency_ms
+                )));
+            }
+        }
+
+        Ok(())
+    }
+}
+
+impl RobotProfile {
+    /// Validate that a task envelope only tightens limits, never loosens them.
+    fn validate_task_envelope(&self, env: &TaskEnvelope) -> Result<(), ValidationError> {
+        let err = |reason: String| ValidationError::TaskEnvelopeInvalid {
+            name: env.name.clone(),
+            reason,
+        };
+
+        // Velocity scale must be <= profile's velocity scale.
+        if let Some(env_scale) = env.global_velocity_scale {
+            if env_scale > self.global_velocity_scale {
+                return Err(err(format!(
+                    "global_velocity_scale {} exceeds profile's {}",
+                    env_scale, self.global_velocity_scale
+                )));
+            }
+            if env_scale <= 0.0 {
+                return Err(err(format!(
+                    "global_velocity_scale {} must be positive",
+                    env_scale
+                )));
+            }
+        }
+
+        // Envelope workspace must be a subset of profile workspace.
+        if let Some(ref env_ws) = env.workspace {
+            match (&self.workspace, env_ws) {
+                (
+                    WorkspaceBounds::Aabb {
+                        min: p_min,
+                        max: p_max,
+                    },
+                    WorkspaceBounds::Aabb {
+                        min: e_min,
+                        max: e_max,
+                    },
+                ) => {
+                    for i in 0..3 {
+                        if e_min[i] < p_min[i] || e_max[i] > p_max[i] {
+                            return Err(err(format!(
+                                "workspace not contained within profile workspace on axis {i} \
+                                 (envelope [{}, {}] vs profile [{}, {}])",
+                                e_min[i], e_max[i], p_min[i], p_max[i]
+                            )));
+                        }
+                    }
+                    // Envelope workspace must also be valid (min < max).
+                    env_ws.validate()?;
+                }
+            }
+        }
+
+        // End-effector force limit must be <= profile's force limit.
+        if let Some(env_force) = env.end_effector_force_limit_n {
+            if env_force < 0.0 {
+                return Err(err(format!(
+                    "end_effector_force_limit_n {} must be non-negative",
+                    env_force
+                )));
+            }
+            for ee in &self.end_effectors {
+                if env_force > ee.max_force_n {
+                    return Err(err(format!(
+                        "end_effector_force_limit_n {} exceeds profile end-effector '{}' max_force_n {}",
+                        env_force, ee.name, ee.max_force_n
+                    )));
+                }
+            }
+        }
+
+        // Payload limit must be <= profile's payload limit.
+        if let Some(env_payload) = env.max_payload_kg {
+            if env_payload < 0.0 {
+                return Err(err(format!(
+                    "max_payload_kg {} must be non-negative",
+                    env_payload
+                )));
+            }
+            for ee in &self.end_effectors {
+                if env_payload > ee.max_payload_kg {
+                    return Err(err(format!(
+                        "max_payload_kg {} exceeds profile end-effector '{}' max_payload_kg {}",
+                        env_payload, ee.name, ee.max_payload_kg
+                    )));
+                }
+            }
+        }
+
+        // Additional exclusion zones collection size check.
+        let total_zones = self.exclusion_zones.len() + env.additional_exclusion_zones.len();
+        if total_zones > MAX_EXCLUSION_ZONES {
+            return Err(err(format!(
+                "total exclusion zones ({} profile + {} envelope = {}) exceeds maximum {}",
+                self.exclusion_zones.len(),
+                env.additional_exclusion_zones.len(),
+                total_zones,
+                MAX_EXCLUSION_ZONES
+            )));
         }
 
         Ok(())
@@ -323,11 +480,19 @@ pub enum ExclusionZone {
         name: String,
         min: [f64; 3],
         max: [f64; 3],
+        /// If `true`, this zone can be disabled at runtime via `Command.zone_overrides`.
+        /// Conditional zones are ACTIVE by default (fail-closed) — they must be
+        /// explicitly disabled by setting the override to `false`.
+        #[serde(default)]
+        conditional: bool,
     },
     Sphere {
         name: String,
         center: [f64; 3],
         radius: f64,
+        /// If `true`, this zone can be disabled at runtime via `Command.zone_overrides`.
+        #[serde(default)]
+        conditional: bool,
     },
 }
 
@@ -391,6 +556,57 @@ pub struct LocomotionConfig {
     pub friction_coefficient: f64,
     /// Maximum allowed heading (yaw) rate (rad/s). (P20)
     pub max_heading_rate: f64,
+}
+
+/// Environmental awareness limits for P21–P25 checks.
+///
+/// All thresholds have sensible defaults so profiles can opt in with just
+/// `"environment": {}`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct EnvironmentConfig {
+    /// P21: Maximum safe pitch angle in radians (default: 15° = 0.2618 rad).
+    #[serde(default = "default_max_pitch")]
+    pub max_safe_pitch_rad: f64,
+    /// P21: Maximum safe roll angle in radians (default: 10° = 0.1745 rad).
+    #[serde(default = "default_max_roll")]
+    pub max_safe_roll_rad: f64,
+    /// P22: Maximum operating temperature in °C (default: 80.0).
+    #[serde(default = "default_max_temp")]
+    pub max_operating_temperature_c: f64,
+    /// P23: Critical battery percentage — below this, reject all commands (default: 5.0).
+    #[serde(default = "default_critical_battery")]
+    pub critical_battery_pct: f64,
+    /// P23: Low battery percentage — below this, issue advisory (default: 15.0).
+    #[serde(default = "default_low_battery")]
+    pub low_battery_pct: f64,
+    /// P24: Maximum acceptable round-trip communication latency in ms (default: 100.0).
+    #[serde(default = "default_max_latency")]
+    pub max_latency_ms: f64,
+    /// P24: Warning latency threshold in ms (default: 50.0).
+    #[serde(default = "default_warning_latency")]
+    pub warning_latency_ms: f64,
+}
+
+fn default_max_pitch() -> f64 {
+    0.2618 // 15 degrees
+}
+fn default_max_roll() -> f64 {
+    0.1745 // 10 degrees
+}
+fn default_max_temp() -> f64 {
+    80.0
+}
+fn default_critical_battery() -> f64 {
+    5.0
+}
+fn default_low_battery() -> f64 {
+    15.0
+}
+fn default_max_latency() -> f64 {
+    100.0
+}
+fn default_warning_latency() -> f64 {
+    50.0
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

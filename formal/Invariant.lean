@@ -1,6 +1,6 @@
 /-
   Invariant — Formal Specification
-  Step 42: Lean 4 formalization of all 29 invariants with proof sketches.
+  Step 42+94: Lean 4 formalization of all 34 invariants with proof sketches.
 
   This is the top-level entry point. It imports all invariant modules and
   states the master safety theorem: a command is approved if and only if
@@ -8,7 +8,7 @@
 
   Structure:
     Invariant/Types.lean     — Domain types (joints, commands, profiles, verdicts)
-    Invariant/Physics.lean   — P1–P20: Physical safety invariants
+    Invariant/Physics.lean   — P1–P25: Physical safety invariants (incl. P21–P25 environmental)
     Invariant/Authority.lean — A1–A3: PIC authority chain invariants
     Invariant/Audit.lean     — L1–L4: Audit log invariants, M1: Actuation, W1: Liveness
 
@@ -28,7 +28,7 @@ namespace Invariant
 
 /-- The complete set of conditions under which a command is approved.
     A command passes the Invariant firewall if and only if:
-    1. All 20 physical invariants hold (P1–P20)
+    1. All 25 physical invariants hold (P1–P25)
     2. All 3 authority invariants hold (A1–A3) + required ops covered
     3. The audit log maintains its 4 invariants (L1–L4)
     4. The actuation signature is valid (M1)
@@ -69,13 +69,17 @@ theorem fail_closed_empty_chain (cmd : Command) (profile : RobotProfile)
 -- ════════════════════════════════════════════════════════════════════
 
 /-
-  Physical invariants:    20 (P1–P20)
+  Physical invariants:    25 (P1–P25)
+    P1–P10:  Joint, spatial, temporal, stability, proximity
+    P11–P14: Manipulation (force, grasp, payload)
+    P15–P20: Locomotion (velocity, clearance, friction, step, heading)
+    P21–P25: Environmental (terrain, temperature, battery, latency, e-stop)
   Authority invariants:    3 (A1–A3)
   Audit invariants:        4 (L1–L4)
   Actuation invariant:     1 (M1)
   Liveness invariant:      1 (W1)
   ─────────────────────────────────
-  Total:                  29 invariants
+  Total:                  34 invariants
 
   Each is:
   • Deterministic (no I/O, no randomness)

@@ -71,10 +71,20 @@ impl Transform {
 
         // R = Rz(yaw) * Ry(pitch) * Rx(roll)
         [
-            [cy * cp, cy * sp * sr - sy * cr, cy * sp * cr + sy * sr, self.xyz[0]],
-            [sy * cp, sy * sp * sr + cy * cr, sy * sp * cr - cy * sr, self.xyz[1]],
-            [-sp,     cp * sr,                cp * cr,                self.xyz[2]],
-            [0.0,     0.0,                    0.0,                    1.0],
+            [
+                cy * cp,
+                cy * sp * sr - sy * cr,
+                cy * sp * cr + sy * sr,
+                self.xyz[0],
+            ],
+            [
+                sy * cp,
+                sy * sp * sr + cy * cr,
+                sy * sp * cr - cy * sr,
+                self.xyz[1],
+            ],
+            [-sp, cp * sr, cp * cr, self.xyz[2]],
+            [0.0, 0.0, 0.0, 1.0],
         ]
     }
 }
@@ -300,10 +310,25 @@ fn revolute_rotation(axis: &[f64; 3], angle: f64) -> [[f64; 4]; 4] {
     let t = 1.0 - c;
 
     [
-        [t * ux * ux + c,      t * ux * uy - s * uz, t * ux * uz + s * uy, 0.0],
-        [t * uy * ux + s * uz, t * uy * uy + c,      t * uy * uz - s * ux, 0.0],
-        [t * uz * ux - s * uy, t * uz * uy + s * ux, t * uz * uz + c,      0.0],
-        [0.0,                  0.0,                   0.0,                   1.0],
+        [
+            t * ux * ux + c,
+            t * ux * uy - s * uz,
+            t * ux * uz + s * uy,
+            0.0,
+        ],
+        [
+            t * uy * ux + s * uz,
+            t * uy * uy + c,
+            t * uy * uz - s * ux,
+            0.0,
+        ],
+        [
+            t * uz * ux - s * uy,
+            t * uz * uy + s * ux,
+            t * uz * uz + c,
+            0.0,
+        ],
+        [0.0, 0.0, 0.0, 1.0],
     ]
 }
 

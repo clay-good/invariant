@@ -1,6 +1,6 @@
 /-
-  Invariant — Formal Specification: Physical Invariants P1–P20
-  Step 42: Lean 4 formalization.
+  Invariant — Formal Specification: Physical Invariants P1–P25
+  Step 42+94: Lean 4 formalization (P21–P25 environmental added in Step 94).
 
   Each invariant is expressed as a decidable proposition (predicate) over
   a Command and RobotProfile. The validator approves a command iff ALL
@@ -231,10 +231,58 @@ def P20_HeadingRate (cmd : Command) (profile : RobotProfile) : Prop :=
   | _, _ => True
 
 -- ════════════════════════════════════════════════════════════════════
+-- P21–P25: Environmental Awareness
+-- ════════════════════════════════════════════════════════════════════
+
+/-- P21: IMU pitch and roll within safe limits.
+    Skipped (trivially true) when no environment state or no config. -/
+def P21_TerrainIncline (cmd : Command) (profile : RobotProfile) : Prop :=
+  match cmd.environmentState, profile.envMaxSafePitchRad, profile.envMaxSafeRollRad with
+  | some env, some maxPitch, some maxRoll =>
+    (∀ p ∈ env.imuPitchRad.toList, p.abs ≤ maxPitch) ∧
+    (∀ r ∈ env.imuRollRad.toList, r.abs ≤ maxRoll)
+  | _, _, _ => True
+
+/-- P22: All actuator temperatures within operating limit.
+    Skipped when no environment state or no config. -/
+def P22_ActuatorTemperature (cmd : Command) (profile : RobotProfile) : Prop :=
+  match cmd.environmentState, profile.envMaxOperatingTempC with
+  | some env, some maxTemp =>
+    ∀ t ∈ env.actuatorTemperatures, t.temperatureCelsius ≤ maxTemp
+  | _, _ => True
+
+/-- P23: Battery percentage above critical threshold.
+    Skipped when no environment state or no config. -/
+def P23_BatteryState (cmd : Command) (profile : RobotProfile) : Prop :=
+  match cmd.environmentState, profile.envCriticalBatteryPct with
+  | some env, some critPct =>
+    ∀ b ∈ env.batteryPercentage.toList, b ≥ critPct
+  | _, _ => True
+
+/-- P24: Communication latency within acceptable bounds.
+    Skipped when no environment state or no config. -/
+def P24_CommunicationLatency (cmd : Command) (profile : RobotProfile) : Prop :=
+  match cmd.environmentState, profile.envMaxLatencyMs with
+  | some env, some maxLat =>
+    ∀ l ∈ env.communicationLatencyMs.toList, l ≤ maxLat
+  | _, _ => True
+
+/-- P25: Emergency stop NOT engaged. This is the only environmental check
+    that requires NO profile config — it is always active when data is present.
+    If e_stop_engaged = true, the command MUST be rejected. -/
+def P25_EmergencyStop (cmd : Command) (_profile : RobotProfile) : Prop :=
+  match cmd.environmentState with
+  | some env =>
+    match env.eStopEngaged with
+    | some engaged => ¬engaged
+    | none => True
+  | none => True
+
+-- ════════════════════════════════════════════════════════════════════
 -- Combined physical safety predicate
 -- ════════════════════════════════════════════════════════════════════
 
-/-- All 20 physical invariants hold simultaneously. -/
+/-- All 25 physical invariants hold simultaneously. -/
 def AllPhysicsInvariantsHold
     (cmd : Command) (profile : RobotProfile) (prev : List JointState) : Prop :=
   P1_JointPositionLimits cmd profile ∧
@@ -256,6 +304,11 @@ def AllPhysicsInvariantsHold
   P17_GroundReaction cmd profile ∧
   P18_FrictionCone cmd profile ∧
   P19_StepLength cmd profile ∧
-  P20_HeadingRate cmd profile
+  P20_HeadingRate cmd profile ∧
+  P21_TerrainIncline cmd profile ∧
+  P22_ActuatorTemperature cmd profile ∧
+  P23_BatteryState cmd profile ∧
+  P24_CommunicationLatency cmd profile ∧
+  P25_EmergencyStop cmd profile
 
 end Invariant.Physics

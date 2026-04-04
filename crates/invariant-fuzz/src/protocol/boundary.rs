@@ -5,6 +5,8 @@
 //! paired with a boolean indicating whether the validator *should* accept it
 //! (`true`) or reject it (`false`).
 
+use std::collections::HashMap;
+
 use invariant_core::models::command::{Command, CommandAuthority, EndEffectorPosition, JointState};
 use invariant_core::models::profile::{RobotProfile, WorkspaceBounds};
 
@@ -146,6 +148,9 @@ fn make_command(profile: &RobotProfile, target_joint: &str, position: f64) -> Co
         locomotion_state: None,
         end_effector_forces: vec![],
         estimated_payload_kg: None,
+        signed_sensor_readings: vec![],
+        zone_overrides: HashMap::new(),
+        environment_state: None,
     }
 }
 
@@ -204,6 +209,7 @@ mod tests {
             config_sequence: None,
             real_world_margins: None,
             task_envelope: None,
+            environment: None,
             end_effectors: vec![],
         }
     }

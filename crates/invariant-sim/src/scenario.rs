@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 // ScenarioType
 // ---------------------------------------------------------------------------
 
-/// The eleven built-in scenario classes.
+/// The twelve built-in scenario classes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ScenarioType {
@@ -45,6 +45,17 @@ pub enum ScenarioType {
     LocomotionTrip,
     /// Fall: centre-of-mass + base velocity combine to cause instability (P9+P15+P19).
     LocomotionFall,
+    /// CNC tending cycle: exercises conditional exclusion zones (Step 66) and
+    /// the CycleCoordinator (Step 67). First half simulates loading (spindle
+    /// zone disabled, EE inside spindle area — should pass), second half
+    /// simulates cutting (spindle zone active, EE inside spindle area — should
+    /// be rejected).
+    CncTending,
+    /// Environmental fault: exercises P21-P25 environmental checks (Step 91).
+    /// Commands carry environment_state with escalating hazards: terrain incline,
+    /// overheating actuators, battery drain, latency spikes, and e-stop engage.
+    /// All commands should be rejected by the environment checks.
+    EnvironmentFault,
 }
 
 // ---------------------------------------------------------------------------
@@ -82,12 +93,12 @@ impl<'a> ScenarioGenerator<'a> {
             ScenarioType::ChainForgery => self.chain_forgery(count, ops),
             ScenarioType::PromptInjection => self.prompt_injection(count, pca_chain_b64, ops),
             ScenarioType::MultiAgentHandoff => self.multi_agent_handoff(count, pca_chain_b64, ops),
-            ScenarioType::LocomotionRunaway => {
-                self.locomotion_runaway(count, pca_chain_b64, ops)
-            }
+            ScenarioType::LocomotionRunaway => self.locomotion_runaway(count, pca_chain_b64, ops),
             ScenarioType::LocomotionSlip => self.locomotion_slip(count, pca_chain_b64, ops),
             ScenarioType::LocomotionTrip => self.locomotion_trip(count, pca_chain_b64, ops),
             ScenarioType::LocomotionFall => self.locomotion_fall(count, pca_chain_b64, ops),
+            ScenarioType::CncTending => self.cnc_tending(count, pca_chain_b64, ops),
+            ScenarioType::EnvironmentFault => self.environment_fault(count, pca_chain_b64, ops),
         }
     }
 
@@ -153,17 +164,57 @@ impl<'a> ScenarioGenerator<'a> {
         });
 
         // Collision-pair links at stepped offsets.
+        // Try X first, then Y, then Z to find a position that is inside the
+        // workspace but outside all exclusion zones.
         for (i, name) in link_names.iter().enumerate() {
             let offset = (i + 1) as f64 * step;
+            let pos = match &profile.workspace {
+                WorkspaceBounds::Aabb { min, max } => {
+                    // Try several offset directions to avoid exclusion zones.
+                    let candidates = [
+                        [
+                            (base[0] + offset).min(max[0] - 0.01).max(min[0] + 0.01),
+                            base[1],
+                            base[2],
+                        ],
+                        [
+                            base[0],
+                            (base[1] - offset).min(max[1] - 0.01).max(min[1] + 0.01),
+                            base[2],
+                        ],
+                        [
+                            base[0],
+                            (base[1] + offset).min(max[1] - 0.01).max(min[1] + 0.01),
+                            base[2],
+                        ],
+                        [
+                            (base[0] - offset).min(max[0] - 0.01).max(min[0] + 0.01),
+                            base[1],
+                            base[2],
+                        ],
+                        [
+                            base[0],
+                            base[1],
+                            (base[2] + offset).min(max[2] - 0.01).max(min[2] + 0.01),
+                        ],
+                        [
+                            base[0],
+                            base[1],
+                            (base[2] - offset).min(max[2] - 0.01).max(min[2] + 0.01),
+                        ],
+                    ];
+                    *candidates
+                        .iter()
+                        .find(|c| {
+                            point_in_workspace(**c, profile)
+                                && !point_in_any_exclusion_zone(**c, &profile.exclusion_zones)
+                        })
+                        .unwrap_or(&candidates[0])
+                }
+            };
             result.push(EndEffectorPosition {
                 name: name.clone(),
-                // Offset along X; clamp to workspace if needed.
-                position: match &profile.workspace {
-                    WorkspaceBounds::Aabb { min, max } => {
-                        let x = (base[0] + offset).min(max[0] - 0.01).max(min[0] + 0.01);
-                        [x, base[1], base[2]]
-                    }
-                },
+                position: pos,
             });
         }
 
@@ -313,6 +364,9 @@ impl<'a> ScenarioGenerator<'a> {
                     locomotion_state: None,
                     end_effector_forces: vec![],
                     estimated_payload_kg: None,
+                    signed_sensor_readings: vec![],
+                    zone_overrides: HashMap::new(),
+                    environment_state: None,
                 }
             })
             .collect()
@@ -392,6 +446,9 @@ impl<'a> ScenarioGenerator<'a> {
                     locomotion_state: None,
                     end_effector_forces: vec![],
                     estimated_payload_kg: None,
+                    signed_sensor_readings: vec![],
+                    zone_overrides: HashMap::new(),
+                    environment_state: None,
                 }
             })
             .collect()
@@ -427,6 +484,9 @@ impl<'a> ScenarioGenerator<'a> {
                     locomotion_state: None,
                     end_effector_forces: vec![],
                     estimated_payload_kg: None,
+                    signed_sensor_readings: vec![],
+                    zone_overrides: HashMap::new(),
+                    environment_state: None,
                 }
             })
             .collect()
@@ -467,6 +527,9 @@ impl<'a> ScenarioGenerator<'a> {
                     locomotion_state: None,
                     end_effector_forces: vec![],
                     estimated_payload_kg: None,
+                    signed_sensor_readings: vec![],
+                    zone_overrides: HashMap::new(),
+                    environment_state: None,
                 }
             })
             .collect()
@@ -509,6 +572,9 @@ impl<'a> ScenarioGenerator<'a> {
                     locomotion_state: None,
                     end_effector_forces: vec![],
                     estimated_payload_kg: None,
+                    signed_sensor_readings: vec![],
+                    zone_overrides: HashMap::new(),
+                    environment_state: None,
                 }
             })
             .collect()
@@ -577,6 +643,9 @@ impl<'a> ScenarioGenerator<'a> {
                     locomotion_state: None,
                     end_effector_forces: vec![],
                     estimated_payload_kg: None,
+                    signed_sensor_readings: vec![],
+                    zone_overrides: HashMap::new(),
+                    environment_state: None,
                 }
             })
             .collect()
@@ -638,6 +707,9 @@ impl<'a> ScenarioGenerator<'a> {
                     locomotion_state: None,
                     end_effector_forces: vec![],
                     estimated_payload_kg: None,
+                    signed_sensor_readings: vec![],
+                    zone_overrides: HashMap::new(),
+                    environment_state: None,
                 }
             })
             .collect()
@@ -717,6 +789,9 @@ impl<'a> ScenarioGenerator<'a> {
                     locomotion_state: Some(loco),
                     end_effector_forces: vec![],
                     estimated_payload_kg: None,
+                    signed_sensor_readings: vec![],
+                    zone_overrides: HashMap::new(),
+                    environment_state: None,
                 }
             })
             .collect()
@@ -772,6 +847,9 @@ impl<'a> ScenarioGenerator<'a> {
                     locomotion_state: Some(loco),
                     end_effector_forces: vec![],
                     estimated_payload_kg: None,
+                    signed_sensor_readings: vec![],
+                    zone_overrides: HashMap::new(),
+                    environment_state: None,
                 }
             })
             .collect()
@@ -825,6 +903,9 @@ impl<'a> ScenarioGenerator<'a> {
                     locomotion_state: Some(loco),
                     end_effector_forces: vec![],
                     estimated_payload_kg: None,
+                    signed_sensor_readings: vec![],
+                    zone_overrides: HashMap::new(),
+                    environment_state: None,
                 }
             })
             .collect()
@@ -882,6 +963,250 @@ impl<'a> ScenarioGenerator<'a> {
                     locomotion_state: Some(loco),
                     end_effector_forces: vec![],
                     estimated_payload_kg: None,
+                    signed_sensor_readings: vec![],
+                    zone_overrides: HashMap::new(),
+                    environment_state: None,
+                }
+            })
+            .collect()
+    }
+
+    /// CNC tending scenario: exercises conditional zones + CycleCoordinator.
+    ///
+    /// Generates commands in two phases:
+    /// 1. Loading phase (first half): spindle zone disabled via zone_overrides,
+    ///    EE positioned inside the spindle zone area → should be APPROVED.
+    /// 2. Cutting phase (second half): spindle zone active (default),
+    ///    EE positioned inside the spindle zone area → should be REJECTED.
+    ///
+    /// This requires the profile to have at least one conditional exclusion
+    /// zone. If no conditional zone exists, all commands use the workspace
+    /// center (both phases should pass).
+    fn cnc_tending(&self, count: usize, pca_chain_b64: &str, ops: &[Operation]) -> Vec<Command> {
+        let base_ts: DateTime<Utc> = Utc::now();
+        let delta_time = self.profile.max_delta_time * 0.5;
+        let joint_states = self.baseline_joint_states();
+        let meta_template = Self::metadata_template(self.scenario);
+        let authority = Self::authority(pca_chain_b64, ops);
+        let source = "cnc_tending_agent".to_owned();
+        let safe_pos = Self::workspace_centre(self.profile);
+
+        // Find the first conditional exclusion zone and a point inside it.
+        let conditional_zone_point: Option<[f64; 3]> = self
+            .profile
+            .exclusion_zones
+            .iter()
+            .find(|z| match z {
+                ExclusionZone::Aabb { conditional, .. } => *conditional,
+                ExclusionZone::Sphere { conditional, .. } => *conditional,
+                _ => false,
+            })
+            .and_then(point_inside_exclusion_zone);
+
+        // Find the conditional zone name for overrides.
+        let conditional_zone_name: Option<String> = self
+            .profile
+            .exclusion_zones
+            .iter()
+            .find(|z| match z {
+                ExclusionZone::Aabb { conditional, .. } => *conditional,
+                ExclusionZone::Sphere { conditional, .. } => *conditional,
+                _ => false,
+            })
+            .map(|z| match z {
+                ExclusionZone::Aabb { name, .. } => name.clone(),
+                ExclusionZone::Sphere { name, .. } => name.clone(),
+                _ => String::new(),
+            });
+
+        let half = count / 2;
+
+        // Include collision-pair link positions alongside the gripper, so
+        // P7 self-collision checks have the required link data.
+        let mut extra_ee = Self::safe_end_effectors(self.profile);
+        // Remove the generic "end_effector" entry — we use "gripper" instead.
+        extra_ee.retain(|ee| ee.name != "end_effector");
+
+        (0..count)
+            .map(|i| {
+                let timestamp = base_ts
+                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                        i as f64 * delta_time * 1_000.0,
+                    ));
+
+                let is_loading_phase = i < half;
+
+                // During loading: place EE inside conditional zone (if available),
+                // with zone disabled via override → should pass.
+                // During cutting: same position but zone active → should be rejected.
+                let ee_pos = conditional_zone_point.unwrap_or(safe_pos);
+
+                let mut zone_overrides = HashMap::new();
+                if let Some(ref zone_name) = conditional_zone_name {
+                    // Loading phase: zone disabled (false). Cutting phase: zone active (true).
+                    zone_overrides.insert(zone_name.clone(), !is_loading_phase);
+                }
+
+                let mut ee_positions = vec![EndEffectorPosition {
+                    name: "gripper".to_owned(),
+                    position: ee_pos,
+                }];
+                ee_positions.extend(extra_ee.clone());
+
+                Command {
+                    timestamp,
+                    source: source.clone(),
+                    sequence: i as u64,
+                    joint_states: joint_states.clone(),
+                    delta_time,
+                    end_effector_positions: ee_positions,
+                    center_of_mass: None,
+                    authority: authority.clone(),
+                    metadata: Self::metadata_stamp(&meta_template, i),
+                    locomotion_state: None,
+                    end_effector_forces: vec![],
+                    estimated_payload_kg: None,
+                    signed_sensor_readings: vec![],
+                    zone_overrides,
+                    environment_state: None,
+                }
+            })
+            .collect()
+    }
+
+    /// Generate commands with escalating environmental hazards (P21-P25).
+    ///
+    /// Each command carries a different environmental fault:
+    /// - 0–19%: terrain incline exceeding max pitch (P21)
+    /// - 20–39%: actuator overheating (P22)
+    /// - 40–59%: critical battery drain (P23)
+    /// - 60–79%: communication latency spike (P24)
+    /// - 80–100%: emergency stop engaged (P25)
+    ///
+    /// All commands should be rejected by the environmental checks.
+    fn environment_fault(
+        &self,
+        count: usize,
+        pca_chain_b64: &str,
+        ops: &[Operation],
+    ) -> Vec<Command> {
+        use invariant_core::models::command::{ActuatorTemperature, EnvironmentState};
+
+        let meta_template = Self::metadata_template(ScenarioType::EnvironmentFault);
+        let timestamp = chrono::Utc::now();
+        let source = "env_fault_agent".to_owned();
+        let delta_time = self.profile.max_delta_time * 0.5;
+
+        let joint_states: Vec<JointState> = self
+            .profile
+            .joints
+            .iter()
+            .map(|j| JointState {
+                name: j.name.clone(),
+                position: (j.min + j.max) / 2.0,
+                velocity: 0.0,
+                effort: 0.0,
+            })
+            .collect();
+
+        let ee_positions = Self::safe_end_effectors(self.profile);
+
+        let authority = CommandAuthority {
+            pca_chain: pca_chain_b64.to_owned(),
+            required_ops: ops.to_vec(),
+        };
+
+        let env_config = self.profile.environment.as_ref();
+        let max_pitch = env_config.map(|e| e.max_safe_pitch_rad).unwrap_or(0.2618);
+        let max_temp = env_config
+            .map(|e| e.max_operating_temperature_c)
+            .unwrap_or(80.0);
+        let max_latency = env_config.map(|e| e.max_latency_ms).unwrap_or(100.0);
+
+        (0..count)
+            .map(|i| {
+                let frac = if count <= 1 {
+                    0.0
+                } else {
+                    i as f64 / (count - 1) as f64
+                };
+
+                let env_state = if frac < 0.2 {
+                    // P21: terrain incline
+                    EnvironmentState {
+                        imu_pitch_rad: Some(max_pitch * 2.0),
+                        imu_roll_rad: None,
+                        actuator_temperatures: vec![],
+                        battery_percentage: None,
+                        communication_latency_ms: None,
+                        e_stop_engaged: None,
+                    }
+                } else if frac < 0.4 {
+                    // P22: temperature spike
+                    EnvironmentState {
+                        imu_pitch_rad: None,
+                        imu_roll_rad: None,
+                        actuator_temperatures: self
+                            .profile
+                            .joints
+                            .iter()
+                            .map(|j| ActuatorTemperature {
+                                joint_name: j.name.clone(),
+                                temperature_celsius: max_temp * 1.5,
+                            })
+                            .collect(),
+                        battery_percentage: None,
+                        communication_latency_ms: None,
+                        e_stop_engaged: None,
+                    }
+                } else if frac < 0.6 {
+                    // P23: battery drain
+                    EnvironmentState {
+                        imu_pitch_rad: None,
+                        imu_roll_rad: None,
+                        actuator_temperatures: vec![],
+                        battery_percentage: Some(0.0),
+                        communication_latency_ms: None,
+                        e_stop_engaged: None,
+                    }
+                } else if frac < 0.8 {
+                    // P24: latency spike
+                    EnvironmentState {
+                        imu_pitch_rad: None,
+                        imu_roll_rad: None,
+                        actuator_temperatures: vec![],
+                        battery_percentage: None,
+                        communication_latency_ms: Some(max_latency * 5.0),
+                        e_stop_engaged: None,
+                    }
+                } else {
+                    // P25: e-stop
+                    EnvironmentState {
+                        imu_pitch_rad: None,
+                        imu_roll_rad: None,
+                        actuator_temperatures: vec![],
+                        battery_percentage: None,
+                        communication_latency_ms: None,
+                        e_stop_engaged: Some(true),
+                    }
+                };
+
+                Command {
+                    timestamp,
+                    source: source.clone(),
+                    sequence: i as u64,
+                    joint_states: joint_states.clone(),
+                    delta_time,
+                    end_effector_positions: ee_positions.clone(),
+                    center_of_mass: None,
+                    authority: authority.clone(),
+                    metadata: Self::metadata_stamp(&meta_template, i),
+                    locomotion_state: None,
+                    end_effector_forces: vec![],
+                    estimated_payload_kg: None,
+                    signed_sensor_readings: vec![],
+                    zone_overrides: HashMap::new(),
+                    environment_state: Some(env_state),
                 }
             })
             .collect()
@@ -1249,6 +1574,7 @@ mod tests {
             config_sequence: None,
             real_world_margins: None,
             task_envelope: None,
+            environment: None,
         }
     }
 
@@ -1265,6 +1591,7 @@ mod tests {
                 name: "corner_zone".to_owned(),
                 min: [0.8, 0.8, 0.8],
                 max: [1.0, 1.0, 1.0],
+                conditional: false,
             }],
         );
         let centre = ScenarioGenerator::workspace_centre(&profile);
@@ -1302,6 +1629,7 @@ mod tests {
                 name: "full_coverage".to_owned(),
                 center: [0.0, 0.0, 0.0],
                 radius: 0.5, // covers everything within 0.5 m of origin
+                conditional: false,
             }],
         );
         let centre = ScenarioGenerator::workspace_centre(&profile);
@@ -1333,6 +1661,7 @@ mod tests {
                 name: "small_zone".to_owned(),
                 center: [0.0, 0.0, 0.0],
                 radius: 0.05, // covers centre but not the ±0.1 offsets
+                conditional: false,
             }],
         );
         let safe = ScenarioGenerator::safe_end_effector(&profile);
@@ -1351,5 +1680,80 @@ mod tests {
         let gen = ScenarioGenerator::new(&profile, ScenarioType::Baseline);
         let cmds = gen.generate_commands(0, FAKE_PCA, &ops());
         assert!(cmds.is_empty());
+    }
+
+    // --- CNC Tending scenario ---
+
+    fn cnc_profile() -> RobotProfile {
+        load_builtin("ur10e_haas_cell").expect("ur10e_haas_cell profile must load")
+    }
+
+    #[test]
+    fn cnc_tending_generates_commands() {
+        let profile = cnc_profile();
+        let gen = ScenarioGenerator::new(&profile, ScenarioType::CncTending);
+        let cmds = gen.generate_commands(20, FAKE_PCA, &ops());
+        assert_eq!(cmds.len(), 20);
+    }
+
+    #[test]
+    fn cnc_tending_first_half_has_zone_disabled() {
+        let profile = cnc_profile();
+        let gen = ScenarioGenerator::new(&profile, ScenarioType::CncTending);
+        let cmds = gen.generate_commands(10, FAKE_PCA, &ops());
+
+        // First 5 commands (loading phase): zone override = false (disabled).
+        for cmd in &cmds[..5] {
+            let override_val = cmd.zone_overrides.get("haas_spindle_zone");
+            assert_eq!(
+                override_val,
+                Some(&false),
+                "loading phase should disable spindle zone"
+            );
+        }
+    }
+
+    #[test]
+    fn cnc_tending_second_half_has_zone_active() {
+        let profile = cnc_profile();
+        let gen = ScenarioGenerator::new(&profile, ScenarioType::CncTending);
+        let cmds = gen.generate_commands(10, FAKE_PCA, &ops());
+
+        // Last 5 commands (cutting phase): zone override = true (active).
+        for cmd in &cmds[5..] {
+            let override_val = cmd.zone_overrides.get("haas_spindle_zone");
+            assert_eq!(
+                override_val,
+                Some(&true),
+                "cutting phase should activate spindle zone"
+            );
+        }
+    }
+
+    #[test]
+    fn cnc_tending_ee_inside_conditional_zone() {
+        let profile = cnc_profile();
+        let gen = ScenarioGenerator::new(&profile, ScenarioType::CncTending);
+        let cmds = gen.generate_commands(10, FAKE_PCA, &ops());
+
+        // All commands should have an EE positioned inside the haas_spindle_zone
+        // (bounds: [-1.2, 0.5, 0.3] to [-0.3, 1.2, 1.2]).
+        for cmd in &cmds {
+            let ee = &cmd.end_effector_positions[0];
+            assert!(
+                ee.position[0] >= -1.2 && ee.position[0] <= -0.3,
+                "EE x={} should be inside haas_spindle_zone X range [-1.2, -0.3]",
+                ee.position[0]
+            );
+        }
+    }
+
+    #[test]
+    fn cnc_tending_serde_round_trip() {
+        let st = ScenarioType::CncTending;
+        let json = serde_json::to_string(&st).unwrap();
+        assert_eq!(json, "\"cnc_tending\"");
+        let back: ScenarioType = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, ScenarioType::CncTending);
     }
 }

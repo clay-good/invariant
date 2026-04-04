@@ -102,6 +102,12 @@ fn generate_report(standard: &str, campaign_dir: &std::path::Path) -> Compliance
                 campaign_dir,
                 "Campaign simulation with 0% escape rate",
             ),
+            mapping(
+                "IEC 61508-7 Table A.6",
+                "Environmental stress testing",
+                campaign_dir,
+                "P21-P25 environmental checks: terrain, temperature, battery, latency, e-stop",
+            ),
         ],
         "iso-10218" => vec![
             mapping(
@@ -120,7 +126,13 @@ fn generate_report(standard: &str, campaign_dir: &std::path::Path) -> Compliance
                 "ISO 10218-1 5.10",
                 "Emergency stop",
                 campaign_dir,
-                "W1 watchdog + safe-stop profile",
+                "W1 watchdog + safe-stop profile, P25 hardware e-stop check",
+            ),
+            mapping(
+                "ISO 10218-2 5.2.2",
+                "Environmental conditions",
+                campaign_dir,
+                "P21 terrain incline, P22 actuator temperature, P23 battery state, P24 communication latency",
             ),
             mapping(
                 "ISO 13849-1 4.5.4",
@@ -146,7 +158,7 @@ fn generate_report(standard: &str, campaign_dir: &std::path::Path) -> Compliance
                 "NIST AI 600-1 2.11",
                 "Safe operation / fail-safe",
                 campaign_dir,
-                "P1-P20 physics invariants, fail-closed design",
+                "P1-P25 physics invariants (incl. P21-P25 environmental awareness), fail-closed design",
             ),
         ],
         _ => vec![],

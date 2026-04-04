@@ -149,8 +149,7 @@ impl CoordinationMonitor {
     /// Register or update a robot's state.
     pub fn update_state(&mut self, state: RobotState) -> Result<(), CoordinatorError> {
         // Enforce max robots (only count new registrations).
-        if !self.states.contains_key(&state.robot_id)
-            && self.states.len() >= self.config.max_robots
+        if !self.states.contains_key(&state.robot_id) && self.states.len() >= self.config.max_robots
         {
             return Err(CoordinatorError::TooManyRobots {
                 count: self.states.len() + 1,
@@ -186,11 +185,7 @@ impl CoordinationMonitor {
     ///
     /// `proposed` is the state the robot WILL be in if the command is approved.
     /// `now` is the current time for stale-state detection.
-    pub fn check(
-        &self,
-        proposed: &RobotState,
-        now: DateTime<Utc>,
-    ) -> CoordinationVerdict {
+    pub fn check(&self, proposed: &RobotState, now: DateTime<Utc>) -> CoordinationVerdict {
         let mut checks = Vec::new();
         let mut stale_count = 0usize;
 
@@ -200,9 +195,7 @@ impl CoordinationMonitor {
             }
 
             // Check if the other robot's state is stale.
-            let age_ms = (now - other_state.timestamp)
-                .num_milliseconds()
-                .max(0) as u64;
+            let age_ms = (now - other_state.timestamp).num_milliseconds().max(0) as u64;
             let is_stale = age_ms > self.config.stale_timeout_ms;
 
             if is_stale {
@@ -256,11 +249,7 @@ impl CoordinationMonitor {
     }
 
     /// Check minimum separation between all end-effector pairs of two robots.
-    fn check_separation(
-        &self,
-        robot_a: &RobotState,
-        robot_b: &RobotState,
-    ) -> CrossRobotCheck {
+    fn check_separation(&self, robot_a: &RobotState, robot_b: &RobotState) -> CrossRobotCheck {
         let mut min_dist = f64::MAX;
         let mut closest_a = String::new();
         let mut closest_b = String::new();
@@ -509,7 +498,10 @@ mod tests {
         // Robot A has two end-effectors.
         let robot_a = robot_state(
             "robot-a",
-            &[("left_hand", [0.0, 0.0, 1.0]), ("right_hand", [1.0, 0.0, 1.0])],
+            &[
+                ("left_hand", [0.0, 0.0, 1.0]),
+                ("right_hand", [1.0, 0.0, 1.0]),
+            ],
             now,
         );
         // Robot B's gripper is close to A's right_hand but far from left_hand.
@@ -553,12 +545,8 @@ mod tests {
         let mut monitor = CoordinationMonitor::new(config);
         let now = Utc::now();
 
-        monitor
-            .update_state(robot_state("r1", &[], now))
-            .unwrap();
-        monitor
-            .update_state(robot_state("r2", &[], now))
-            .unwrap();
+        monitor.update_state(robot_state("r1", &[], now)).unwrap();
+        monitor.update_state(robot_state("r2", &[], now)).unwrap();
 
         // Third robot should fail.
         let result = monitor.update_state(robot_state("r3", &[], now));

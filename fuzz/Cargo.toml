@@ -9,8 +9,8 @@ cargo-fuzz = true
 
 [dependencies]
 libfuzzer-sys = "0.4"
-invariant-core = { path = "../crates/invariant-core" }
-invariant-fuzz = { path = "../crates/invariant-fuzz" }
+invariant-core = { package = "invariant-robotics-core", path = "../crates/invariant-core" }
+invariant-fuzz = { package = "invariant-robotics-fuzz", path = "../crates/invariant-fuzz" }
 serde_json = "1.0"
 chrono = { version = "0.4", features = ["serde"] }
 ed25519-dalek = { version = "2.1", features = ["rand_core"] }

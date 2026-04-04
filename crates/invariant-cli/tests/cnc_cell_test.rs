@@ -8,7 +8,12 @@
 use invariant_sim::campaign::{CampaignConfig, ScenarioConfig, SuccessCriteria};
 use invariant_sim::isaac::dry_run::run_dry_campaign;
 
-fn cell_campaign(name: &str, scenarios: Vec<ScenarioConfig>, steps: u32, episodes: u32) -> CampaignConfig {
+fn cell_campaign(
+    name: &str,
+    scenarios: Vec<ScenarioConfig>,
+    steps: u32,
+    episodes: u32,
+) -> CampaignConfig {
     CampaignConfig {
         name: name.to_string(),
         profile: "ur10e_haas_cell".to_string(),
@@ -46,7 +51,10 @@ fn cnc_cell_normal_ops_all_approved() {
     );
     let report = run_dry_campaign(&config, seed()).unwrap();
     assert_eq!(report.total_commands, 5000);
-    assert_eq!(report.total_approved, 5000, "all normal ops must be approved");
+    assert_eq!(
+        report.total_approved, 5000,
+        "all normal ops must be approved"
+    );
     assert_eq!(report.violation_escape_count, 0);
 }
 
@@ -67,7 +75,10 @@ fn cnc_cell_spindle_intrusion_all_rejected() {
         5,
     );
     let report = run_dry_campaign(&config, seed()).unwrap();
-    assert_eq!(report.total_approved, 0, "spindle zone intrusions must all be rejected");
+    assert_eq!(
+        report.total_approved, 0,
+        "spindle zone intrusions must all be rejected"
+    );
     assert_eq!(report.violation_escape_count, 0);
 }
 
@@ -88,11 +99,14 @@ fn cnc_cell_velocity_overshoot_rejected() {
         5,
     );
     let report = run_dry_campaign(&config, seed()).unwrap();
-    assert_eq!(report.total_approved, 0, "velocity overshoot must be rejected");
+    assert_eq!(
+        report.total_approved, 0,
+        "velocity overshoot must be rejected"
+    );
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// Torque spike: gripper applies excessive force (crushing manifold block)
+// Torque spike: gripper applies excessive force (crushing workpiece)
 // ═══════════════════════════════════════════════════════════════════════
 
 #[test]
@@ -128,11 +142,14 @@ fn cnc_cell_position_violation_rejected() {
         5,
     );
     let report = run_dry_campaign(&config, seed()).unwrap();
-    assert_eq!(report.total_approved, 0, "position violations must be rejected");
+    assert_eq!(
+        report.total_approved, 0,
+        "position violations must be rejected"
+    );
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// Authority strip: Beelink crashes, no valid PCA chain
+// Authority strip: edge PC crashes, no valid PCA chain
 // ═══════════════════════════════════════════════════════════════════════
 
 #[test]
@@ -148,7 +165,10 @@ fn cnc_cell_authority_strip_rejected() {
         5,
     );
     let report = run_dry_campaign(&config, seed()).unwrap();
-    assert_eq!(report.total_approved, 0, "commands without authority must be rejected");
+    assert_eq!(
+        report.total_approved, 0,
+        "commands without authority must be rejected"
+    );
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -168,7 +188,10 @@ fn cnc_cell_nan_injection_rejected() {
         5,
     );
     let report = run_dry_campaign(&config, seed()).unwrap();
-    assert_eq!(report.total_approved, 0, "NaN-injected commands must be rejected");
+    assert_eq!(
+        report.total_approved, 0,
+        "NaN-injected commands must be rejected"
+    );
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -188,7 +211,10 @@ fn cnc_cell_llm_hallucination_rejected() {
         5,
     );
     let report = run_dry_campaign(&config, seed()).unwrap();
-    assert_eq!(report.total_approved, 0, "hallucinated commands must be rejected");
+    assert_eq!(
+        report.total_approved, 0,
+        "hallucinated commands must be rejected"
+    );
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -220,11 +246,31 @@ fn cnc_cell_full_adversarial_zero_escapes() {
     let config = cell_campaign(
         "full_adversarial",
         vec![
-            ScenarioConfig { scenario_type: "baseline".to_string(), weight: 0.3, injections: vec![] },
-            ScenarioConfig { scenario_type: "exclusion_zone".to_string(), weight: 0.15, injections: vec![] },
-            ScenarioConfig { scenario_type: "authority_escalation".to_string(), weight: 0.1, injections: vec![] },
-            ScenarioConfig { scenario_type: "chain_forgery".to_string(), weight: 0.1, injections: vec![] },
-            ScenarioConfig { scenario_type: "prompt_injection".to_string(), weight: 0.1, injections: vec![] },
+            ScenarioConfig {
+                scenario_type: "baseline".to_string(),
+                weight: 0.3,
+                injections: vec![],
+            },
+            ScenarioConfig {
+                scenario_type: "exclusion_zone".to_string(),
+                weight: 0.15,
+                injections: vec![],
+            },
+            ScenarioConfig {
+                scenario_type: "authority_escalation".to_string(),
+                weight: 0.1,
+                injections: vec![],
+            },
+            ScenarioConfig {
+                scenario_type: "chain_forgery".to_string(),
+                weight: 0.1,
+                injections: vec![],
+            },
+            ScenarioConfig {
+                scenario_type: "prompt_injection".to_string(),
+                weight: 0.1,
+                injections: vec![],
+            },
             ScenarioConfig {
                 scenario_type: "baseline".to_string(),
                 weight: 0.25,
@@ -245,8 +291,14 @@ fn cnc_cell_full_adversarial_zero_escapes() {
         report.violation_escape_count, 0,
         "full adversarial campaign must have zero escapes"
     );
-    assert!(report.total_approved > 0, "some baseline commands must be approved");
-    assert!(report.total_rejected > 0, "attack commands must be rejected");
+    assert!(
+        report.total_approved > 0,
+        "some baseline commands must be approved"
+    );
+    assert!(
+        report.total_rejected > 0,
+        "attack commands must be rejected"
+    );
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -266,5 +318,8 @@ fn cnc_cell_workspace_escape_rejected() {
         5,
     );
     let report = run_dry_campaign(&config, seed()).unwrap();
-    assert_eq!(report.total_approved, 0, "workspace escapes must be rejected");
+    assert_eq!(
+        report.total_approved, 0,
+        "workspace escapes must be rejected"
+    );
 }

@@ -106,6 +106,12 @@ pub enum ValidationError {
         "min_collision_distance must be strictly positive when collision_pairs is non-empty, got {value}"
     )]
     InvalidMinCollisionDistance { value: f64 },
+
+    #[error("task envelope '{name}': {reason}")]
+    TaskEnvelopeInvalid { name: String, reason: String },
+
+    #[error("environment config: {reason}")]
+    EnvironmentConfigInvalid { reason: String },
 }
 
 /// Types that can be checked for semantic correctness after construction.

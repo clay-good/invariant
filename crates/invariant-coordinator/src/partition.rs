@@ -22,7 +22,9 @@ pub enum PartitionError {
     #[error("partition {name:?} overlaps with {other:?}")]
     Overlap { name: String, other: String },
 
-    #[error("point [{x:.3}, {y:.3}, {z:.3}] is outside partition {partition:?} for robot {robot_id:?}")]
+    #[error(
+        "point [{x:.3}, {y:.3}, {z:.3}] is outside partition {partition:?} for robot {robot_id:?}"
+    )]
     OutsidePartition {
         robot_id: String,
         partition: String,
@@ -104,11 +106,7 @@ impl WorkspacePartitionConfig {
 
     /// Check whether a robot's end-effector position is within its assigned
     /// partition.
-    pub fn check_position(
-        &self,
-        robot_id: &str,
-        point: &[f64; 3],
-    ) -> Result<(), PartitionError> {
+    pub fn check_position(&self, robot_id: &str, point: &[f64; 3]) -> Result<(), PartitionError> {
         let partition = self
             .partitions
             .iter()
@@ -208,9 +206,12 @@ mod tests {
 
     #[test]
     fn point_inside_partition() {
-        let config = WorkspacePartitionConfig::new(vec![
-            partition("cell-1", "r1", [0.0, 0.0, 0.0], [2.0, 2.0, 2.0]),
-        ])
+        let config = WorkspacePartitionConfig::new(vec![partition(
+            "cell-1",
+            "r1",
+            [0.0, 0.0, 0.0],
+            [2.0, 2.0, 2.0],
+        )])
         .unwrap();
 
         assert!(config.check_position("r1", &[1.0, 1.0, 1.0]).is_ok());
@@ -218,21 +219,30 @@ mod tests {
 
     #[test]
     fn point_outside_partition() {
-        let config = WorkspacePartitionConfig::new(vec![
-            partition("cell-1", "r1", [0.0, 0.0, 0.0], [2.0, 2.0, 2.0]),
-        ])
+        let config = WorkspacePartitionConfig::new(vec![partition(
+            "cell-1",
+            "r1",
+            [0.0, 0.0, 0.0],
+            [2.0, 2.0, 2.0],
+        )])
         .unwrap();
 
         let result = config.check_position("r1", &[3.0, 1.0, 1.0]);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("outside partition"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("outside partition"));
     }
 
     #[test]
     fn point_on_boundary_is_inside() {
-        let config = WorkspacePartitionConfig::new(vec![
-            partition("cell-1", "r1", [0.0, 0.0, 0.0], [2.0, 2.0, 2.0]),
-        ])
+        let config = WorkspacePartitionConfig::new(vec![partition(
+            "cell-1",
+            "r1",
+            [0.0, 0.0, 0.0],
+            [2.0, 2.0, 2.0],
+        )])
         .unwrap();
 
         // Points on the boundary are inside (inclusive).
@@ -242,21 +252,30 @@ mod tests {
 
     #[test]
     fn unknown_robot_returns_no_partition() {
-        let config = WorkspacePartitionConfig::new(vec![
-            partition("cell-1", "r1", [0.0, 0.0, 0.0], [2.0, 2.0, 2.0]),
-        ])
+        let config = WorkspacePartitionConfig::new(vec![partition(
+            "cell-1",
+            "r1",
+            [0.0, 0.0, 0.0],
+            [2.0, 2.0, 2.0],
+        )])
         .unwrap();
 
         let result = config.check_position("r_unknown", &[1.0, 1.0, 1.0]);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("no assigned partition"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("no assigned partition"));
     }
 
     #[test]
     fn check_all_positions_all_inside() {
-        let config = WorkspacePartitionConfig::new(vec![
-            partition("cell-1", "r1", [0.0, 0.0, 0.0], [5.0, 5.0, 5.0]),
-        ])
+        let config = WorkspacePartitionConfig::new(vec![partition(
+            "cell-1",
+            "r1",
+            [0.0, 0.0, 0.0],
+            [5.0, 5.0, 5.0],
+        )])
         .unwrap();
 
         let positions = [[1.0, 1.0, 1.0], [2.0, 2.0, 2.0], [3.0, 3.0, 3.0]];
@@ -265,9 +284,12 @@ mod tests {
 
     #[test]
     fn check_all_positions_one_outside() {
-        let config = WorkspacePartitionConfig::new(vec![
-            partition("cell-1", "r1", [0.0, 0.0, 0.0], [2.0, 2.0, 2.0]),
-        ])
+        let config = WorkspacePartitionConfig::new(vec![partition(
+            "cell-1",
+            "r1",
+            [0.0, 0.0, 0.0],
+            [2.0, 2.0, 2.0],
+        )])
         .unwrap();
 
         let positions = [[1.0, 1.0, 1.0], [5.0, 5.0, 5.0]];

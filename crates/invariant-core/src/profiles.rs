@@ -15,6 +15,7 @@ const FRANKA_PANDA_JSON: &str = include_str!("../../../profiles/franka_panda.jso
 const QUADRUPED_12DOF_JSON: &str = include_str!("../../../profiles/quadruped_12dof.json");
 const UR10_JSON: &str = include_str!("../../../profiles/ur10.json");
 const UR10E_HAAS_CELL_JSON: &str = include_str!("../../../profiles/ur10e_haas_cell.json");
+const UR10E_CNC_TENDING_JSON: &str = include_str!("../../../profiles/ur10e_cnc_tending.json");
 
 // Process-lifetime caches for parsed and validated built-in profiles.
 // Populated on first access; subsequent calls clone the cached value.
@@ -23,6 +24,7 @@ static CACHED_FRANKA_PANDA: OnceLock<RobotProfile> = OnceLock::new();
 static CACHED_QUADRUPED_12DOF: OnceLock<RobotProfile> = OnceLock::new();
 static CACHED_UR10: OnceLock<RobotProfile> = OnceLock::new();
 static CACHED_UR10E_HAAS_CELL: OnceLock<RobotProfile> = OnceLock::new();
+static CACHED_UR10E_CNC_TENDING: OnceLock<RobotProfile> = OnceLock::new();
 
 /// Parse and validate a built-in profile from its embedded JSON constant.
 ///
@@ -51,7 +53,14 @@ fn parse_and_validate(json: &str) -> RobotProfile {
 }
 
 /// Names of all built-in profiles.
-const BUILTIN_NAMES: &[&str] = &["humanoid_28dof", "franka_panda", "quadruped_12dof", "ur10", "ur10e_haas_cell"];
+const BUILTIN_NAMES: &[&str] = &[
+    "humanoid_28dof",
+    "franka_panda",
+    "quadruped_12dof",
+    "ur10",
+    "ur10e_haas_cell",
+    "ur10e_cnc_tending",
+];
 
 /// Maximum JSON input size for custom profiles (256 KiB).
 const MAX_PROFILE_JSON_BYTES: usize = 256 * 1024;
@@ -97,6 +106,9 @@ pub fn load_builtin(name: &str) -> Result<RobotProfile, ProfileError> {
             .clone(),
         "ur10e_haas_cell" => CACHED_UR10E_HAAS_CELL
             .get_or_init(|| parse_and_validate(UR10E_HAAS_CELL_JSON))
+            .clone(),
+        "ur10e_cnc_tending" => CACHED_UR10E_CNC_TENDING
+            .get_or_init(|| parse_and_validate(UR10E_CNC_TENDING_JSON))
             .clone(),
         _ => return Err(ProfileError::UnknownProfile(name.to_string())),
     };
@@ -201,9 +213,9 @@ mod tests {
     // --- List builtins ---
 
     #[test]
-    fn list_builtins_returns_all_five() {
+    fn list_builtins_returns_all_six() {
         let names = list_builtins();
-        assert_eq!(names.len(), 5);
+        assert_eq!(names.len(), 6);
         assert!(names.contains(&"humanoid_28dof"));
         assert!(names.contains(&"franka_panda"));
         assert!(names.contains(&"quadruped_12dof"));

@@ -3,15 +3,22 @@
 use std::collections::HashMap;
 
 use crate::models::command::JointState;
-use crate::models::profile::JointDefinition;
+use crate::models::profile::{JointDefinition, RealWorldMargins};
 use crate::models::verdict::CheckResult;
 
-/// Check that every joint's effort (torque) magnitude does not exceed `max_torque`.
+/// Check that every joint's effort (torque) magnitude does not exceed
+/// `max_torque * (1 - torque_margin)`.
+///
+/// When `margins` is `Some`, the limit is tightened by `torque_margin`.
 ///
 /// Each [`JointState`] is matched to a [`JointDefinition`] by name.
 /// A joint state with no matching definition is treated as a violation.
 /// If `joints` is empty the check passes trivially.
-pub fn check_torque_limits(joints: &[JointState], definitions: &[JointDefinition]) -> CheckResult {
+pub fn check_torque_limits(
+    joints: &[JointState],
+    definitions: &[JointDefinition],
+    margins: Option<&RealWorldMargins>,
+) -> CheckResult {
     let def_map: HashMap<&str, &JointDefinition> =
         definitions.iter().map(|d| (d.name.as_str(), d)).collect();
 
@@ -26,14 +33,16 @@ pub fn check_torque_limits(joints: &[JointState], definitions: &[JointDefinition
                 ));
             }
             Some(def) => {
+                let margin_factor = 1.0 - margins.map(|m| m.torque_margin).unwrap_or(0.0);
+                let limit = def.max_torque * margin_factor;
                 if !state.effort.is_finite() {
                     violations.push(format!("'{}': effort is NaN or infinite", state.name));
-                } else if state.effort.abs() > def.max_torque {
+                } else if state.effort.abs() > limit {
                     violations.push(format!(
                         "'{}': |effort| {:.6} exceeds max_torque {:.6}",
                         state.name,
                         state.effort.abs(),
-                        def.max_torque
+                        limit
                     ));
                 }
             }

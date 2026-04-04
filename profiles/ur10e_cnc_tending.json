@@ -1,0 +1,112 @@
+{
+  "name": "ur10e_cnc_tending",
+  "version": "1.0.0",
+
+  "joints": [
+    {"name": "shoulder_pan_joint",  "type": "revolute", "min": -6.2832, "max": 6.2832, "max_velocity": 2.0944, "max_torque": 330.0, "max_acceleration": 10.0},
+    {"name": "shoulder_lift_joint", "type": "revolute", "min": -6.2832, "max": 6.2832, "max_velocity": 2.0944, "max_torque": 330.0, "max_acceleration": 10.0},
+    {"name": "elbow_joint",         "type": "revolute", "min": -3.1416, "max": 3.1416, "max_velocity": 3.1416, "max_torque": 150.0, "max_acceleration": 10.0},
+    {"name": "wrist_1_joint",       "type": "revolute", "min": -6.2832, "max": 6.2832, "max_velocity": 3.1416, "max_torque":  56.0, "max_acceleration": 20.0},
+    {"name": "wrist_2_joint",       "type": "revolute", "min": -6.2832, "max": 6.2832, "max_velocity": 3.1416, "max_torque":  56.0, "max_acceleration": 20.0},
+    {"name": "wrist_3_joint",       "type": "revolute", "min": -6.2832, "max": 6.2832, "max_velocity": 3.1416, "max_torque":  56.0, "max_acceleration": 20.0}
+  ],
+
+  "workspace": {
+    "type": "aabb",
+    "min": [-1.2, -0.8, 0.0],
+    "max": [0.8, 0.8, 1.8]
+  },
+
+  "exclusion_zones": [
+    {
+      "type": "aabb",
+      "name": "haas_spindle_area",
+      "min": [-1.0, 0.0, 0.7],
+      "max": [-0.3, 0.6, 1.5],
+      "conditional": true
+    },
+    {
+      "type": "aabb",
+      "name": "haas_enclosure_rear",
+      "min": [-1.5, 0.5, 0.0],
+      "max": [0.0, 1.2, 2.5]
+    },
+    {
+      "type": "aabb",
+      "name": "floor_zone",
+      "min": [-1.5, -1.0, -0.1],
+      "max": [1.0, 1.0, 0.05]
+    },
+    {
+      "type": "aabb",
+      "name": "edge_pc_enclosure",
+      "min": [0.35, -0.15, 0.85],
+      "max": [0.65, 0.15, 1.15]
+    }
+  ],
+
+  "proximity_zones": [
+    {
+      "name": "haas_door_approach",
+      "type": "sphere",
+      "center": [-0.5, 0.1, 0.9],
+      "radius": 0.4,
+      "velocity_scale": 0.5,
+      "dynamic": false
+    }
+  ],
+
+  "collision_pairs": [
+    ["wrist_3_link", "base_link"],
+    ["wrist_3_link", "shoulder_link"],
+    ["forearm_link", "base_link"]
+  ],
+
+  "end_effectors": [
+    {
+      "name": "gripper",
+      "max_force_n": 140.0,
+      "max_grasp_force_n": 100.0,
+      "min_grasp_force_n": 5.0,
+      "max_force_rate_n_per_s": 500.0,
+      "max_payload_kg": 10.0
+    }
+  ],
+
+  "stability": null,
+
+  "max_delta_time": 0.008,
+  "min_collision_distance": 0.01,
+  "global_velocity_scale": 1.0,
+  "watchdog_timeout_ms": 100,
+
+  "environment": {
+    "max_safe_pitch_rad": 0.0873,
+    "max_safe_roll_rad": 0.0873,
+    "max_operating_temperature_c": 75.0,
+    "critical_battery_pct": 3.0,
+    "low_battery_pct": 10.0,
+    "max_latency_ms": 50.0,
+    "warning_latency_ms": 25.0
+  },
+
+  "real_world_margins": {
+    "position_margin": 0.05,
+    "velocity_margin": 0.15,
+    "torque_margin": 0.10,
+    "acceleration_margin": 0.10
+  },
+
+  "safe_stop_profile": {
+    "strategy": "controlled_crouch",
+    "max_deceleration": 8.0,
+    "target_joint_positions": {
+      "shoulder_pan_joint": 0.0,
+      "shoulder_lift_joint": -1.571,
+      "elbow_joint": 1.571,
+      "wrist_1_joint": -1.571,
+      "wrist_2_joint": 0.0,
+      "wrist_3_joint": 0.0
+    }
+  }
+}

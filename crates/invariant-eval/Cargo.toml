@@ -1,12 +1,12 @@
 [package]
-name = "invariant-eval"
+name = "invariant-robotics-eval"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 description = "Trace evaluation engine for Invariant (presets, rubrics, guardrails, differ)."
 
 [dependencies]
-invariant-core = { path = "../invariant-core" }
+invariant-core = { package = "invariant-robotics-core", path = "../invariant-core" }
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true

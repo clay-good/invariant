@@ -163,6 +163,9 @@ fn multi_hop_monotonic_chain_approved() {
         locomotion_state: None,
         end_effector_forces: vec![],
         estimated_payload_kg: None,
+        signed_sensor_readings: vec![],
+        zone_overrides: HashMap::new(),
+        environment_state: None,
     };
 
     let result = config.validate(&cmd, Utc::now(), None).unwrap();
@@ -198,9 +201,7 @@ fn privilege_escalation_rejected() {
     // Hop 0: narrow ops.
     let pca0 = Pca {
         p_0: "operator".to_string(),
-        ops: BTreeSet::from([
-            Operation::new("actuate:humanoid_28dof:joint_0:position").unwrap()
-        ]),
+        ops: BTreeSet::from([Operation::new("actuate:humanoid_28dof:joint_0:position").unwrap()]),
         kid: "k1".to_string(),
         exp: None,
         nbf: None,
@@ -249,6 +250,9 @@ fn privilege_escalation_rejected() {
         locomotion_state: None,
         end_effector_forces: vec![],
         estimated_payload_kg: None,
+        signed_sensor_readings: vec![],
+        zone_overrides: HashMap::new(),
+        environment_state: None,
     };
 
     let result = config.validate(&cmd, Utc::now(), None).unwrap();

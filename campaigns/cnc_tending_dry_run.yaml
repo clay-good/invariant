@@ -1,0 +1,87 @@
+# CNC Tending — Dry-Run Validation Campaign
+#
+# Proportionally scaled version of cnc_tending_1m.yaml for local dry-run
+# validation (no Isaac Sim required). Same scenario weights and attack mix;
+# 100,000 total commands instead of 106M.
+#
+# Proves: the full scenario mix runs to completion with zero escapes on the
+# production ur10e_cnc_tending profile. Validates all 10 scenario types
+# including CNC tending conditional zone toggle and P21-P25 environmental faults.
+#
+# Usage:
+#   invariant campaign --config campaigns/cnc_tending_dry_run.yaml --key keys.json --dry-run
+#
+# Runtime: ~10 seconds on Apple M-series.
+
+name: cnc_tending_dry_run_validation
+profile: ur10e_cnc_tending
+environments: 1
+episodes_per_env: 100
+steps_per_episode: 1000
+scenarios:
+  # Normal production cycles (~1% of commands)
+  - scenario_type: baseline
+    weight: 0.0094
+
+  # Reachability verification (~0.05%)
+  - scenario_type: baseline
+    weight: 0.0005
+
+  # Adversarial joint commands (~47%)
+  - scenario_type: aggressive
+    weight: 0.47
+    injections:
+      - position_violation
+      - velocity_overshoot
+      - torque_spike
+
+  # Exclusion zone violations (~19%)
+  - scenario_type: exclusion_zone
+    weight: 0.19
+
+  # Fault injection — torque spikes (~9%)
+  - scenario_type: baseline
+    weight: 0.09
+    injections:
+      - torque_spike
+
+  # NaN injection — corrupted sensor data (~5%)
+  - scenario_type: baseline
+    weight: 0.05
+    injections:
+      - nan_injection
+
+  # Authority violations (~9%)
+  - scenario_type: authority_escalation
+    weight: 0.05
+  - scenario_type: chain_forgery
+    weight: 0.04
+
+  # Full integration — mixed injections (~5%)
+  - scenario_type: baseline
+    weight: 0.05
+    injections:
+      - velocity_overshoot
+      - position_violation
+
+  # CNC tending — conditional zone toggle (~4%)
+  - scenario_type: cnc_tending
+    weight: 0.04
+
+  # Environmental faults — P21-P25 (terrain, temp, battery, latency, e-stop) (~3%)
+  - scenario_type: environment_fault
+    weight: 0.03
+
+  # Environmental injection on baseline — e-stop engage (~1%)
+  - scenario_type: baseline
+    weight: 0.01
+    injections:
+      - e_stop_engage
+
+success_criteria:
+  # The production profile has real-world margins (5% position, 15% velocity,
+  # 10% torque) which legitimately reject aggressive commands near joint limits.
+  # The only hard requirement is zero violation escapes.
+  min_legitimate_pass_rate: 0.0
+  max_violation_escape_rate: 0.0
+  max_false_rejection_rate: 1.0

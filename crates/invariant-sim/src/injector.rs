@@ -48,6 +48,17 @@ pub enum InjectionType {
     HeadingSpinout,
     /// Set ground reaction force to 5× max (P17 stomp).
     GroundReactionSpike,
+    // -- Environmental adversarial injections (Step 91) --
+    /// Set IMU pitch to 2× max safe pitch (P21 terrain incline).
+    TerrainIncline,
+    /// Set actuator temperature to 1.5× max operating temperature (P22 overheat).
+    TemperatureSpike,
+    /// Set battery percentage to 0% (P23 critical battery).
+    BatteryDrain,
+    /// Set communication latency to 5× max (P24 latency spike).
+    LatencySpike,
+    /// Engage the hardware emergency stop (P25 e-stop).
+    EStopEngage,
 }
 
 /// All injection types in a fixed order, for iteration.
@@ -68,6 +79,11 @@ const ALL_INJECTIONS: &[InjectionType] = &[
     InjectionType::StepOverextension,
     InjectionType::HeadingSpinout,
     InjectionType::GroundReactionSpike,
+    InjectionType::TerrainIncline,
+    InjectionType::TemperatureSpike,
+    InjectionType::BatteryDrain,
+    InjectionType::LatencySpike,
+    InjectionType::EStopEngage,
 ];
 
 /// Returns a slice of every known `InjectionType`.
@@ -101,6 +117,11 @@ pub fn inject(cmd: &mut Command, injection: InjectionType, profile: &RobotProfil
         InjectionType::StepOverextension => inject_step_overextension(cmd, profile),
         InjectionType::HeadingSpinout => inject_heading_spinout(cmd, profile),
         InjectionType::GroundReactionSpike => inject_ground_reaction_spike(cmd, profile),
+        InjectionType::TerrainIncline => inject_terrain_incline(cmd, profile),
+        InjectionType::TemperatureSpike => inject_temperature_spike(cmd, profile),
+        InjectionType::BatteryDrain => inject_battery_drain(cmd),
+        InjectionType::LatencySpike => inject_latency_spike(cmd, profile),
+        InjectionType::EStopEngage => inject_estop_engage(cmd),
     }
 }
 
@@ -271,7 +292,10 @@ fn inject_nan(cmd: &mut Command) {
 use invariant_core::models::command::{FootState, LocomotionState};
 
 /// Ensure the command has a locomotion_state; create a default one if absent.
-fn ensure_locomotion_state<'a>(cmd: &'a mut Command, profile: &RobotProfile) -> &'a mut LocomotionState {
+fn ensure_locomotion_state<'a>(
+    cmd: &'a mut Command,
+    profile: &RobotProfile,
+) -> &'a mut LocomotionState {
     if cmd.locomotion_state.is_none() {
         let max_vel = profile
             .locomotion
@@ -407,6 +431,80 @@ fn inject_ground_reaction_spike(cmd: &mut Command, profile: &RobotProfile) {
 }
 
 // ---------------------------------------------------------------------------
+// Environmental injection helpers (Step 91)
+// ---------------------------------------------------------------------------
+
+use invariant_core::models::command::{ActuatorTemperature, EnvironmentState};
+
+/// Ensure the command has an `EnvironmentState`, creating an empty one if absent.
+fn ensure_environment_state(cmd: &mut Command) -> &mut EnvironmentState {
+    if cmd.environment_state.is_none() {
+        cmd.environment_state = Some(EnvironmentState {
+            imu_pitch_rad: None,
+            imu_roll_rad: None,
+            actuator_temperatures: vec![],
+            battery_percentage: None,
+            communication_latency_ms: None,
+            e_stop_engaged: None,
+        });
+    }
+    cmd.environment_state.as_mut().unwrap()
+}
+
+/// P21 attack: set IMU pitch to 2× the max safe pitch (terrain incline).
+fn inject_terrain_incline(cmd: &mut Command, profile: &RobotProfile) {
+    let env = ensure_environment_state(cmd);
+    let max_pitch = profile
+        .environment
+        .as_ref()
+        .map(|e| e.max_safe_pitch_rad)
+        .unwrap_or(0.2618);
+    env.imu_pitch_rad = Some(max_pitch * 2.0);
+}
+
+/// P22 attack: set all actuator temperatures to 1.5× max operating temperature.
+fn inject_temperature_spike(cmd: &mut Command, profile: &RobotProfile) {
+    let max_temp = profile
+        .environment
+        .as_ref()
+        .map(|e| e.max_operating_temperature_c)
+        .unwrap_or(80.0);
+    let temps: Vec<ActuatorTemperature> = profile
+        .joints
+        .iter()
+        .map(|j| ActuatorTemperature {
+            joint_name: j.name.clone(),
+            temperature_celsius: max_temp * 1.5,
+        })
+        .collect();
+    let env = ensure_environment_state(cmd);
+    env.actuator_temperatures = temps;
+}
+
+/// P23 attack: set battery percentage to 0% (well below any critical threshold).
+fn inject_battery_drain(cmd: &mut Command) {
+    let env = ensure_environment_state(cmd);
+    env.battery_percentage = Some(0.0);
+}
+
+/// P24 attack: set communication latency to 5× max acceptable latency.
+fn inject_latency_spike(cmd: &mut Command, profile: &RobotProfile) {
+    let env = ensure_environment_state(cmd);
+    let max_lat = profile
+        .environment
+        .as_ref()
+        .map(|e| e.max_latency_ms)
+        .unwrap_or(100.0);
+    env.communication_latency_ms = Some(max_lat * 5.0);
+}
+
+/// P25 attack: engage the hardware emergency stop.
+fn inject_estop_engage(cmd: &mut Command) {
+    let env = ensure_environment_state(cmd);
+    env.e_stop_engaged = Some(true);
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -464,15 +562,18 @@ mod tests {
             locomotion_state: None,
             end_effector_forces: vec![],
             estimated_payload_kg: None,
+            signed_sensor_readings: vec![],
+            zone_overrides: HashMap::new(),
+            environment_state: None,
         }
     }
 
     // --- list_injections ---
 
     #[test]
-    fn list_injections_contains_all_sixteen() {
+    fn list_injections_contains_all_twenty_one() {
         let injections = list_injections();
-        assert_eq!(injections.len(), 16);
+        assert_eq!(injections.len(), 21);
     }
 
     #[test]
@@ -717,7 +818,10 @@ mod tests {
         let [vx, vy, vz] = loco.base_velocity;
         let speed = (vx * vx + vy * vy + vz * vz).sqrt();
         // Default max is 1.5, injected 3x = 4.5
-        assert!(speed > 1.5, "LocomotionOverspeed: speed {speed:.2} should exceed default max");
+        assert!(
+            speed > 1.5,
+            "LocomotionOverspeed: speed {speed:.2} should exceed default max"
+        );
     }
 
     #[test]
@@ -750,7 +854,10 @@ mod tests {
         inject(&mut cmd, InjectionType::FootClearanceViolation, &profile);
         let loco = cmd.locomotion_state.as_ref().unwrap();
         let any_below = loco.feet.iter().any(|f| !f.contact && f.position[2] < 0.0);
-        assert!(any_below, "FootClearanceViolation: at least one swing foot must be below ground");
+        assert!(
+            any_below,
+            "FootClearanceViolation: at least one swing foot must be below ground"
+        );
     }
 
     #[test]
@@ -760,7 +867,11 @@ mod tests {
         inject(&mut cmd, InjectionType::StepOverextension, &profile);
         let loco = cmd.locomotion_state.as_ref().unwrap();
         // Default max_step_length = 0.6, injected 3x = 1.8
-        assert!(loco.step_length > 0.6, "StepOverextension: step_length {:.2} should exceed default max", loco.step_length);
+        assert!(
+            loco.step_length > 0.6,
+            "StepOverextension: step_length {:.2} should exceed default max",
+            loco.step_length
+        );
     }
 
     #[test]
@@ -770,7 +881,11 @@ mod tests {
         inject(&mut cmd, InjectionType::HeadingSpinout, &profile);
         let loco = cmd.locomotion_state.as_ref().unwrap();
         // Default max_heading_rate = 1.0, injected 5x = 5.0
-        assert!(loco.heading_rate.abs() > 1.0, "HeadingSpinout: heading_rate {:.2} should exceed default max", loco.heading_rate);
+        assert!(
+            loco.heading_rate.abs() > 1.0,
+            "HeadingSpinout: heading_rate {:.2} should exceed default max",
+            loco.heading_rate
+        );
     }
 
     #[test]
@@ -787,6 +902,83 @@ mod tests {
                 false
             }
         });
-        assert!(any_spike, "GroundReactionSpike: at least one foot must have GRF > max");
+        assert!(
+            any_spike,
+            "GroundReactionSpike: at least one foot must have GRF > max"
+        );
+    }
+
+    // --- Environmental injections (Step 91) ---
+
+    #[test]
+    fn terrain_incline_exceeds_max_pitch() {
+        let profile = panda();
+        let mut cmd = make_cmd(&profile);
+        inject(&mut cmd, InjectionType::TerrainIncline, &profile);
+        let env = cmd.environment_state.as_ref().unwrap();
+        // Default max_safe_pitch_rad = 0.2618, injected 2x = 0.5236
+        assert!(
+            env.imu_pitch_rad.unwrap() > 0.2618,
+            "TerrainIncline: pitch should exceed default max"
+        );
+    }
+
+    #[test]
+    fn temperature_spike_exceeds_max() {
+        let profile = panda();
+        let mut cmd = make_cmd(&profile);
+        inject(&mut cmd, InjectionType::TemperatureSpike, &profile);
+        let env = cmd.environment_state.as_ref().unwrap();
+        // Default max_operating_temperature_c = 80.0, injected 1.5x = 120.0
+        assert!(
+            !env.actuator_temperatures.is_empty(),
+            "TemperatureSpike: must populate actuator temperatures"
+        );
+        for temp in &env.actuator_temperatures {
+            assert!(
+                temp.temperature_celsius > 80.0,
+                "TemperatureSpike: temp {:.1} should exceed default max 80°C",
+                temp.temperature_celsius
+            );
+        }
+    }
+
+    #[test]
+    fn battery_drain_sets_zero() {
+        let profile = panda();
+        let mut cmd = make_cmd(&profile);
+        inject(&mut cmd, InjectionType::BatteryDrain, &profile);
+        let env = cmd.environment_state.as_ref().unwrap();
+        assert_eq!(
+            env.battery_percentage,
+            Some(0.0),
+            "BatteryDrain: battery must be 0%"
+        );
+    }
+
+    #[test]
+    fn latency_spike_exceeds_max() {
+        let profile = panda();
+        let mut cmd = make_cmd(&profile);
+        inject(&mut cmd, InjectionType::LatencySpike, &profile);
+        let env = cmd.environment_state.as_ref().unwrap();
+        // Default max_latency_ms = 100.0, injected 5x = 500.0
+        assert!(
+            env.communication_latency_ms.unwrap() > 100.0,
+            "LatencySpike: latency should exceed default max"
+        );
+    }
+
+    #[test]
+    fn estop_engage_sets_true() {
+        let profile = panda();
+        let mut cmd = make_cmd(&profile);
+        inject(&mut cmd, InjectionType::EStopEngage, &profile);
+        let env = cmd.environment_state.as_ref().unwrap();
+        assert_eq!(
+            env.e_stop_engaged,
+            Some(true),
+            "EStopEngage: e_stop must be engaged"
+        );
     }
 }

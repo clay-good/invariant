@@ -8,7 +8,7 @@
     Thin wrapper node that forwards commands to the Invariant Rust binary
     over a Unix domain socket and publishes signed verdicts.
   </description>
-  <maintainer email="clay@goodluckllc.com">Clay Good</maintainer>
+  <maintainer email="hi@claygood.com">Clay Good</maintainer>
   <license>MIT</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>

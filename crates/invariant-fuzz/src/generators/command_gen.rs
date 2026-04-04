@@ -5,6 +5,8 @@
 //! supplied `RobotProfile`.  The commands have no PCA chain; callers must
 //! attach one before running through the full validator.
 
+use std::collections::HashMap;
+
 use rand::Rng;
 
 use invariant_core::models::command::{Command, CommandAuthority, JointState};
@@ -60,6 +62,9 @@ impl CommandGenerator {
             locomotion_state: None,
             end_effector_forces: vec![],
             estimated_payload_kg: None,
+            signed_sensor_readings: vec![],
+            zone_overrides: HashMap::new(),
+            environment_state: None,
         }
     }
 }
@@ -126,6 +131,7 @@ mod tests {
             config_sequence: None,
             real_world_margins: None,
             task_envelope: None,
+            environment: None,
             end_effectors: vec![],
         }
     }

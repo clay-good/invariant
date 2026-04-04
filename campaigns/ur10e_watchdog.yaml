@@ -1,6 +1,6 @@
 # UR10e + Haas VF-2 Cell — Watchdog / Brain Crash Campaign
 #
-# What happens when the Beelink crashes, hangs, or loses network?
+# What happens when the edge PC crashes, hangs, or loses network?
 # The watchdog must trigger safe-stop within 100ms.
 #
 # Tests the handoff scenario: what if the cognitive layer disappears

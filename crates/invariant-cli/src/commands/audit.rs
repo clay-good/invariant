@@ -1,4 +1,4 @@
-use clap::Args;
+use clap::{Args, Subcommand};
 use std::collections::VecDeque;
 use std::io::BufRead;
 use std::path::PathBuf;
@@ -7,6 +7,20 @@ use invariant_core::models::audit::SignedAuditEntry;
 
 #[derive(Args)]
 pub struct AuditArgs {
+    #[command(subcommand)]
+    pub command: AuditCommand,
+}
+
+#[derive(Subcommand)]
+pub enum AuditCommand {
+    /// Display audit log entries (pretty-printed JSON)
+    Show(AuditShowArgs),
+    /// Verify audit log integrity (hash chain + signatures)
+    Verify(super::verify::VerifyArgs),
+}
+
+#[derive(Args)]
+pub struct AuditShowArgs {
     #[arg(long, value_name = "LOG_FILE")]
     pub log: PathBuf,
     #[arg(long)]
@@ -14,6 +28,13 @@ pub struct AuditArgs {
 }
 
 pub fn run(args: &AuditArgs) -> i32 {
+    match &args.command {
+        AuditCommand::Show(show_args) => run_show(show_args),
+        AuditCommand::Verify(verify_args) => super::verify::run(verify_args),
+    }
+}
+
+fn run_show(args: &AuditShowArgs) -> i32 {
     let file = match std::fs::File::open(&args.log) {
         Ok(f) => f,
         Err(e) => {
@@ -137,6 +158,9 @@ mod tests {
             locomotion_state: None,
             end_effector_forces: vec![],
             estimated_payload_kg: None,
+            signed_sensor_readings: vec![],
+            zone_overrides: HashMap::new(),
+            environment_state: None,
         }
     }
 
@@ -184,8 +208,8 @@ mod tests {
         file.flush().unwrap();
     }
 
-    fn args_for(path: &std::path::Path, last: Option<usize>) -> AuditArgs {
-        AuditArgs {
+    fn args_for(path: &std::path::Path, last: Option<usize>) -> AuditShowArgs {
+        AuditShowArgs {
             log: path.to_path_buf(),
             last,
         }
@@ -200,7 +224,7 @@ mod tests {
         let mut tmp = NamedTempFile::new().unwrap();
         write_audit_entries(&mut tmp, 3);
         let args = args_for(tmp.path(), None);
-        assert_eq!(run(&args), 0);
+        assert_eq!(run_show(&args), 0);
     }
 
     #[test]
@@ -208,7 +232,7 @@ mod tests {
         let mut tmp = NamedTempFile::new().unwrap();
         write_audit_entries(&mut tmp, 3);
         let args = args_for(tmp.path(), Some(1));
-        assert_eq!(run(&args), 0);
+        assert_eq!(run_show(&args), 0);
     }
 
     #[test]
@@ -218,16 +242,16 @@ mod tests {
         // last=0 means keep zero entries in the ring buffer; nothing is printed
         // but the file still parses successfully.
         let args = args_for(tmp.path(), Some(0));
-        assert_eq!(run(&args), 0);
+        assert_eq!(run_show(&args), 0);
     }
 
     #[test]
     fn nonexistent_path_returns_2() {
-        let args = AuditArgs {
+        let args = AuditShowArgs {
             log: PathBuf::from("/nonexistent/path/audit.jsonl"),
             last: None,
         };
-        assert_eq!(run(&args), 2);
+        assert_eq!(run_show(&args), 2);
     }
 
     #[test]
@@ -236,14 +260,14 @@ mod tests {
         writeln!(tmp, "this is not valid json").unwrap();
         tmp.flush().unwrap();
         let args = args_for(tmp.path(), None);
-        assert_eq!(run(&args), 2);
+        assert_eq!(run_show(&args), 2);
     }
 
     #[test]
     fn empty_file_returns_0() {
         let tmp = NamedTempFile::new().unwrap();
         let args = args_for(tmp.path(), None);
-        assert_eq!(run(&args), 0);
+        assert_eq!(run_show(&args), 0);
     }
 
     #[test]
@@ -252,7 +276,7 @@ mod tests {
         writeln!(tmp, "not json").unwrap();
         tmp.flush().unwrap();
         let args = args_for(tmp.path(), Some(5));
-        assert_eq!(run(&args), 2);
+        assert_eq!(run_show(&args), 2);
     }
 
     #[test]
@@ -261,7 +285,7 @@ mod tests {
         let mut tmp = NamedTempFile::new().unwrap();
         write_audit_entries(&mut tmp, 2);
         let args = args_for(tmp.path(), Some(10));
-        assert_eq!(run(&args), 0);
+        assert_eq!(run_show(&args), 0);
     }
 
     // -----------------------------------------------------------------------

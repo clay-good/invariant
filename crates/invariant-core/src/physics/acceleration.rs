@@ -3,7 +3,7 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::models::command::JointState;
-use crate::models::profile::JointDefinition;
+use crate::models::profile::{JointDefinition, RealWorldMargins};
 use crate::models::verdict::CheckResult;
 
 /// Check that every joint's estimated acceleration does not exceed `max_acceleration`.
@@ -21,11 +21,14 @@ use crate::models::verdict::CheckResult;
 /// Does not panic. Division by zero is avoided: if `delta_time <= 0.0` the check
 /// reports a violation for every joint that would have been evaluated, noting that
 /// `delta_time` is non-positive.
+/// When `margins` is `Some`, the limit is tightened by `acceleration_margin`:
+/// effective_max_accel = max_acceleration * (1 - acceleration_margin).
 pub fn check_acceleration_limits(
     joints: &[JointState],
     previous_joints: Option<&[JointState]>,
     definitions: &[JointDefinition],
     delta_time: f64,
+    margins: Option<&RealWorldMargins>,
 ) -> CheckResult {
     // First command — no previous state to diff against; pass trivially.
     let Some(prev) = previous_joints else {
@@ -85,11 +88,13 @@ pub fn check_acceleration_limits(
             continue;
         }
 
+        let margin_factor = 1.0 - margins.map(|m| m.acceleration_margin).unwrap_or(0.0);
+        let limit = def.max_acceleration * margin_factor;
         let accel = (state.velocity - prev_state.velocity).abs() / delta_time;
-        if accel > def.max_acceleration {
+        if accel > limit {
             violations.push(format!(
                 "'{}': acceleration {:.6} exceeds max_acceleration {:.6}",
-                state.name, accel, def.max_acceleration
+                state.name, accel, limit
             ));
         }
     }

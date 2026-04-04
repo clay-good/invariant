@@ -1,6 +1,7 @@
 pub mod acceleration;
 pub mod delta_time;
 pub mod ee_force;
+pub mod environment;
 pub mod exclusion_zones;
 pub mod foot_clearance;
 pub mod force_rate;
@@ -24,7 +25,7 @@ pub mod workspace;
 mod tests;
 
 use crate::models::command::{Command, EndEffectorForce, JointState};
-use crate::models::profile::RobotProfile;
+use crate::models::profile::{ExclusionZone, RobotProfile, WorkspaceBounds};
 use crate::models::verdict::CheckResult;
 
 /// Run all 10 physics checks (P1–P10) against a command and robot profile.
@@ -53,30 +54,54 @@ pub fn run_all_checks(
         return vec![fail; 10];
     }
 
+    let margins = profile.real_world_margins.as_ref();
+    let envelope = profile.task_envelope.as_ref();
+
+    // Task envelope overrides (Section 17): tighten-only semantics.
+    let effective_velocity_scale = match envelope.and_then(|e| e.global_velocity_scale) {
+        Some(env_scale) => env_scale.min(profile.global_velocity_scale),
+        None => profile.global_velocity_scale,
+    };
+
+    // Effective workspace: use envelope workspace if present (must be subset of profile).
+    let effective_workspace: &WorkspaceBounds = match envelope.and_then(|e| e.workspace.as_ref()) {
+        Some(ws) => ws,
+        None => &profile.workspace,
+    };
+
+    // Effective exclusion zones: profile zones + envelope additional zones.
+    let mut effective_zones: Vec<ExclusionZone> = profile.exclusion_zones.clone();
+    if let Some(env) = envelope {
+        effective_zones.extend(env.additional_exclusion_zones.iter().cloned());
+    }
+
     let mut results = vec![
-        // P1: Joint position limits
-        joint_limits::check_joint_limits(&command.joint_states, &profile.joints),
-        // P2: Joint velocity limits
+        // P1: Joint position limits (tightened by position_margin in Guardian mode)
+        joint_limits::check_joint_limits(&command.joint_states, &profile.joints, margins),
+        // P2: Joint velocity limits (tightened by velocity_margin + envelope velocity scale)
         velocity::check_velocity_limits(
             &command.joint_states,
             &profile.joints,
-            profile.global_velocity_scale,
+            effective_velocity_scale,
+            margins,
         ),
-        // P3: Joint torque limits
-        torque::check_torque_limits(&command.joint_states, &profile.joints),
-        // P4: Joint acceleration limits
+        // P3: Joint torque limits (tightened by torque_margin in Guardian mode)
+        torque::check_torque_limits(&command.joint_states, &profile.joints, margins),
+        // P4: Joint acceleration limits (tightened by acceleration_margin in Guardian mode)
         acceleration::check_acceleration_limits(
             &command.joint_states,
             previous_joints,
             &profile.joints,
             command.delta_time,
+            margins,
         ),
-        // P5: Workspace bounds
-        workspace::check_workspace_bounds(&command.end_effector_positions, &profile.workspace),
-        // P6: Exclusion zones
+        // P5: Workspace bounds (envelope may tighten workspace)
+        workspace::check_workspace_bounds(&command.end_effector_positions, effective_workspace),
+        // P6: Exclusion zones (profile zones + envelope additional zones)
         exclusion_zones::check_exclusion_zones(
             &command.end_effector_positions,
-            &profile.exclusion_zones,
+            &effective_zones,
+            &command.zone_overrides,
         ),
         // P7: Self-collision
         self_collision::check_self_collision(
@@ -88,13 +113,13 @@ pub fn run_all_checks(
         delta_time::check_delta_time(command.delta_time, profile.max_delta_time),
         // P9: Stability (ZMP)
         stability::check_stability(command.center_of_mass.as_ref(), profile.stability.as_ref()),
-        // P10: Proximity velocity scaling
+        // P10: Proximity velocity scaling (uses envelope velocity scale if tighter)
         proximity::check_proximity_velocity(
             &command.joint_states,
             &profile.joints,
             &command.end_effector_positions,
             &profile.proximity_zones,
-            profile.global_velocity_scale,
+            effective_velocity_scale,
         ),
     ];
 
@@ -114,6 +139,10 @@ pub fn run_all_checks(
         &profile.proximity_zones,
         None, // body region override from task envelope (future)
     ));
+
+    // P21–P25: Environmental awareness checks — only when command carries environment_state.
+    let mut env_results = run_environment_checks(command, profile);
+    results.append(&mut env_results);
 
     results
 }
@@ -180,4 +209,35 @@ pub fn run_locomotion_checks(command: &Command, profile: &RobotProfile) -> Vec<C
         // P20: Heading rate limit
         heading_rate::check_heading_rate(loco, config),
     ]
+}
+
+/// Run environmental awareness checks (P21–P25) against a command and robot profile.
+///
+/// Returns an empty `Vec` when the command has no `environment_state`.
+/// P21–P24 also require `profile.environment` config for thresholds.
+/// P25 (emergency stop) is always active when e-stop data is present,
+/// regardless of profile config.
+pub fn run_environment_checks(command: &Command, profile: &RobotProfile) -> Vec<CheckResult> {
+    let Some(env) = &command.environment_state else {
+        return vec![];
+    };
+
+    let mut results = Vec::new();
+
+    // P25: Emergency stop — always active, no config needed.
+    results.push(environment::check_emergency_stop(env));
+
+    // P21–P24 require profile environment config for thresholds.
+    if let Some(config) = &profile.environment {
+        // P21: Terrain incline
+        results.push(environment::check_terrain_incline(env, config));
+        // P22: Actuator temperature
+        results.push(environment::check_actuator_temperature(env, config));
+        // P23: Battery state
+        results.push(environment::check_battery_state(env, config));
+        // P24: Communication latency
+        results.push(environment::check_communication_latency(env, config));
+    }
+
+    results
 }

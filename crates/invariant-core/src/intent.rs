@@ -86,17 +86,17 @@ pub fn builtin_templates() -> Vec<TaskTemplate> {
         TaskTemplate {
             name: "bimanual_pickup".into(),
             description: "Two-handed pickup of a larger object".into(),
-            operation_patterns: vec![
-                "actuate:left_arm:*".into(),
-                "actuate:right_arm:*".into(),
-            ],
+            operation_patterns: vec!["actuate:left_arm:*".into(), "actuate:right_arm:*".into()],
             required_params: vec![],
             default_duration_s: 45.0,
         },
         TaskTemplate {
             name: "inspect".into(),
             description: "Visual inspection only — no contact authorized".into(),
-            operation_patterns: vec!["actuate:{limb}:shoulder".into(), "actuate:{limb}:elbow".into()],
+            operation_patterns: vec![
+                "actuate:{limb}:shoulder".into(),
+                "actuate:{limb}:elbow".into(),
+            ],
             required_params: vec!["limb".into()],
             default_duration_s: 20.0,
         },
@@ -347,7 +347,10 @@ mod tests {
 
         let result = resolve_template(&template, &params, "alice", "key-1", None);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("missing parameter"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("missing parameter"));
     }
 
     #[test]
@@ -357,8 +360,12 @@ mod tests {
 
         let result = resolve_template(&template, &params, "bob", "key-2", None).unwrap();
         assert_eq!(result.operations.len(), 2);
-        assert!(result.operations.contains(&"actuate:left_arm:*".to_string()));
-        assert!(result.operations.contains(&"actuate:right_arm:*".to_string()));
+        assert!(result
+            .operations
+            .contains(&"actuate:left_arm:*".to_string()));
+        assert!(result
+            .operations
+            .contains(&"actuate:right_arm:*".to_string()));
     }
 
     #[test]
@@ -367,13 +374,15 @@ mod tests {
         let mut params = HashMap::new();
         params.insert("limb".into(), "right_arm".into());
 
-        let result =
-            resolve_template(&template, &params, "alice", "key-1", Some(10.0)).unwrap();
+        let result = resolve_template(&template, &params, "alice", "key-1", Some(10.0)).unwrap();
         // Expiry should be ~10s from now, not 30s.
         let expiry = result.expiry.unwrap();
         let now = Utc::now();
         let diff = (expiry - now).num_seconds();
-        assert!(diff >= 8 && diff <= 12, "expiry should be ~10s from now, got {diff}s");
+        assert!(
+            diff >= 8 && diff <= 12,
+            "expiry should be ~10s from now, got {diff}s"
+        );
     }
 
     #[test]
@@ -397,7 +406,10 @@ mod tests {
 
         let result = resolve_template(&template, &params, "alice", "key-1", None);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("invalid operation"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("invalid operation"));
     }
 
     // -- resolve_direct --
@@ -468,7 +480,10 @@ mod tests {
     #[test]
     fn intent_to_pca_from_direct() {
         let intent = resolve_direct(
-            &["actuate:left_arm:shoulder".to_string(), "actuate:left_arm:elbow".to_string()],
+            &[
+                "actuate:left_arm:shoulder".to_string(),
+                "actuate:left_arm:elbow".to_string(),
+            ],
             "bob",
             "key-2",
             Some(60.0),
@@ -509,12 +524,12 @@ mod tests {
         let mut params = HashMap::new();
         params.insert("limb".into(), "right_arm".into());
 
-        let intent = resolve_template(&template, &params, "operator_alice", "key-1", Some(30.0)).unwrap();
+        let intent =
+            resolve_template(&template, &params, "operator_alice", "key-1", Some(30.0)).unwrap();
         let pca = intent_to_pca(&intent).unwrap();
         let signed = sign_pca(&pca, &sk).unwrap();
 
         // Verify the signature.
         assert!(verify_signed_pca(&signed, &vk, 0).is_ok());
     }
-
 }

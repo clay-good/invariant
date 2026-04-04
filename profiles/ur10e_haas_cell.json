@@ -22,7 +22,8 @@
       "type": "aabb",
       "name": "haas_spindle_zone",
       "min": [-1.2, 0.5, 0.3],
-      "max": [-0.3, 1.2, 1.2]
+      "max": [-0.3, 1.2, 1.2],
+      "conditional": true
     },
     {
       "type": "aabb",
@@ -38,7 +39,7 @@
     },
     {
       "type": "sphere",
-      "name": "beelink_enclosure",
+      "name": "edge_pc_enclosure",
       "center": [0.6, -0.8, 0.5],
       "radius": 0.15
     }
@@ -89,6 +90,13 @@
   "max_delta_time": 0.008,
   "global_velocity_scale": 1.0,
   "watchdog_timeout_ms": 100,
+
+  "real_world_margins": {
+    "position_margin": 0.05,
+    "velocity_margin": 0.15,
+    "torque_margin": 0.10,
+    "acceleration_margin": 0.10
+  },
 
   "safe_stop_profile": {
     "strategy": "park_position",

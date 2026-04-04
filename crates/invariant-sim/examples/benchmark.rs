@@ -16,8 +16,8 @@ use invariant_core::models::profile::RobotProfile;
 use invariant_core::profiles;
 use invariant_core::validator::ValidatorConfig;
 
-use invariant_sim::campaign::{CampaignConfig, ScenarioConfig, SuccessCriteria};
-use invariant_sim::isaac::dry_run::run_dry_campaign;
+use invariant_robotics_sim::campaign::{CampaignConfig, ScenarioConfig, SuccessCriteria};
+use invariant_robotics_sim::isaac::dry_run::run_dry_campaign;
 
 fn make_chain(sk: &SigningKey, kid: &str, ops: &[&str]) -> String {
     let op_set: BTreeSet<Operation> = ops.iter().map(|s| Operation::new(*s).unwrap()).collect();
@@ -66,6 +66,9 @@ fn make_valid_command(profile: &RobotProfile, chain: &str, seq: u64) -> Command 
         locomotion_state: None,
         end_effector_forces: vec![],
         estimated_payload_kg: None,
+        signed_sensor_readings: vec![],
+        zone_overrides: HashMap::new(),
+        environment_state: None,
     }
 }
 

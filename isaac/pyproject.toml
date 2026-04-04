@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "invariant-isaac"
+version = "0.1.0"
+description = "Isaac Lab integration for Invariant CNC tending cell"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.9"
+dependencies = []
+
+[project.optional-dependencies]
+# Isaac Sim dependencies (only available inside NVIDIA Isaac Sim).
+isaac = ["isaacsim-rl"]
+test = ["pytest>=7.0"]
+
+[tool.setuptools.packages.find]
+include = ["envs*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_functions = ["test_*"]

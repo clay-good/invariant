@@ -10,7 +10,7 @@ pub mod verdict;
 #[cfg(test)]
 mod tests {
     use super::error::Validate;
-    use super::profile::{RobotProfile, SafeStopStrategy};
+    use super::profile::{RobotProfile, SafeStopStrategy, WorkspaceBounds};
 
     #[test]
     fn deserialize_humanoid_profile() {
@@ -313,6 +313,7 @@ mod tests {
             config_sequence: None,
             real_world_margins: None,
             task_envelope: None,
+            environment: None,
             locomotion: None,
             end_effectors: vec![],
         }
@@ -340,6 +341,7 @@ mod tests {
                 name: format!("ez{i}"),
                 center: [0.0, 0.0, 0.0],
                 radius: 0.1,
+                conditional: false,
             })
             .collect();
         assert!(matches!(
@@ -431,6 +433,7 @@ mod tests {
             config_sequence: None,
             real_world_margins: None,
             task_envelope: None,
+            environment: None,
             locomotion: None,
             end_effectors: vec![],
         };
@@ -438,5 +441,216 @@ mod tests {
             profile.validate(),
             Err(ValidationError::DuplicateJointName { name }) if name == "elbow"
         ));
+    }
+
+    // ── Task envelope validation (Section 17.2) ────────────────────────
+
+    use super::profile::{EndEffectorConfig, TaskEnvelope};
+
+    fn envelope_base_profile() -> super::profile::RobotProfile {
+        let mut p = base_profile();
+        p.global_velocity_scale = 0.8;
+        p.end_effectors = vec![EndEffectorConfig {
+            name: "gripper".into(),
+            max_force_n: 100.0,
+            max_grasp_force_n: 80.0,
+            min_grasp_force_n: 5.0,
+            max_force_rate_n_per_s: 500.0,
+            max_payload_kg: 10.0,
+        }];
+        p
+    }
+
+    fn valid_envelope() -> TaskEnvelope {
+        TaskEnvelope {
+            name: "test_task".into(),
+            description: String::new(),
+            global_velocity_scale: Some(0.5),
+            max_payload_kg: Some(5.0),
+            end_effector_force_limit_n: Some(50.0),
+            workspace: None,
+            additional_exclusion_zones: vec![],
+        }
+    }
+
+    #[test]
+    fn valid_envelope_passes_validation() {
+        let mut profile = envelope_base_profile();
+        profile.task_envelope = Some(valid_envelope());
+        assert!(profile.validate().is_ok());
+    }
+
+    #[test]
+    fn envelope_velocity_scale_exceeding_profile_rejected() {
+        let mut profile = envelope_base_profile();
+        let mut env = valid_envelope();
+        env.global_velocity_scale = Some(0.9); // exceeds profile 0.8
+        profile.task_envelope = Some(env);
+        let result = profile.validate();
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("global_velocity_scale"));
+    }
+
+    #[test]
+    fn envelope_velocity_scale_zero_rejected() {
+        let mut profile = envelope_base_profile();
+        let mut env = valid_envelope();
+        env.global_velocity_scale = Some(0.0);
+        profile.task_envelope = Some(env);
+        assert!(profile.validate().is_err());
+    }
+
+    #[test]
+    fn envelope_workspace_outside_profile_rejected() {
+        let mut profile = envelope_base_profile();
+        // Profile workspace: [-1, -1, -1] to [1, 1, 1]
+        let mut env = valid_envelope();
+        env.workspace = Some(WorkspaceBounds::Aabb {
+            min: [-2.0, -1.0, -1.0], // min[0] = -2.0 < profile min[0] = -1.0
+            max: [1.0, 1.0, 1.0],
+        });
+        profile.task_envelope = Some(env);
+        let result = profile.validate();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("workspace"));
+    }
+
+    #[test]
+    fn envelope_workspace_contained_passes() {
+        let mut profile = envelope_base_profile();
+        let mut env = valid_envelope();
+        env.workspace = Some(WorkspaceBounds::Aabb {
+            min: [-0.5, -0.5, -0.5],
+            max: [0.5, 0.5, 0.5],
+        });
+        profile.task_envelope = Some(env);
+        assert!(profile.validate().is_ok());
+    }
+
+    #[test]
+    fn envelope_force_limit_exceeding_profile_rejected() {
+        let mut profile = envelope_base_profile();
+        let mut env = valid_envelope();
+        env.end_effector_force_limit_n = Some(150.0); // exceeds gripper max_force_n 100
+        profile.task_envelope = Some(env);
+        let result = profile.validate();
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("end_effector_force_limit_n"));
+    }
+
+    #[test]
+    fn envelope_payload_exceeding_profile_rejected() {
+        let mut profile = envelope_base_profile();
+        let mut env = valid_envelope();
+        env.max_payload_kg = Some(15.0); // exceeds gripper max_payload_kg 10
+        profile.task_envelope = Some(env);
+        let result = profile.validate();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("max_payload_kg"));
+    }
+
+    #[test]
+    fn envelope_no_end_effectors_force_limit_passes() {
+        // If profile has no end-effectors, force/payload limits in envelope
+        // pass trivially (nothing to compare against).
+        let mut profile = base_profile(); // no end_effectors
+        let mut env = valid_envelope();
+        env.end_effector_force_limit_n = Some(50.0);
+        env.max_payload_kg = Some(5.0);
+        env.global_velocity_scale = Some(0.5);
+        profile.task_envelope = Some(env);
+        assert!(profile.validate().is_ok());
+    }
+
+    #[test]
+    fn envelope_none_passes_validation() {
+        let profile = envelope_base_profile();
+        assert!(profile.validate().is_ok());
+    }
+
+    #[test]
+    fn envelope_negative_payload_rejected() {
+        let mut profile = envelope_base_profile();
+        let mut env = valid_envelope();
+        env.max_payload_kg = Some(-1.0);
+        profile.task_envelope = Some(env);
+        assert!(profile.validate().is_err());
+    }
+
+    // --- EnvironmentConfig validation ---
+
+    #[test]
+    fn validate_environment_config_valid() {
+        let json = r#"{
+            "name": "test", "version": "1.0.0",
+            "joints": [], "workspace": {"type": "aabb", "min": [-1,-1,0], "max": [1,1,2]},
+            "max_delta_time": 0.1,
+            "environment": {}
+        }"#;
+        let profile: RobotProfile = serde_json::from_str(json).unwrap();
+        assert!(
+            profile.validate().is_ok(),
+            "default EnvironmentConfig should be valid"
+        );
+    }
+
+    #[test]
+    fn validate_environment_config_critical_ge_low_battery() {
+        use super::error::ValidationError;
+        let json = r#"{
+            "name": "test", "version": "1.0.0",
+            "joints": [], "workspace": {"type": "aabb", "min": [-1,-1,0], "max": [1,1,2]},
+            "max_delta_time": 0.1,
+            "environment": {"critical_battery_pct": 20.0, "low_battery_pct": 10.0}
+        }"#;
+        let profile: RobotProfile = serde_json::from_str(json).unwrap();
+        match profile.validate() {
+            Err(ValidationError::EnvironmentConfigInvalid { reason }) => {
+                assert!(reason.contains("critical_battery_pct"));
+            }
+            other => panic!("expected EnvironmentConfigInvalid, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn validate_environment_config_warning_ge_max_latency() {
+        use super::error::ValidationError;
+        let json = r#"{
+            "name": "test", "version": "1.0.0",
+            "joints": [], "workspace": {"type": "aabb", "min": [-1,-1,0], "max": [1,1,2]},
+            "max_delta_time": 0.1,
+            "environment": {"warning_latency_ms": 200.0, "max_latency_ms": 100.0}
+        }"#;
+        let profile: RobotProfile = serde_json::from_str(json).unwrap();
+        match profile.validate() {
+            Err(ValidationError::EnvironmentConfigInvalid { reason }) => {
+                assert!(reason.contains("warning_latency_ms"));
+            }
+            other => panic!("expected EnvironmentConfigInvalid, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn validate_environment_config_negative_pitch() {
+        use super::error::ValidationError;
+        let json = r#"{
+            "name": "test", "version": "1.0.0",
+            "joints": [], "workspace": {"type": "aabb", "min": [-1,-1,0], "max": [1,1,2]},
+            "max_delta_time": 0.1,
+            "environment": {"max_safe_pitch_rad": -0.5}
+        }"#;
+        let profile: RobotProfile = serde_json::from_str(json).unwrap();
+        match profile.validate() {
+            Err(ValidationError::EnvironmentConfigInvalid { reason }) => {
+                assert!(reason.contains("max_safe_pitch_rad"));
+            }
+            other => panic!("expected EnvironmentConfigInvalid, got {other:?}"),
+        }
     }
 }
