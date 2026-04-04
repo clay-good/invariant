@@ -6,7 +6,7 @@ license.workspace = true
 description = "Trace evaluation engine for Invariant (presets, rubrics, guardrails, differ)."
 
 [dependencies]
-invariant-core = { package = "invariant-robotics-core", path = "../invariant-core" }
+invariant-core = { package = "invariant-robotics-core", path = "../invariant-core", version = "0.0.2" }
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true

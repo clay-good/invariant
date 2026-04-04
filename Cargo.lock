@@ -680,7 +680,7 @@ dependencies = [
 
 [[package]]
 name = "invariant-robotics"
-version = "0.0.1"
+version = "0.0.2"
 dependencies = [
  "axum",
  "base64",
@@ -704,7 +704,7 @@ dependencies = [
 
 [[package]]
 name = "invariant-robotics-coordinator"
-version = "0.0.1"
+version = "0.0.2"
 dependencies = [
  "chrono",
  "invariant-robotics-core",
@@ -715,7 +715,7 @@ dependencies = [
 
 [[package]]
 name = "invariant-robotics-core"
-version = "0.0.1"
+version = "0.0.2"
 dependencies = [
  "base64",
  "chrono",
@@ -732,7 +732,7 @@ dependencies = [
 
 [[package]]
 name = "invariant-robotics-eval"
-version = "0.0.1"
+version = "0.0.2"
 dependencies = [
  "chrono",
  "invariant-robotics-core",
@@ -743,7 +743,7 @@ dependencies = [
 
 [[package]]
 name = "invariant-robotics-fuzz"
-version = "0.0.1"
+version = "0.0.2"
 dependencies = [
  "base64",
  "chrono",
@@ -759,7 +759,7 @@ dependencies = [
 
 [[package]]
 name = "invariant-robotics-sim"
-version = "0.0.1"
+version = "0.0.2"
 dependencies = [
  "base64",
  "chrono",

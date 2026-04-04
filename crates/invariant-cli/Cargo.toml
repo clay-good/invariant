@@ -10,10 +10,10 @@ name = "invariant"
 path = "src/main.rs"
 
 [dependencies]
-invariant-core = { package = "invariant-robotics-core", path = "../invariant-core" }
-invariant-eval = { package = "invariant-robotics-eval", path = "../invariant-eval" }
-invariant-fuzz = { package = "invariant-robotics-fuzz", path = "../invariant-fuzz" }
-invariant-sim = { package = "invariant-robotics-sim", path = "../invariant-sim" }
+invariant-core = { package = "invariant-robotics-core", path = "../invariant-core", version = "0.0.2" }
+invariant-eval = { package = "invariant-robotics-eval", path = "../invariant-eval", version = "0.0.2" }
+invariant-fuzz = { package = "invariant-robotics-fuzz", path = "../invariant-fuzz", version = "0.0.2" }
+invariant-sim = { package = "invariant-robotics-sim", path = "../invariant-sim", version = "0.0.2" }
 clap.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true

@@ -6,8 +6,8 @@ license.workspace = true
 description = "Adversarial testing framework for Invariant."
 
 [dependencies]
-invariant-core = { package = "invariant-robotics-core", path = "../invariant-core" }
-invariant-sim = { package = "invariant-robotics-sim", path = "../invariant-sim" }
+invariant-core = { package = "invariant-robotics-core", path = "../invariant-core", version = "0.0.2" }
+invariant-sim = { package = "invariant-robotics-sim", path = "../invariant-sim", version = "0.0.2" }
 serde.workspace = true
 serde_json.workspace = true
 rand.workspace = true
