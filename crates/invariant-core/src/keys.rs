@@ -63,8 +63,11 @@ fn default_algorithm() -> String {
 
 /// Decoded key material ready for cryptographic operations.
 pub struct DecodedKeyFile {
+    /// Key identifier matching the source `KeyFile::kid`.
     pub kid: String,
+    /// Ed25519 signing (private) key.
     pub signing_key: SigningKey,
+    /// Ed25519 verifying (public) key corresponding to `signing_key`.
     pub verifying_key: VerifyingKey,
 }
 
@@ -92,39 +95,51 @@ impl DecodedKeyFile {
 /// Errors that can occur when loading or validating a key file.
 #[derive(Debug, thiserror::Error)]
 pub enum KeyFileError {
+    /// The key file could not be read from disk.
     #[error("failed to read key file: {0}")]
     Io(#[from] std::io::Error),
 
+    /// The file contents could not be deserialized as JSON.
     #[error("failed to parse key file JSON: {0}")]
     Json(#[from] serde_json::Error),
 
+    /// The `kid` field is an empty string.
     #[error("kid must not be empty")]
     EmptyKid,
 
+    /// The `algorithm` field is not `"Ed25519"`.
     #[error("unsupported algorithm {0:?}, expected \"Ed25519\"")]
     UnsupportedAlgorithm(String),
 
+    /// The `signing_key` field is not valid base64.
     #[error("failed to base64-decode signing_key: {0}")]
     SigningKeyBase64(base64::DecodeError),
 
+    /// The `signing_key` decoded to a byte slice that is not 32 bytes.
     #[error("signing_key must be exactly 32 bytes, got {0}")]
     SigningKeyLength(usize),
 
+    /// The `verifying_key` field is not valid base64.
     #[error("failed to base64-decode verifying_key: {0}")]
     VerifyingKeyBase64(base64::DecodeError),
 
+    /// The `verifying_key` decoded to a byte slice that is not 32 bytes.
     #[error("verifying_key must be exactly 32 bytes, got {0}")]
     VerifyingKeyLength(usize),
 
+    /// The `verifying_key` bytes do not represent a valid Ed25519 point.
     #[error("invalid verifying key: {0}")]
     InvalidVerifyingKey(String),
 
+    /// The signing key and verifying key do not form a matching keypair.
     #[error("signing_key and verifying_key do not form a valid keypair")]
     KeypairMismatch,
 
+    /// The key file could not be serialized to JSON for writing.
     #[error("failed to serialize key file: {0}")]
     Serialization(serde_json::Error),
 
+    /// Writing the serialized JSON to disk failed.
     #[error("failed to write key file: {0}")]
     WriteIo(std::io::Error),
 }
@@ -262,17 +277,33 @@ impl KeyFile {
 /// Errors from key store operations.
 #[derive(Debug, thiserror::Error)]
 pub enum KeyStoreError {
+    /// The signing operation itself failed.
     #[error("signing failed: {reason}")]
-    SigningFailed { reason: String },
+    SigningFailed {
+        /// Human-readable description of why signing failed.
+        reason: String,
+    },
 
+    /// The key store backend is not available (e.g. hardware not present).
     #[error("key store unavailable: {reason}")]
-    Unavailable { reason: String },
+    Unavailable {
+        /// Human-readable description of why the backend is unavailable.
+        reason: String,
+    },
 
+    /// No key with the requested identifier was found in the store.
     #[error("key not found: {kid}")]
-    KeyNotFound { kid: String },
+    KeyNotFound {
+        /// The key identifier that was not found.
+        kid: String,
+    },
 
+    /// The requested backend name is not recognized.
     #[error("backend not supported: {backend}")]
-    UnsupportedBackend { backend: String },
+    UnsupportedBackend {
+        /// The unrecognized backend name.
+        backend: String,
+    },
 }
 
 /// Abstract key storage backend (Section 8.3, Step 32).

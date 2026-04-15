@@ -15,13 +15,24 @@ use thiserror::Error;
 // Error type
 // ---------------------------------------------------------------------------
 
+/// Errors returned by the coordination monitor.
 #[derive(Debug, Error)]
 pub enum CoordinatorError {
+    /// An operation referenced a robot ID that is not registered.
     #[error("unknown robot: {robot_id}")]
-    UnknownRobot { robot_id: String },
+    UnknownRobot {
+        /// The unrecognised robot identifier.
+        robot_id: String,
+    },
 
+    /// Registering a new robot would exceed the configured `max_robots` limit.
     #[error("too many robots registered: {count} exceeds limit {max}")]
-    TooManyRobots { count: usize, max: usize },
+    TooManyRobots {
+        /// The would-be total number of registered robots.
+        count: usize,
+        /// The configured maximum.
+        max: usize,
+    },
 }
 
 // ---------------------------------------------------------------------------
@@ -29,6 +40,27 @@ pub enum CoordinatorError {
 // ---------------------------------------------------------------------------
 
 /// Snapshot of a single robot's state, reported by its Invariant instance.
+///
+/// # Examples
+///
+/// ```
+/// use invariant_robotics_coordinator::monitor::{RobotState, EndEffectorState};
+/// use chrono::Utc;
+///
+/// let state = RobotState {
+///     robot_id: "ur10e-cell-1".into(),
+///     timestamp: Utc::now(),
+///     end_effector_positions: vec![
+///         EndEffectorState { name: "gripper".into(), position: [1.2, 0.5, 0.8] },
+///     ],
+///     active: true,
+/// };
+///
+/// assert_eq!(state.robot_id, "ur10e-cell-1");
+/// assert!(state.active);
+/// assert_eq!(state.end_effector_positions.len(), 1);
+/// assert_eq!(state.end_effector_positions[0].name, "gripper");
+/// ```
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RobotState {
     /// Unique identifier for this robot (e.g. "ur10e-cell-1").
@@ -42,9 +74,26 @@ pub struct RobotState {
 }
 
 /// Position of a single end-effector or tracked link.
+///
+/// # Examples
+///
+/// ```
+/// use invariant_robotics_coordinator::monitor::EndEffectorState;
+///
+/// let ee = EndEffectorState {
+///     name: "tcp".into(),
+///     position: [0.5, -0.3, 1.1],
+/// };
+///
+/// assert_eq!(ee.name, "tcp");
+/// assert!((ee.position[0] - 0.5).abs() < 1e-10);
+/// assert!((ee.position[2] - 1.1).abs() < 1e-10);
+/// ```
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct EndEffectorState {
+    /// Name of this end-effector or tracked link (e.g. "tcp", "gripper").
     pub name: String,
+    /// Position in world frame as [x, y, z] in metres.
     pub position: [f64; 3],
 }
 
@@ -54,6 +103,21 @@ pub struct EndEffectorState {
 
 /// Policy for handling robots whose state has gone stale (no update within
 /// the timeout).
+///
+/// # Examples
+///
+/// ```
+/// use invariant_robotics_coordinator::monitor::StaleRobotPolicy;
+///
+/// // Both variants are available and can be compared.
+/// assert_ne!(StaleRobotPolicy::TreatAsObstacle, StaleRobotPolicy::RejectAll);
+/// assert_eq!(StaleRobotPolicy::TreatAsObstacle, StaleRobotPolicy::TreatAsObstacle);
+///
+/// // StaleRobotPolicy is Copy.
+/// let policy = StaleRobotPolicy::RejectAll;
+/// let copy = policy;
+/// assert_eq!(policy, copy);
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum StaleRobotPolicy {
     /// Treat the stale robot as an obstacle at its last known position.
@@ -64,6 +128,32 @@ pub enum StaleRobotPolicy {
 }
 
 /// Configuration for the coordination monitor.
+///
+/// # Examples
+///
+/// ```
+/// use invariant_robotics_coordinator::monitor::{CoordinationConfig, StaleRobotPolicy};
+///
+/// // Default configuration: 0.5m separation, 200ms stale timeout.
+/// let config = CoordinationConfig::default();
+/// assert_eq!(config.min_separation_m, 0.5);
+/// assert_eq!(config.stale_timeout_ms, 200);
+/// assert_eq!(config.stale_policy, StaleRobotPolicy::TreatAsObstacle);
+/// assert!(config.validate().is_ok());
+///
+/// // Custom configuration for a tightly packed cell.
+/// let tight = CoordinationConfig {
+///     min_separation_m: 0.2,
+///     stale_timeout_ms: 100,
+///     stale_policy: StaleRobotPolicy::RejectAll,
+///     max_robots: 4,
+/// };
+/// assert!(tight.validate().is_ok());
+///
+/// // Zero separation is rejected.
+/// let invalid = CoordinationConfig { min_separation_m: 0.0, ..Default::default() };
+/// assert!(invalid.validate().is_err());
+/// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CoordinationConfig {
     /// Minimum distance (meters) between any two robots' end-effectors.
@@ -75,6 +165,24 @@ pub struct CoordinationConfig {
     pub stale_policy: StaleRobotPolicy,
     /// Maximum number of robots that can be registered.
     pub max_robots: usize,
+}
+
+impl CoordinationConfig {
+    /// Validate the configuration.
+    ///
+    /// Returns an error if `min_separation_m` is non-positive or non-finite.
+    pub fn validate(&self) -> Result<(), String> {
+        if !self.min_separation_m.is_finite() || self.min_separation_m <= 0.0 {
+            return Err(format!(
+                "min_separation_m must be finite and positive, got {}",
+                self.min_separation_m
+            ));
+        }
+        if self.max_robots == 0 {
+            return Err("max_robots must be at least 1".into());
+        }
+        Ok(())
+    }
 }
 
 impl Default for CoordinationConfig {
@@ -93,12 +201,41 @@ impl Default for CoordinationConfig {
 // ---------------------------------------------------------------------------
 
 /// Result of a single cross-robot safety check.
+///
+/// # Examples
+///
+/// ```
+/// use invariant_robotics_coordinator::monitor::CrossRobotCheck;
+///
+/// // A passing separation check.
+/// let passing = CrossRobotCheck {
+///     name: "separation".into(),
+///     robot_a: "ur10e-cell-1".into(),
+///     robot_b: "ur10e-cell-2".into(),
+///     passed: true,
+///     details: "minimum separation 1.200m >= 0.500m (closest: gripper <-> gripper)".into(),
+/// };
+/// assert!(passing.passed);
+/// assert_eq!(passing.name, "separation");
+///
+/// // A failing separation check.
+/// let failing = CrossRobotCheck {
+///     name: "separation".into(),
+///     robot_a: "cobot-a".into(),
+///     robot_b: "cobot-b".into(),
+///     passed: false,
+///     details: "VIOLATION: separation 0.150m < 0.500m between tcp and tcp".into(),
+/// };
+/// assert!(!failing.passed);
+/// assert!(failing.details.contains("VIOLATION"));
+/// ```
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CrossRobotCheck {
     /// Name of this check (e.g. "separation", "stale_state").
     pub name: String,
-    /// The two robots involved.
+    /// Identifier of the first robot involved in this check.
     pub robot_a: String,
+    /// Identifier of the second robot involved in this check.
     pub robot_b: String,
     /// Whether this check passed.
     pub passed: bool,
@@ -107,6 +244,47 @@ pub struct CrossRobotCheck {
 }
 
 /// The result of coordinating a robot's proposed state against all other robots.
+///
+/// # Examples
+///
+/// ```
+/// use invariant_robotics_coordinator::monitor::{
+///     CoordinationVerdict, CrossRobotCheck, CoordinationMonitor,
+///     CoordinationConfig, RobotState, EndEffectorState,
+/// };
+/// use chrono::Utc;
+///
+/// let config = CoordinationConfig::default();
+/// let mut monitor = CoordinationMonitor::new(config);
+/// let now = Utc::now();
+///
+/// // Register one robot.
+/// monitor.update_state(RobotState {
+///     robot_id: "ur10e-cell-1".into(),
+///     timestamp: now,
+///     end_effector_positions: vec![
+///         EndEffectorState { name: "gripper".into(), position: [0.0, 0.0, 1.0] },
+///     ],
+///     active: true,
+/// }).unwrap();
+///
+/// // Check a second robot positioned 2.0 m away — should be safe.
+/// let proposed = RobotState {
+///     robot_id: "ur10e-cell-2".into(),
+///     timestamp: now,
+///     end_effector_positions: vec![
+///         EndEffectorState { name: "gripper".into(), position: [2.0, 0.0, 1.0] },
+///     ],
+///     active: true,
+/// };
+/// let verdict = monitor.check(&proposed, now);
+///
+/// assert!(verdict.safe, "robots 2 m apart should pass the 0.5 m separation check");
+/// assert_eq!(verdict.robot_id, "ur10e-cell-2");
+/// assert_eq!(verdict.robots_evaluated, 1);
+/// assert_eq!(verdict.stale_robots, 0);
+/// assert!(verdict.checks.iter().all(|c| c.passed));
+/// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CoordinationVerdict {
     /// The robot being checked.
@@ -131,6 +309,59 @@ pub struct CoordinationVerdict {
 const MAX_EE_PER_ROBOT: usize = 64;
 
 /// The coordinator. Tracks robot states and performs cross-robot checks.
+///
+/// # Examples
+///
+/// ```
+/// use invariant_robotics_coordinator::monitor::{
+///     CoordinationMonitor, CoordinationConfig, RobotState, EndEffectorState,
+///     StaleRobotPolicy,
+/// };
+/// use chrono::Utc;
+///
+/// // Create a monitor for a two-robot welding cell.
+/// let config = CoordinationConfig {
+///     min_separation_m: 0.5,
+///     stale_timeout_ms: 200,
+///     stale_policy: StaleRobotPolicy::TreatAsObstacle,
+///     max_robots: 4,
+/// };
+/// let mut monitor = CoordinationMonitor::new(config);
+/// assert_eq!(monitor.robot_count(), 0);
+///
+/// let now = Utc::now();
+///
+/// // Register robot A.
+/// monitor.update_state(RobotState {
+///     robot_id: "robot-a".into(),
+///     timestamp: now,
+///     end_effector_positions: vec![
+///         EndEffectorState { name: "tcp".into(), position: [0.0, 0.0, 0.8] },
+///     ],
+///     active: true,
+/// }).expect("first robot registration should succeed");
+/// assert_eq!(monitor.robot_count(), 1);
+///
+/// // Query its last-known state.
+/// let state = monitor.get_state("robot-a").expect("state should be present");
+/// assert_eq!(state.robot_id, "robot-a");
+///
+/// // A proposed state for robot B, well separated, should be safe.
+/// let proposed = RobotState {
+///     robot_id: "robot-b".into(),
+///     timestamp: now,
+///     end_effector_positions: vec![
+///         EndEffectorState { name: "tcp".into(), position: [2.0, 0.0, 0.8] },
+///     ],
+///     active: true,
+/// };
+/// let verdict = monitor.check(&proposed, now);
+/// assert!(verdict.safe);
+///
+/// // Remove robot A.
+/// monitor.remove_robot("robot-a");
+/// assert_eq!(monitor.robot_count(), 0);
+/// ```
 pub struct CoordinationMonitor {
     config: CoordinationConfig,
     /// Last-known state for each registered robot.
@@ -250,6 +481,27 @@ impl CoordinationMonitor {
 
     /// Check minimum separation between all end-effector pairs of two robots.
     fn check_separation(&self, robot_a: &RobotState, robot_b: &RobotState) -> CrossRobotCheck {
+        // Fail-closed: reject if any EE position contains NaN/Inf.
+        for (robot, ee_list) in [
+            (&robot_a.robot_id, &robot_a.end_effector_positions),
+            (&robot_b.robot_id, &robot_b.end_effector_positions),
+        ] {
+            for ee in ee_list {
+                if !ee.position.iter().all(|v| v.is_finite()) {
+                    return CrossRobotCheck {
+                        name: "separation".into(),
+                        robot_a: robot_a.robot_id.clone(),
+                        robot_b: robot_b.robot_id.clone(),
+                        passed: false,
+                        details: format!(
+                            "robot '{}' EE '{}' has non-finite position",
+                            robot, ee.name
+                        ),
+                    };
+                }
+            }
+        }
+
         let mut min_dist = f64::MAX;
         let mut closest_a = String::new();
         let mut closest_b = String::new();
@@ -622,5 +874,90 @@ mod tests {
         let verdict = monitor.check(&proposed, now);
         assert!(verdict.safe);
         assert_eq!(verdict.robots_evaluated, 1);
+    }
+
+    // ── Step 104: Coordinator security hardening tests ─────────────────
+
+    #[test]
+    fn config_validate_rejects_zero_separation() {
+        let mut config = CoordinationConfig::default();
+        config.min_separation_m = 0.0;
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn config_validate_rejects_negative_separation() {
+        let mut config = CoordinationConfig::default();
+        config.min_separation_m = -1.0;
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn config_validate_rejects_nan_separation() {
+        let mut config = CoordinationConfig::default();
+        config.min_separation_m = f64::NAN;
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn config_validate_accepts_positive_separation() {
+        let config = CoordinationConfig::default(); // 0.5m
+        assert!(config.validate().is_ok());
+    }
+
+    #[test]
+    fn nan_robot_position_fails_separation_check() {
+        let config = CoordinationConfig::default();
+        let mut monitor = CoordinationMonitor::new(config);
+        let now = Utc::now();
+
+        monitor
+            .update_state(robot_state("r1", &[("ee", [0.0, 0.0, 1.0])], now))
+            .unwrap();
+
+        // Robot r2 has NaN in position — must fail-closed.
+        let nan_robot = robot_state("r2", &[("ee", [f64::NAN, 0.0, 1.0])], now);
+        let verdict = monitor.check(&nan_robot, now);
+        assert!(!verdict.safe, "NaN EE position must fail separation check");
+    }
+
+    #[test]
+    fn inf_robot_position_fails_separation_check() {
+        let config = CoordinationConfig::default();
+        let mut monitor = CoordinationMonitor::new(config);
+        let now = Utc::now();
+
+        monitor
+            .update_state(robot_state("r1", &[("ee", [0.0, 0.0, 1.0])], now))
+            .unwrap();
+
+        let inf_robot = robot_state("r2", &[("ee", [f64::INFINITY, 0.0, 1.0])], now);
+        let verdict = monitor.check(&inf_robot, now);
+        assert!(!verdict.safe, "Inf EE position must fail separation check");
+    }
+
+    #[test]
+    fn config_validate_rejects_zero_max_robots() {
+        let mut config = CoordinationConfig::default();
+        config.max_robots = 0;
+        assert!(config.validate().is_err(), "max_robots=0 must be rejected");
+    }
+
+    #[test]
+    fn identical_positions_detected_as_violation() {
+        let config = CoordinationConfig::default(); // 0.5m min separation
+        let mut monitor = CoordinationMonitor::new(config);
+        let now = Utc::now();
+
+        // Both robots at the same position.
+        monitor
+            .update_state(robot_state("r1", &[("ee", [0.0, 0.0, 1.0])], now))
+            .unwrap();
+        let proposed = robot_state("r2", &[("ee", [0.0, 0.0, 1.0])], now);
+        let verdict = monitor.check(&proposed, now);
+        assert!(
+            !verdict.safe,
+            "identical positions (distance=0) must violate 0.5m separation"
+        );
     }
 }

@@ -94,6 +94,19 @@ fn safe_command(profile: &RobotProfile, chain_b64: &str, ops: Vec<Operation>) ->
         position: [0.0, 0.0, 1.0],
     });
 
+    // P9 requires center_of_mass when stability config is present and enabled.
+    // Supply the support polygon centroid to pass the stability check.
+    let center_of_mass = profile
+        .stability
+        .as_ref()
+        .filter(|s| s.enabled && s.support_polygon.len() >= 3)
+        .map(|s| {
+            let n = s.support_polygon.len() as f64;
+            let cx = s.support_polygon.iter().map(|v| v[0]).sum::<f64>() / n;
+            let cy = s.support_polygon.iter().map(|v| v[1]).sum::<f64>() / n;
+            [cx, cy, s.com_height_estimate]
+        });
+
     Command {
         timestamp: Utc::now(),
         source: "adversarial-test".to_string(),
@@ -101,7 +114,7 @@ fn safe_command(profile: &RobotProfile, chain_b64: &str, ops: Vec<Operation>) ->
         joint_states,
         delta_time: profile.max_delta_time * 0.5,
         end_effector_positions: ee_positions,
-        center_of_mass: None,
+        center_of_mass,
         authority: CommandAuthority {
             pca_chain: chain_b64.to_string(),
             required_ops: ops,
@@ -660,6 +673,7 @@ fn every_injection_type_produces_rejection() {
         InjectionType::LocomotionOverspeed,
         InjectionType::SlipViolation,
         InjectionType::FootClearanceViolation,
+        InjectionType::StompViolation,
         InjectionType::StepOverextension,
         InjectionType::HeadingSpinout,
         InjectionType::GroundReactionSpike,
@@ -676,18 +690,32 @@ fn every_injection_type_produces_rejection() {
     ];
     let profile_has_environment = profile.environment.is_some();
 
+    // Manipulation injections P11/P12/P13/P14 only trigger rejections when the
+    // profile has end_effectors config.  humanoid_28dof has none.
+    let manipulation_injections = [
+        InjectionType::ForceOverload,
+        InjectionType::GraspForceViolation,
+        InjectionType::PayloadOverload,
+        InjectionType::ForceRateSpike,
+    ];
+    let profile_has_end_effectors = !profile.end_effectors.is_empty();
+
     for &inj_type in all_injections {
         let mut cmd = safe_command(&profile, &chain, vec![Operation::new("actuate:*").unwrap()]);
         inject(&mut cmd, inj_type, &profile);
 
         let result = config.validate(&cmd, Utc::now(), None).unwrap();
 
-        // Skip assertion for locomotion injections when the profile lacks
-        // locomotion config, and for ReplayAttack (sequence=0 doesn't fail
-        // without stateful sequence tracking in the validator).
+        // Skip assertion for injections that need specific profile config
+        // to trigger rejections:
+        // - Locomotion injections: need profile.locomotion
+        // - Environment injections P21-P24: need profile.environment
+        // - Manipulation injections P11/P12/P13/P14: need profile.end_effectors
+        // - ReplayAttack: sequence=0 doesn't fail without stateful tracking
         let exempt = inj_type == InjectionType::ReplayAttack
             || (!profile_has_locomotion && locomotion_injections.contains(&inj_type))
-            || (!profile_has_environment && env_config_injections.contains(&inj_type));
+            || (!profile_has_environment && env_config_injections.contains(&inj_type))
+            || (!profile_has_end_effectors && manipulation_injections.contains(&inj_type));
 
         if !exempt {
             assert!(

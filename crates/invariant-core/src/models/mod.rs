@@ -1,10 +1,18 @@
+/// Signed actuation command produced for approved commands (M1).
 pub mod actuation;
+/// Audit log entry types: `AuditEntry` and `SignedAuditEntry`.
 pub mod audit;
+/// PIC authority chain data types: `Pca`, `SignedPca`, `Operation`, `AuthorityChain`.
 pub mod authority;
+/// Robot motion command submitted to the safety validator.
 pub mod command;
+/// Validation error types and the `Validate` trait.
 pub mod error;
+/// Robot profile schema: joints, workspace, exclusion zones, locomotion config, etc.
 pub mod profile;
+/// Simulation trace types: `Trace` and `TraceStep`.
 pub mod trace;
+/// Safety verdict types: `Verdict`, `SignedVerdict`, `CheckResult`, `AuthoritySummary`.
 pub mod verdict;
 
 #[cfg(test)]
@@ -14,7 +22,7 @@ mod tests {
 
     #[test]
     fn deserialize_humanoid_profile() {
-        let json = include_str!("../../../../profiles/humanoid_28dof.json");
+        let json = include_str!("../../profiles/humanoid_28dof.json");
         let profile: RobotProfile =
             serde_json::from_str(json).expect("deserialize humanoid profile");
         assert_eq!(profile.name, "humanoid_28dof");
@@ -589,7 +597,7 @@ mod tests {
     fn validate_environment_config_valid() {
         let json = r#"{
             "name": "test", "version": "1.0.0",
-            "joints": [], "workspace": {"type": "aabb", "min": [-1,-1,0], "max": [1,1,2]},
+            "joints": [{"name":"j1","type":"revolute","min":-1.0,"max":1.0,"max_velocity":1.0,"max_torque":10.0,"max_acceleration":5.0}], "workspace": {"type": "aabb", "min": [-1,-1,0], "max": [1,1,2]},
             "max_delta_time": 0.1,
             "environment": {}
         }"#;
@@ -605,7 +613,7 @@ mod tests {
         use super::error::ValidationError;
         let json = r#"{
             "name": "test", "version": "1.0.0",
-            "joints": [], "workspace": {"type": "aabb", "min": [-1,-1,0], "max": [1,1,2]},
+            "joints": [{"name":"j1","type":"revolute","min":-1.0,"max":1.0,"max_velocity":1.0,"max_torque":10.0,"max_acceleration":5.0}], "workspace": {"type": "aabb", "min": [-1,-1,0], "max": [1,1,2]},
             "max_delta_time": 0.1,
             "environment": {"critical_battery_pct": 20.0, "low_battery_pct": 10.0}
         }"#;
@@ -623,7 +631,7 @@ mod tests {
         use super::error::ValidationError;
         let json = r#"{
             "name": "test", "version": "1.0.0",
-            "joints": [], "workspace": {"type": "aabb", "min": [-1,-1,0], "max": [1,1,2]},
+            "joints": [{"name":"j1","type":"revolute","min":-1.0,"max":1.0,"max_velocity":1.0,"max_torque":10.0,"max_acceleration":5.0}], "workspace": {"type": "aabb", "min": [-1,-1,0], "max": [1,1,2]},
             "max_delta_time": 0.1,
             "environment": {"warning_latency_ms": 200.0, "max_latency_ms": 100.0}
         }"#;
@@ -641,7 +649,7 @@ mod tests {
         use super::error::ValidationError;
         let json = r#"{
             "name": "test", "version": "1.0.0",
-            "joints": [], "workspace": {"type": "aabb", "min": [-1,-1,0], "max": [1,1,2]},
+            "joints": [{"name":"j1","type":"revolute","min":-1.0,"max":1.0,"max_velocity":1.0,"max_torque":10.0,"max_acceleration":5.0}], "workspace": {"type": "aabb", "min": [-1,-1,0], "max": [1,1,2]},
             "max_delta_time": 0.1,
             "environment": {"max_safe_pitch_rad": -0.5}
         }"#;
@@ -652,5 +660,428 @@ mod tests {
             }
             other => panic!("expected EnvironmentConfigInvalid, got {other:?}"),
         }
+    }
+
+    // ── New validation rule tests ─────────────────────────────────────────────
+
+    fn validation_test_profile() -> super::profile::RobotProfile {
+        use super::profile::{
+            JointDefinition, JointType, RobotProfile, SafeStopProfile, WorkspaceBounds,
+        };
+        RobotProfile {
+            name: "test".into(),
+            version: "1.0.0".into(),
+            joints: vec![JointDefinition {
+                name: "j1".into(),
+                joint_type: JointType::Revolute,
+                min: -1.0,
+                max: 1.0,
+                max_velocity: 1.0,
+                max_torque: 10.0,
+                max_acceleration: 5.0,
+            }],
+            workspace: WorkspaceBounds::Aabb {
+                min: [-1.0, -1.0, 0.0],
+                max: [1.0, 1.0, 2.0],
+            },
+            exclusion_zones: vec![],
+            proximity_zones: vec![],
+            collision_pairs: vec![],
+            stability: None,
+            locomotion: None,
+            max_delta_time: 0.01,
+            min_collision_distance: 0.01,
+            global_velocity_scale: 1.0,
+            watchdog_timeout_ms: 50,
+            safe_stop_profile: SafeStopProfile::default(),
+            profile_signature: None,
+            profile_signer_kid: None,
+            config_sequence: None,
+            real_world_margins: None,
+            task_envelope: None,
+            environment: None,
+            end_effectors: vec![],
+        }
+    }
+
+    // ── Rule 1: NoJoints ─────────────────────────────────────────────────────
+
+    #[test]
+    fn validate_no_joints_rejected() {
+        use super::error::ValidationError;
+        let mut profile = validation_test_profile();
+        profile.joints = vec![];
+        assert!(matches!(profile.validate(), Err(ValidationError::NoJoints)));
+    }
+
+    // ── Rule 2: InvalidMaxDeltaTime ──────────────────────────────────────────
+
+    #[test]
+    fn validate_max_delta_time_zero_rejected() {
+        use super::error::ValidationError;
+        let mut profile = validation_test_profile();
+        profile.max_delta_time = 0.0;
+        assert!(matches!(
+            profile.validate(),
+            Err(ValidationError::InvalidMaxDeltaTime(v)) if v == 0.0
+        ));
+    }
+
+    #[test]
+    fn validate_max_delta_time_negative_rejected() {
+        use super::error::ValidationError;
+        let mut profile = validation_test_profile();
+        profile.max_delta_time = -0.01;
+        assert!(matches!(
+            profile.validate(),
+            Err(ValidationError::InvalidMaxDeltaTime(_))
+        ));
+    }
+
+    #[test]
+    fn validate_max_delta_time_nan_rejected() {
+        use super::error::ValidationError;
+        let mut profile = validation_test_profile();
+        profile.max_delta_time = f64::NAN;
+        assert!(matches!(
+            profile.validate(),
+            Err(ValidationError::InvalidMaxDeltaTime(_))
+        ));
+    }
+
+    #[test]
+    fn validate_max_delta_time_infinite_rejected() {
+        use super::error::ValidationError;
+        let mut profile = validation_test_profile();
+        profile.max_delta_time = f64::INFINITY;
+        assert!(matches!(
+            profile.validate(),
+            Err(ValidationError::InvalidMaxDeltaTime(_))
+        ));
+    }
+
+    #[test]
+    fn validate_max_delta_time_positive_passes() {
+        let profile = validation_test_profile(); // max_delta_time = 0.01
+        assert!(profile.validate().is_ok());
+    }
+
+    // ── Rule 3: LocomotionConfigInvalid ──────────────────────────────────────
+
+    fn valid_locomotion() -> super::profile::LocomotionConfig {
+        use super::profile::LocomotionConfig;
+        LocomotionConfig {
+            max_locomotion_velocity: 1.5,
+            max_step_length: 0.3,
+            min_foot_clearance: 0.05,
+            max_step_height: 0.5,
+            max_ground_reaction_force: 200.0,
+            friction_coefficient: 0.8,
+            max_heading_rate: 1.0,
+        }
+    }
+
+    #[test]
+    fn validate_locomotion_valid_passes() {
+        let mut profile = validation_test_profile();
+        profile.locomotion = Some(valid_locomotion());
+        assert!(profile.validate().is_ok());
+    }
+
+    #[test]
+    fn validate_locomotion_zero_velocity_rejected() {
+        use super::error::ValidationError;
+        let mut profile = validation_test_profile();
+        let mut loco = valid_locomotion();
+        loco.max_locomotion_velocity = 0.0;
+        profile.locomotion = Some(loco);
+        assert!(matches!(
+            profile.validate(),
+            Err(ValidationError::LocomotionConfigInvalid { .. })
+        ));
+    }
+
+    #[test]
+    fn validate_locomotion_negative_step_length_rejected() {
+        use super::error::ValidationError;
+        let mut profile = validation_test_profile();
+        let mut loco = valid_locomotion();
+        loco.max_step_length = -0.1;
+        profile.locomotion = Some(loco);
+        assert!(matches!(
+            profile.validate(),
+            Err(ValidationError::LocomotionConfigInvalid { .. })
+        ));
+    }
+
+    #[test]
+    fn validate_locomotion_nan_friction_rejected() {
+        use super::error::ValidationError;
+        let mut profile = validation_test_profile();
+        let mut loco = valid_locomotion();
+        loco.friction_coefficient = f64::NAN;
+        profile.locomotion = Some(loco);
+        assert!(matches!(
+            profile.validate(),
+            Err(ValidationError::LocomotionConfigInvalid { .. })
+        ));
+    }
+
+    #[test]
+    fn validate_locomotion_friction_above_two_rejected() {
+        use super::error::ValidationError;
+        let mut profile = validation_test_profile();
+        let mut loco = valid_locomotion();
+        loco.friction_coefficient = 2.1;
+        profile.locomotion = Some(loco);
+        assert!(matches!(
+            profile.validate(),
+            Err(ValidationError::LocomotionConfigInvalid { .. })
+        ));
+    }
+
+    #[test]
+    fn validate_locomotion_zero_grf_rejected() {
+        use super::error::ValidationError;
+        let mut profile = validation_test_profile();
+        let mut loco = valid_locomotion();
+        loco.max_ground_reaction_force = 0.0;
+        profile.locomotion = Some(loco);
+        assert!(matches!(
+            profile.validate(),
+            Err(ValidationError::LocomotionConfigInvalid { .. })
+        ));
+    }
+
+    // ── Rule 4: RealWorldMarginsInvalid ──────────────────────────────────────
+
+    fn valid_margins() -> super::profile::RealWorldMargins {
+        use super::profile::RealWorldMargins;
+        RealWorldMargins {
+            position_margin: 0.05,
+            velocity_margin: 0.10,
+            torque_margin: 0.08,
+            acceleration_margin: 0.12,
+        }
+    }
+
+    #[test]
+    fn validate_real_world_margins_valid_passes() {
+        let mut profile = validation_test_profile();
+        profile.real_world_margins = Some(valid_margins());
+        assert!(profile.validate().is_ok());
+    }
+
+    #[test]
+    fn validate_real_world_margins_negative_rejected() {
+        use super::error::ValidationError;
+        let mut profile = validation_test_profile();
+        let mut m = valid_margins();
+        m.position_margin = -0.01;
+        profile.real_world_margins = Some(m);
+        assert!(matches!(
+            profile.validate(),
+            Err(ValidationError::RealWorldMarginsInvalid { .. })
+        ));
+    }
+
+    #[test]
+    fn validate_real_world_margins_exactly_one_rejected() {
+        use super::error::ValidationError;
+        let mut profile = validation_test_profile();
+        let mut m = valid_margins();
+        m.velocity_margin = 1.0;
+        profile.real_world_margins = Some(m);
+        assert!(matches!(
+            profile.validate(),
+            Err(ValidationError::RealWorldMarginsInvalid { .. })
+        ));
+    }
+
+    #[test]
+    fn validate_real_world_margins_half_passes() {
+        let mut profile = validation_test_profile();
+        let mut m = valid_margins();
+        m.torque_margin = 0.5;
+        profile.real_world_margins = Some(m);
+        assert!(profile.validate().is_ok());
+    }
+
+    #[test]
+    fn validate_real_world_margins_nan_rejected() {
+        use super::error::ValidationError;
+        let mut profile = validation_test_profile();
+        let mut m = valid_margins();
+        m.acceleration_margin = f64::NAN;
+        profile.real_world_margins = Some(m);
+        assert!(matches!(
+            profile.validate(),
+            Err(ValidationError::RealWorldMarginsInvalid { .. })
+        ));
+    }
+
+    // ── Rule 5: EndEffectorConfigInvalid ─────────────────────────────────────
+
+    fn valid_end_effector() -> super::profile::EndEffectorConfig {
+        use super::profile::EndEffectorConfig;
+        EndEffectorConfig {
+            name: "gripper".into(),
+            max_force_n: 100.0,
+            max_grasp_force_n: 80.0,
+            min_grasp_force_n: 5.0,
+            max_force_rate_n_per_s: 500.0,
+            max_payload_kg: 10.0,
+        }
+    }
+
+    #[test]
+    fn validate_end_effector_valid_passes() {
+        let mut profile = validation_test_profile();
+        profile.end_effectors = vec![valid_end_effector()];
+        assert!(profile.validate().is_ok());
+    }
+
+    #[test]
+    fn validate_end_effector_negative_max_force_rejected() {
+        use super::error::ValidationError;
+        let mut profile = validation_test_profile();
+        let mut ee = valid_end_effector();
+        ee.max_force_n = -1.0;
+        profile.end_effectors = vec![ee];
+        assert!(matches!(
+            profile.validate(),
+            Err(ValidationError::EndEffectorConfigInvalid { .. })
+        ));
+    }
+
+    #[test]
+    fn validate_end_effector_min_grasp_ge_max_grasp_rejected() {
+        use super::error::ValidationError;
+        let mut profile = validation_test_profile();
+        let mut ee = valid_end_effector();
+        ee.min_grasp_force_n = 80.0; // equal to max_grasp_force_n
+        profile.end_effectors = vec![ee];
+        assert!(matches!(
+            profile.validate(),
+            Err(ValidationError::EndEffectorConfigInvalid { .. })
+        ));
+    }
+
+    #[test]
+    fn validate_end_effector_nan_payload_rejected() {
+        use super::error::ValidationError;
+        let mut profile = validation_test_profile();
+        let mut ee = valid_end_effector();
+        ee.max_payload_kg = f64::NAN;
+        profile.end_effectors = vec![ee];
+        assert!(matches!(
+            profile.validate(),
+            Err(ValidationError::EndEffectorConfigInvalid { .. })
+        ));
+    }
+
+    #[test]
+    fn validate_end_effector_zero_force_rate_rejected() {
+        use super::error::ValidationError;
+        let mut profile = validation_test_profile();
+        let mut ee = valid_end_effector();
+        ee.max_force_rate_n_per_s = 0.0;
+        profile.end_effectors = vec![ee];
+        assert!(matches!(
+            profile.validate(),
+            Err(ValidationError::EndEffectorConfigInvalid { .. })
+        ));
+    }
+
+    // ── Rule 7: StabilityConfigInvalid (Step 99) ────────────────────────────
+
+    fn valid_stability() -> super::profile::StabilityConfig {
+        super::profile::StabilityConfig {
+            support_polygon: vec![[0.0, 0.0], [1.0, 0.0], [0.5, 1.0]],
+            com_height_estimate: 0.9,
+            enabled: true,
+        }
+    }
+
+    #[test]
+    fn validate_stability_valid_config_accepted() {
+        let mut profile = validation_test_profile();
+        profile.stability = Some(valid_stability());
+        assert!(profile.validate().is_ok());
+    }
+
+    #[test]
+    fn validate_stability_nan_com_height_rejected() {
+        use super::error::ValidationError;
+        let mut profile = validation_test_profile();
+        let mut stab = valid_stability();
+        stab.com_height_estimate = f64::NAN;
+        profile.stability = Some(stab);
+        assert!(matches!(
+            profile.validate(),
+            Err(ValidationError::StabilityConfigInvalid { .. })
+        ));
+    }
+
+    #[test]
+    fn validate_stability_zero_com_height_rejected() {
+        use super::error::ValidationError;
+        let mut profile = validation_test_profile();
+        let mut stab = valid_stability();
+        stab.com_height_estimate = 0.0;
+        profile.stability = Some(stab);
+        assert!(matches!(
+            profile.validate(),
+            Err(ValidationError::StabilityConfigInvalid { .. })
+        ));
+    }
+
+    #[test]
+    fn validate_stability_enabled_fewer_than_3_vertices_rejected() {
+        use super::error::ValidationError;
+        let mut profile = validation_test_profile();
+        let mut stab = valid_stability();
+        stab.support_polygon = vec![[0.0, 0.0], [1.0, 0.0]]; // only 2
+        profile.stability = Some(stab);
+        assert!(matches!(
+            profile.validate(),
+            Err(ValidationError::StabilityConfigInvalid { .. })
+        ));
+    }
+
+    #[test]
+    fn validate_stability_disabled_fewer_than_3_vertices_accepted() {
+        let mut profile = validation_test_profile();
+        let mut stab = valid_stability();
+        stab.enabled = false;
+        stab.support_polygon = vec![[0.0, 0.0]]; // only 1, but disabled
+        profile.stability = Some(stab);
+        assert!(profile.validate().is_ok());
+    }
+
+    #[test]
+    fn validate_stability_nan_polygon_vertex_rejected() {
+        use super::error::ValidationError;
+        let mut profile = validation_test_profile();
+        let mut stab = valid_stability();
+        stab.support_polygon = vec![[0.0, 0.0], [f64::NAN, 0.0], [0.5, 1.0]];
+        profile.stability = Some(stab);
+        assert!(matches!(
+            profile.validate(),
+            Err(ValidationError::StabilityConfigInvalid { .. })
+        ));
+    }
+
+    #[test]
+    fn validate_stability_infinity_polygon_vertex_rejected() {
+        use super::error::ValidationError;
+        let mut profile = validation_test_profile();
+        let mut stab = valid_stability();
+        stab.support_polygon = vec![[0.0, 0.0], [1.0, f64::INFINITY], [0.5, 1.0]];
+        profile.stability = Some(stab);
+        assert!(matches!(
+            profile.validate(),
+            Err(ValidationError::StabilityConfigInvalid { .. })
+        ));
     }
 }

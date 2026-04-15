@@ -1,10 +1,10 @@
 # Invariant
 
-[![Tests](https://img.shields.io/badge/tests-1210_passing-brightgreen)]()
-[![Clippy](https://img.shields.io/badge/clippy-zero_warnings-brightgreen)]()
-[![Unsafe](https://img.shields.io/badge/unsafe-forbidden-brightgreen)]()
-[![License](https://img.shields.io/badge/license-MIT-blue)]()
-[![Language](https://img.shields.io/badge/language-100%25_Rust-orange)]()
+[![CI](https://github.com/clay-good/invariant/actions/workflows/ci.yml/badge.svg)](https://github.com/clay-good/invariant/actions/workflows/ci.yml)
+[![Crates.io](https://img.shields.io/crates/v/invariant-robotics)](https://crates.io/crates/invariant-robotics)
+[![docs.rs](https://img.shields.io/docsrs/invariant-robotics-core)](https://docs.rs/invariant-robotics-core)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![unsafe forbidden](https://img.shields.io/badge/unsafe-forbidden-brightgreen.svg)](https://github.com/rust-secure-code/safety-dance/)
 
 **Cryptographic command-validation firewall for AI-controlled robots.**
 
@@ -115,8 +115,7 @@ cargo install invariant-robotics
 | `invariant-eval` | Trace evaluation: 3 presets (safety, completeness, regression), rubrics, guardrails, differ |
 | `invariant-fuzz` | Adversarial testing: protocol attacks (PA1-PA15), authority attacks (AA1-AA10), system attacks (SA1-SA15), cognitive escape strategies (CE1-CE10) |
 | `invariant-coordinator` | Multi-robot coordination: separation monitoring, workspace partitioning |
-| `invariant-ros2` | ROS 2 bridge: 8 message types, Python bridge node, launch file (separate package) |
-| `formal/` | Lean 4 formal specification of invariants with proof sketches |
+| `formal/` | Lean 4 formal specification of invariants with proof sketches (separate build) |
 
 ### Built-in Robot Profiles
 
@@ -182,6 +181,11 @@ invariant profile init --name my_robot --joints 6 --output my_robot.json
 invariant verify-self
 invariant verify-package --path proof-package/
 invariant transfer --sim-log sim.jsonl --real-log shadow.jsonl
+
+# Shell completions (bash, zsh, fish, elvish, powershell)
+invariant completions bash >> ~/.bashrc
+invariant completions zsh > ~/.zfunc/_invariant
+invariant completions fish > ~/.config/fish/completions/invariant.fish
 ```
 
 ---
@@ -261,7 +265,7 @@ while not env.is_done:
 ### Library Embedding
 
 ```rust
-use invariant_core::validator::ValidatorConfig;
+use invariant_robotics_core::validator::ValidatorConfig;
 
 let config = ValidatorConfig::new(profile, trusted_keys, signing_key, kid)?;
 let result = config.validate(&command, now, previous_joints)?;
@@ -328,8 +332,8 @@ EDGE PC (Invariant)          UR10e                    HAAS VF-2
 
 ```sh
 cargo build --release
-cargo test                    # 1210 Rust tests
-python3 -m pytest isaac/tests # 42 Python tests (unit + e2e bridge)
+cargo test                    # ~2000 tests (unit + integration + doc-tests)
+python3 -m pytest isaac/tests # Python tests (unit + e2e bridge)
 cargo clippy -- -D warnings   # zero warnings
 ./examples/demo.sh            # five-minute proof
 ```
@@ -346,3 +350,17 @@ Or from source:
 ```sh
 cargo install --path crates/invariant-cli
 ```
+
+---
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, coding standards, and PR process.
+
+## Security
+
+To report a vulnerability, see [SECURITY.md](SECURITY.md).
+
+## License
+
+This project is licensed under the [MIT License](LICENSE).

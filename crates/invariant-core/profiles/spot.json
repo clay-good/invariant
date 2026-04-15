@@ -1,0 +1,85 @@
+{
+  "name": "spot",
+  "version": "1.0.0",
+  "joints": [
+    {"name": "fl_hip_x",  "type": "revolute", "min": -0.785, "max":  0.785, "max_velocity":  8.0, "max_torque":  45.0, "max_acceleration": 35.0},
+    {"name": "fl_hip_y",  "type": "revolute", "min": -0.90,  "max":  2.50,  "max_velocity":  8.0, "max_torque":  45.0, "max_acceleration": 35.0},
+    {"name": "fl_knee",   "type": "revolute", "min": -2.79,  "max": -0.40,  "max_velocity": 12.0, "max_torque": 115.0, "max_acceleration": 40.0},
+    {"name": "fr_hip_x",  "type": "revolute", "min": -0.785, "max":  0.785, "max_velocity":  8.0, "max_torque":  45.0, "max_acceleration": 35.0},
+    {"name": "fr_hip_y",  "type": "revolute", "min": -0.90,  "max":  2.50,  "max_velocity":  8.0, "max_torque":  45.0, "max_acceleration": 35.0},
+    {"name": "fr_knee",   "type": "revolute", "min": -2.79,  "max": -0.40,  "max_velocity": 12.0, "max_torque": 115.0, "max_acceleration": 40.0},
+    {"name": "rl_hip_x",  "type": "revolute", "min": -0.785, "max":  0.785, "max_velocity":  8.0, "max_torque":  45.0, "max_acceleration": 35.0},
+    {"name": "rl_hip_y",  "type": "revolute", "min": -0.90,  "max":  2.50,  "max_velocity":  8.0, "max_torque":  45.0, "max_acceleration": 35.0},
+    {"name": "rl_knee",   "type": "revolute", "min": -2.79,  "max": -0.40,  "max_velocity": 12.0, "max_torque": 115.0, "max_acceleration": 40.0},
+    {"name": "rr_hip_x",  "type": "revolute", "min": -0.785, "max":  0.785, "max_velocity":  8.0, "max_torque":  45.0, "max_acceleration": 35.0},
+    {"name": "rr_hip_y",  "type": "revolute", "min": -0.90,  "max":  2.50,  "max_velocity":  8.0, "max_torque":  45.0, "max_acceleration": 35.0},
+    {"name": "rr_knee",   "type": "revolute", "min": -2.79,  "max": -0.40,  "max_velocity": 12.0, "max_torque": 115.0, "max_acceleration": 40.0}
+  ],
+  "workspace": {
+    "type": "aabb",
+    "min": [-1.2, -1.2, 0.0],
+    "max": [1.2, 1.2, 0.8]
+  },
+  "exclusion_zones": [
+    {
+      "type": "aabb",
+      "name": "operator_feet",
+      "min": [0.6, -0.3, 0.0],
+      "max": [2.0, 0.3, 0.3]
+    }
+  ],
+  "proximity_zones": [
+    {
+      "name": "human_nearby",
+      "type": "sphere",
+      "center": [1.2, 0.0, 0.4],
+      "radius": 1.5,
+      "velocity_scale": 0.5,
+      "dynamic": true
+    }
+  ],
+  "collision_pairs": [
+    ["fl_foot", "fr_foot"],
+    ["rl_foot", "rr_foot"],
+    ["fl_foot", "rl_foot"],
+    ["fr_foot", "rr_foot"]
+  ],
+  "stability": {
+    "support_polygon": [[-0.30, -0.14], [0.30, -0.14], [0.30, 0.14], [-0.30, 0.14]],
+    "com_height_estimate": 0.50,
+    "enabled": true
+  },
+  "locomotion": {
+    "max_locomotion_velocity": 1.6,
+    "max_step_length": 0.35,
+    "min_foot_clearance": 0.02,
+    "max_step_height": 0.20,
+    "max_ground_reaction_force": 500.0,
+    "friction_coefficient": 0.7,
+    "max_heading_rate": 1.5
+  },
+  "max_delta_time": 0.02,
+  "min_collision_distance": 0.01,
+  "global_velocity_scale": 1.0,
+  "watchdog_timeout_ms": 50,
+  "environment": {
+    "max_safe_pitch_rad": 0.5236,
+    "max_safe_roll_rad": 0.3491,
+    "max_operating_temperature_c": 45.0,
+    "critical_battery_pct": 5.0,
+    "low_battery_pct": 15.0,
+    "max_latency_ms": 100.0,
+    "warning_latency_ms": 50.0
+  },
+  "real_world_margins": {
+    "position_margin": 0.05,
+    "velocity_margin": 0.10,
+    "torque_margin": 0.10,
+    "acceleration_margin": 0.10
+  },
+  "safe_stop_profile": {
+    "strategy": "controlled_crouch",
+    "max_deceleration": 20.0,
+    "target_joint_positions": {}
+  }
+}

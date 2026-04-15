@@ -31,10 +31,55 @@ mod base64_bytes {
 ///
 /// Wildcard `*` is only meaningful at the leaf segment — matching is handled
 /// by `pic::operations`.
+///
+/// # Examples
+///
+/// ```
+/// use invariant_robotics_core::models::authority::Operation;
+/// use invariant_robotics_core::models::error::ValidationError;
+///
+/// // Valid operations
+/// let op = Operation::new("actuate:humanoid:left_arm:*").unwrap();
+/// assert_eq!(op.as_str(), "actuate:humanoid:left_arm:*");
+///
+/// let op2 = Operation::new("actuate:arm:joints").unwrap();
+/// assert_eq!(op2.as_str(), "actuate:arm:joints");
+///
+/// // Bare wildcard
+/// let wildcard = Operation::new("*").unwrap();
+/// assert_eq!(wildcard.as_str(), "*");
+///
+/// // Invalid operations
+/// assert!(matches!(
+///     Operation::new(""),
+///     Err(ValidationError::InvalidOperation(_))
+/// ));
+/// assert!(matches!(
+///     Operation::new("bad op"),  // whitespace not allowed
+///     Err(ValidationError::InvalidOperation(_))
+/// ));
+/// assert!(matches!(
+///     Operation::new("::leading-colon"),
+///     Err(ValidationError::InvalidOperation(_))
+/// ));
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Operation(String);
 
 impl Operation {
+    /// Validate and construct an `Operation` from a string.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use invariant_robotics_core::models::authority::Operation;
+    ///
+    /// assert!(Operation::new("actuate:arm:*").is_ok());
+    /// assert!(Operation::new("sensor.read:imu-1").is_ok());
+    /// assert!(Operation::new("").is_err());
+    /// assert!(Operation::new("a::b").is_err());  // consecutive colons
+    /// assert!(Operation::new("a:*:b").is_err());  // wildcard not at leaf
+    /// ```
     pub fn new(s: impl Into<String>) -> Result<Self, ValidationError> {
         let s = s.into();
         if s.is_empty() {
@@ -71,6 +116,19 @@ impl Operation {
         Ok(Self(s))
     }
 
+    /// Return the underlying operation string slice.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use invariant_robotics_core::models::authority::Operation;
+    ///
+    /// let op = Operation::new("actuate:gripper:close").unwrap();
+    /// assert_eq!(op.as_str(), "actuate:gripper:close");
+    ///
+    /// // Useful for pattern matching and logging
+    /// assert!(op.as_str().starts_with("actuate:"));
+    /// ```
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -107,6 +165,33 @@ impl<'de> Deserialize<'de> for Operation {
 
 /// A Principal Capability Assertion (PCA) claim — the decoded payload of a
 /// COSE_Sign1 envelope.
+///
+/// # Examples
+///
+/// ```
+/// use std::collections::BTreeSet;
+/// use invariant_robotics_core::models::authority::{Pca, Operation};
+///
+/// let mut ops = BTreeSet::new();
+/// ops.insert(Operation::new("actuate:arm:*").unwrap());
+/// ops.insert(Operation::new("actuate:gripper:*").unwrap());
+///
+/// let pca = Pca {
+///     p_0: "safety-officer@example.com".into(),
+///     ops,
+///     kid: "validator-key-001".into(),
+///     exp: Some(
+///         chrono::DateTime::parse_from_rfc3339("2025-01-01T00:00:00Z")
+///             .unwrap()
+///             .with_timezone(&chrono::Utc),
+///     ),
+///     nbf: None,
+/// };
+///
+/// assert_eq!(pca.p_0, "safety-officer@example.com");
+/// assert_eq!(pca.ops.len(), 2);
+/// assert!(pca.exp.is_some());
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Pca {
     /// Immutable origin principal (p_0). Must be identical across every hop.
@@ -125,6 +210,21 @@ pub struct Pca {
 ///
 /// The claim is decoded from the COSE payload during chain verification,
 /// not stored alongside the raw bytes (prevents claim/payload mismatch attacks).
+///
+/// # Examples
+///
+/// ```
+/// use invariant_robotics_core::models::authority::SignedPca;
+///
+/// // In production the bytes come from a COSE_Sign1 signing operation.
+/// // Here we use a placeholder to illustrate the struct layout.
+/// let signed = SignedPca {
+///     raw: vec![0xd2, 0x84, 0x40, 0xa0, 0x40, 0x40],  // minimal COSE stub
+/// };
+///
+/// assert!(!signed.raw.is_empty());
+/// assert_eq!(signed.raw[0], 0xd2);
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SignedPca {
     /// Raw COSE_Sign1 bytes (base64-encoded in JSON).
@@ -139,6 +239,19 @@ pub struct SignedPca {
 ///
 /// Fields are private — only `verify_chain` can construct this type, preventing
 /// callers from forging a validated chain.
+///
+/// # Examples
+///
+/// ```
+/// // AuthorityChain is constructed only by verify_chain. This example shows
+/// // the accessor methods available on a verified chain.
+/// // (Constructing via the public API requires a real signed PCA chain.)
+/// use invariant_robotics_core::models::authority::Operation;
+///
+/// // The final_ops set on a chain determines which operations can be authorized.
+/// let op = Operation::new("actuate:arm:joints").unwrap();
+/// assert_eq!(op.as_str(), "actuate:arm:joints");
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct AuthorityChain {
     hops: Vec<SignedPca>,
@@ -159,14 +272,51 @@ impl AuthorityChain {
         }
     }
 
+    /// Returns all signed PCA hops in the chain (from root to leaf).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use invariant_robotics_core::models::authority::SignedPca;
+    ///
+    /// // In production, hops() is called on an AuthorityChain returned by verify_chain.
+    /// // Here we illustrate that SignedPca carries raw COSE bytes.
+    /// let hop = SignedPca { raw: vec![0xd2, 0x84] };
+    /// assert_eq!(hop.raw.len(), 2);
+    /// ```
     pub fn hops(&self) -> &[SignedPca] {
         &self.hops
     }
 
+    /// Returns the immutable origin principal (p_0) common to all hops.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use invariant_robotics_core::models::authority::Operation;
+    ///
+    /// // The origin principal never changes across hops (A1 invariant).
+    /// // Illustrating the type used to carry it:
+    /// let p0 = "safety-officer@acme.com".to_string();
+    /// assert!(p0.contains('@'));
+    /// ```
     pub fn origin_principal(&self) -> &str {
         &self.origin_principal
     }
 
+    /// Returns the final (leaf) operation set granted by the chain.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use invariant_robotics_core::models::authority::Operation;
+    /// use std::collections::BTreeSet;
+    ///
+    /// // final_ops() is the set used for operation coverage checks.
+    /// let mut ops: BTreeSet<Operation> = BTreeSet::new();
+    /// ops.insert(Operation::new("actuate:arm:*").unwrap());
+    /// assert!(ops.contains(&Operation::new("actuate:arm:*").unwrap()));
+    /// ```
     pub fn final_ops(&self) -> &BTreeSet<Operation> {
         &self.final_ops
     }

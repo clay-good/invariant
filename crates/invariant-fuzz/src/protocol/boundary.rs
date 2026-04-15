@@ -14,6 +14,53 @@ use invariant_core::models::profile::{RobotProfile, WorkspaceBounds};
 const EPSILON: f64 = 1e-9;
 
 /// Generates boundary-probing commands for a robot profile.
+///
+/// For each joint, `probe_all_joints` produces four commands:
+/// - `min` and `max` (PA1 — expected to pass the joint-limits check)
+/// - `min - epsilon` and `max + epsilon` (PA2 — expected to be rejected)
+///
+/// # Examples
+///
+/// ```
+/// use invariant_robotics_fuzz::protocol::boundary::BoundaryProber;
+/// use invariant_core::models::profile::{RobotProfile, JointDefinition, JointType,
+///                                        WorkspaceBounds, SafeStopProfile};
+///
+/// let profile = RobotProfile {
+///     name: "cobot".into(),
+///     version: "1.0.0".into(),
+///     joints: vec![
+///         JointDefinition { name: "wrist".into(), joint_type: JointType::Revolute,
+///                           min: -3.14, max: 3.14, max_velocity: 2.0,
+///                           max_torque: 10.0, max_acceleration: 20.0 },
+///     ],
+///     workspace: WorkspaceBounds::Aabb { min: [-1.0,-1.0,0.0], max: [1.0,1.0,2.0] },
+///     exclusion_zones: vec![], proximity_zones: vec![], collision_pairs: vec![],
+///     stability: None, locomotion: None, max_delta_time: 0.1,
+///     min_collision_distance: 0.01, global_velocity_scale: 1.0,
+///     watchdog_timeout_ms: 50, safe_stop_profile: SafeStopProfile::default(),
+///     profile_signature: None, profile_signer_kid: None, config_sequence: None,
+///     real_world_margins: None, task_envelope: None, environment: None,
+///     end_effectors: vec![],
+/// };
+///
+/// // One joint => 4 probes (min, max, min-eps, max+eps).
+/// let probes = BoundaryProber::probe_all_joints(&profile);
+/// assert_eq!(probes.len(), 4);
+///
+/// // The first two are at the exact limits and should pass.
+/// assert!(probes[0].1, "min boundary probe should be expected-pass");
+/// assert!(probes[1].1, "max boundary probe should be expected-pass");
+///
+/// // The last two exceed limits and should be rejected.
+/// assert!(!probes[2].1, "min-epsilon probe should be expected-reject");
+/// assert!(!probes[3].1, "max+epsilon probe should be expected-reject");
+///
+/// // All commands have the correct source tag.
+/// for (cmd, _) in &probes {
+///     assert_eq!(cmd.source, "boundary-prober");
+/// }
+/// ```
 pub struct BoundaryProber;
 
 impl BoundaryProber {
@@ -131,6 +178,19 @@ fn make_command(profile: &RobotProfile, target_joint: &str, position: f64) -> Co
         })
         .collect();
 
+    // P9 requires center_of_mass when stability config is present and enabled
+    // (fail-closed). Supply the polygon centroid so boundary probes pass P9.
+    let center_of_mass = profile
+        .stability
+        .as_ref()
+        .filter(|s| s.enabled && s.support_polygon.len() >= 3)
+        .map(|s| {
+            let n = s.support_polygon.len() as f64;
+            let cx = s.support_polygon.iter().map(|v| v[0]).sum::<f64>() / n;
+            let cy = s.support_polygon.iter().map(|v| v[1]).sum::<f64>() / n;
+            [cx, cy, s.com_height_estimate]
+        });
+
     Command {
         timestamp: chrono::Utc::now(),
         source: "boundary-prober".to_string(),
@@ -138,7 +198,7 @@ fn make_command(profile: &RobotProfile, target_joint: &str, position: f64) -> Co
         joint_states,
         delta_time: profile.max_delta_time * 0.5,
         end_effector_positions: build_ee_positions(profile),
-        center_of_mass: None,
+        center_of_mass,
         authority: CommandAuthority {
             // Callers must attach a valid chain.
             pca_chain: String::new(),

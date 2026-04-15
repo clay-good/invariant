@@ -23,15 +23,27 @@ pub fn check_stability(
     center_of_mass: Option<&[f64; 3]>,
     stability_config: Option<&StabilityConfig>,
 ) -> CheckResult {
-    // Cannot evaluate — treat as passing.
+    // When the profile defines stability config and it is enabled, but the
+    // command omits center_of_mass, fail-closed rather than silently passing.
+    // This prevents an attacker from bypassing P9 by omitting the COM field.
     let (com, config) = match (center_of_mass, stability_config) {
         (Some(c), Some(s)) => (c, s),
+        (None, Some(s)) if s.enabled => {
+            return CheckResult {
+                name: "stability".to_string(),
+                category: "physics".to_string(),
+                passed: false,
+                details: "stability check failed: profile requires stability but command has no center_of_mass".to_string(),
+                derating: None,
+            };
+        }
         _ => {
             return CheckResult {
                 name: "stability".to_string(),
                 category: "physics".to_string(),
                 passed: true,
-                details: "stability check not evaluated (no data)".to_string(),
+                details: "stability check not evaluated (no data or disabled)".to_string(),
+                derating: None,
             };
         }
     };
@@ -42,6 +54,7 @@ pub fn check_stability(
             category: "physics".to_string(),
             passed: true,
             details: "stability check disabled".to_string(),
+            derating: None,
         };
     }
 
@@ -53,6 +66,7 @@ pub fn check_stability(
             passed: false,
             details: "stability check failed: degenerate support polygon (fewer than 3 vertices)"
                 .to_string(),
+            derating: None,
         };
     }
 
@@ -63,6 +77,7 @@ pub fn check_stability(
             category: "physics".to_string(),
             passed: false,
             details: "center of mass contains NaN or infinite value".to_string(),
+            derating: None,
         };
     }
 
@@ -76,6 +91,7 @@ pub fn check_stability(
             category: "physics".to_string(),
             passed: true,
             details: format!("CoM ({:.4}, {:.4}) is within the support polygon", px, py),
+            derating: None,
         }
     } else {
         CheckResult {
@@ -83,6 +99,7 @@ pub fn check_stability(
             category: "physics".to_string(),
             passed: false,
             details: format!("CoM ({:.4}, {:.4}) is outside the support polygon", px, py),
+            derating: None,
         }
     }
 }

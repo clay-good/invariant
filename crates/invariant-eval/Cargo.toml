@@ -4,6 +4,7 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 description = "Trace evaluation engine for Invariant (presets, rubrics, guardrails, differ)."
+readme = "../../README.md"
 
 [dependencies]
 invariant-core = { package = "invariant-robotics-core", path = "../invariant-core", version = "0.0.2" }

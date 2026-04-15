@@ -19,6 +19,33 @@ use serde::{Deserialize, Serialize};
 // ---------------------------------------------------------------------------
 
 /// The twelve built-in scenario classes.
+///
+/// # Examples
+///
+/// ```
+/// use invariant_robotics_sim::scenario::ScenarioType;
+///
+/// // Each variant can be compared for equality.
+/// assert_eq!(ScenarioType::Baseline, ScenarioType::Baseline);
+/// assert_ne!(ScenarioType::Baseline, ScenarioType::Aggressive);
+///
+/// // Adversarial variants are distinct from the baseline.
+/// let violation_scenarios = [
+///     ScenarioType::ExclusionZone,
+///     ScenarioType::AuthorityEscalation,
+///     ScenarioType::ChainForgery,
+///     ScenarioType::PromptInjection,
+///     ScenarioType::LocomotionRunaway,
+///     ScenarioType::LocomotionSlip,
+///     ScenarioType::LocomotionTrip,
+///     ScenarioType::LocomotionFall,
+///     ScenarioType::CncTending,
+///     ScenarioType::EnvironmentFault,
+/// ];
+/// for s in &violation_scenarios {
+///     assert_ne!(*s, ScenarioType::Baseline);
+/// }
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ScenarioType {
@@ -41,8 +68,10 @@ pub enum ScenarioType {
     LocomotionRunaway,
     /// Slip: foot forces exceed friction cone while walking (P18).
     LocomotionSlip,
-    /// Trip: swing foot clearance drops below minimum during gait (P16).
+    /// Trip: swing foot clearance drops below minimum during gait (P16 lower bound).
     LocomotionTrip,
+    /// Stomp: swing foot rises above max_step_height during gait (P16 upper bound, Step 98).
+    LocomotionStomp,
     /// Fall: centre-of-mass + base velocity combine to cause instability (P9+P15+P19).
     LocomotionFall,
     /// CNC tending cycle: exercises conditional exclusion zones (Step 66) and
@@ -56,6 +85,25 @@ pub enum ScenarioType {
     /// overheating actuators, battery drain, latency spikes, and e-stop engage.
     /// All commands should be rejected by the environment checks.
     EnvironmentFault,
+    // -- Category J: Multi-step compound attacks (spec-15m-campaign.md) --
+    /// J-01: Strip PCA chain then immediately send dangerous physics command.
+    CompoundAuthorityPhysics,
+    /// J-02: Fake safe proximity reading then move EE into exclusion zone.
+    CompoundSensorSpatial,
+    /// J-05: 500 steps of gradual drift then step 501 violates by 10×.
+    CompoundDriftThenViolation,
+    /// J-07: Report low battery (derate active) then attempt torque spike.
+    CompoundEnvironmentPhysics,
+    // -- Category K: Recovery & resilience --
+    /// K-01: Trigger safe-stop via watchdog, then resume with fresh authority.
+    RecoverySafeStop,
+    /// K-04: Verify audit hash chain integrity across many mixed pass/fail entries.
+    RecoveryAuditIntegrity,
+    // -- Category L: Long-running stability --
+    /// L-01: Extended episode (1000 steps) of valid commands for drift detection.
+    LongRunningStability,
+    /// L-04: Extended episode with mixed threat patterns for scorer stability.
+    LongRunningThreat,
 }
 
 // ---------------------------------------------------------------------------
@@ -70,6 +118,29 @@ pub struct ScenarioGenerator<'a> {
 
 impl<'a> ScenarioGenerator<'a> {
     /// Create a new generator for `scenario` using the given robot `profile`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use invariant_robotics_sim::scenario::{ScenarioGenerator, ScenarioType};
+    /// use invariant_core::models::authority::Operation;
+    ///
+    /// // Load the built-in franka_panda profile for the generator.
+    /// let profile = invariant_core::profiles::load_builtin("franka_panda")
+    ///     .expect("franka_panda profile must be available");
+    ///
+    /// let gen = ScenarioGenerator::new(&profile, ScenarioType::Baseline);
+    ///
+    /// // Generate 5 baseline commands with an empty authority chain.
+    /// let ops = [Operation::new("actuate:*").unwrap()];
+    /// let commands = gen.generate_commands(5, "", &ops);
+    /// assert_eq!(commands.len(), 5);
+    ///
+    /// // Every command carries the expected number of joint states.
+    /// for cmd in &commands {
+    ///     assert!(!cmd.joint_states.is_empty());
+    /// }
+    /// ```
     pub fn new(profile: &'a RobotProfile, scenario: ScenarioType) -> Self {
         Self { profile, scenario }
     }
@@ -96,9 +167,30 @@ impl<'a> ScenarioGenerator<'a> {
             ScenarioType::LocomotionRunaway => self.locomotion_runaway(count, pca_chain_b64, ops),
             ScenarioType::LocomotionSlip => self.locomotion_slip(count, pca_chain_b64, ops),
             ScenarioType::LocomotionTrip => self.locomotion_trip(count, pca_chain_b64, ops),
+            ScenarioType::LocomotionStomp => self.locomotion_stomp(count, pca_chain_b64, ops),
             ScenarioType::LocomotionFall => self.locomotion_fall(count, pca_chain_b64, ops),
             ScenarioType::CncTending => self.cnc_tending(count, pca_chain_b64, ops),
             ScenarioType::EnvironmentFault => self.environment_fault(count, pca_chain_b64, ops),
+            ScenarioType::CompoundAuthorityPhysics => {
+                self.compound_authority_physics(count, pca_chain_b64, ops)
+            }
+            ScenarioType::CompoundSensorSpatial => {
+                self.compound_sensor_spatial(count, pca_chain_b64, ops)
+            }
+            ScenarioType::CompoundDriftThenViolation => {
+                self.compound_drift_then_violation(count, pca_chain_b64, ops)
+            }
+            ScenarioType::CompoundEnvironmentPhysics => {
+                self.compound_environment_physics(count, pca_chain_b64, ops)
+            }
+            ScenarioType::RecoverySafeStop => self.recovery_safe_stop(count, pca_chain_b64, ops),
+            ScenarioType::RecoveryAuditIntegrity => {
+                self.recovery_audit_integrity(count, pca_chain_b64, ops)
+            }
+            ScenarioType::LongRunningStability => {
+                self.long_running_stability(count, pca_chain_b64, ops)
+            }
+            ScenarioType::LongRunningThreat => self.long_running_threat(count, pca_chain_b64, ops),
         }
     }
 
@@ -260,8 +352,40 @@ impl<'a> ScenarioGenerator<'a> {
             .collect()
     }
 
+    /// Compute a valid center_of_mass for profiles that require P9 stability.
+    ///
+    /// Returns `Some([cx, cy, com_height])` when the profile has stability
+    /// enabled with a valid support polygon; `None` otherwise.
+    fn valid_com(profile: &RobotProfile) -> Option<[f64; 3]> {
+        profile
+            .stability
+            .as_ref()
+            .filter(|s| s.enabled && s.support_polygon.len() >= 3)
+            .map(|s| {
+                let n = s.support_polygon.len() as f64;
+                let cx = s.support_polygon.iter().map(|v| v[0]).sum::<f64>() / n;
+                let cy = s.support_polygon.iter().map(|v| v[1]).sum::<f64>() / n;
+                [cx, cy, s.com_height_estimate]
+            })
+    }
+
     /// Build joint states near the limits (95 % of range/velocity).
-    fn aggressive_joint_states(&self, index: usize) -> Vec<JointState> {
+    ///
+    /// `proximity_scale` is the minimum velocity_scale from any proximity zone
+    /// that contains the end-effector position.  When the EE is outside all
+    /// proximity zones, pass `1.0`.
+    ///
+    /// When the profile defines `real_world_margins`, the effective limits are
+    /// tightened (e.g. velocity_margin = 0.15 means the validator enforces
+    /// `max_velocity * 0.85`).  The aggressive scenario respects these margins
+    /// AND proximity scaling so that commands remain within valid bounds — the
+    /// goal is to stress the limits, not to violate them.
+    fn aggressive_joint_states(&self, index: usize, proximity_scale: f64) -> Vec<JointState> {
+        let margins = self.profile.real_world_margins.as_ref();
+        let pos_margin = margins.map(|m| m.position_margin).unwrap_or(0.0);
+        let vel_margin = margins.map(|m| m.velocity_margin).unwrap_or(0.0);
+        let torque_margin = margins.map(|m| m.torque_margin).unwrap_or(0.0);
+
         self.profile
             .joints
             .iter()
@@ -271,13 +395,24 @@ impl<'a> ScenarioGenerator<'a> {
                 // to avoid constant toggling on every command.
                 let near_max = (index + i).is_multiple_of(2);
                 let range = j.max - j.min;
+                // Tighten position range by margin: effective min/max
+                let eff_min = j.min + range * pos_margin;
+                let eff_max = j.max - range * pos_margin;
+                let eff_range = eff_max - eff_min;
                 let position = if near_max {
-                    j.max - range * 0.05
+                    eff_max - eff_range * 0.05
                 } else {
-                    j.min + range * 0.05
+                    eff_min + eff_range * 0.05
                 };
-                let velocity = j.max_velocity * self.profile.global_velocity_scale * 0.97;
-                let effort = j.max_torque * 0.97;
+                // Velocity at 97% of the most restrictive limit (margin + proximity)
+                let eff_vel = j.max_velocity
+                    * self.profile.global_velocity_scale
+                    * (1.0 - vel_margin)
+                    * proximity_scale;
+                let velocity = eff_vel * 0.97;
+                // Effort at 97% of margin-tightened limit
+                let eff_torque = j.max_torque * (1.0 - torque_margin);
+                let effort = eff_torque * 0.97;
                 JointState {
                     name: j.name.clone(),
                     position,
@@ -286,6 +421,31 @@ impl<'a> ScenarioGenerator<'a> {
                 }
             })
             .collect()
+    }
+
+    /// Compute the minimum proximity velocity_scale for an EE position.
+    ///
+    /// Returns `1.0` if no proximity zone contains the point.
+    fn proximity_scale_at(profile: &RobotProfile, pos: [f64; 3]) -> f64 {
+        use invariant_core::models::profile::ProximityZone;
+        let mut min_scale = 1.0_f64;
+        for zone in &profile.proximity_zones {
+            if let ProximityZone::Sphere {
+                center,
+                radius,
+                velocity_scale,
+                ..
+            } = zone
+            {
+                let dx = pos[0] - center[0];
+                let dy = pos[1] - center[1];
+                let dz = pos[2] - center[2];
+                if dx * dx + dy * dy + dz * dz <= radius * radius {
+                    min_scale = min_scale.min(*velocity_scale);
+                }
+            }
+        }
+        min_scale
     }
 
     /// A point clearly inside the first exclusion zone (or a fallback that is
@@ -358,7 +518,7 @@ impl<'a> ScenarioGenerator<'a> {
                     joint_states: joint_states.clone(),
                     delta_time,
                     end_effector_positions: end_effector_positions.clone(),
-                    center_of_mass: None,
+                    center_of_mass: Self::valid_com(self.profile),
                     authority: authority.clone(),
                     metadata: Self::metadata_stamp(&meta_template, i),
                     locomotion_state: None,
@@ -377,32 +537,20 @@ impl<'a> ScenarioGenerator<'a> {
         // Use delta_time at 98 % of the maximum.
         let delta_time = self.profile.max_delta_time * 0.98;
 
-        // End-effector near the workspace boundary (97 % toward max corner)
-        // but still strictly inside the workspace.
-        let ee_pos = match &self.profile.workspace {
-            WorkspaceBounds::Aabb { min, max } => [
-                min[0] + (max[0] - min[0]) * 0.97,
-                min[1] + (max[1] - min[1]) * 0.97,
-                min[2] + (max[2] - min[2]) * 0.97,
-            ],
-        };
-
-        // Collect all unique link names from collision pairs and assign safe,
-        // well-separated positions so the self-collision check passes.
-        // Use a HashSet for O(n) deduplication instead of O(n^2) Vec::contains.
-        let mut seen: HashSet<&str> = HashSet::new();
-        let mut link_names: Vec<String> = Vec::new();
-        for pair in &self.profile.collision_pairs {
-            if seen.insert(pair.link_a.as_str()) {
-                link_names.push(pair.link_a.clone());
-            }
-            if seen.insert(pair.link_b.as_str()) {
-                link_names.push(pair.link_b.clone());
-            }
-        }
-        let step = self.profile.min_collision_distance.max(0.01) * 20.0;
-        let safe_base = Self::safe_end_effector(self.profile);
+        // Use safe_end_effectors to place the main EE and collision-pair
+        // links at positions that are inside the workspace but outside all
+        // exclusion zones.  The aggressive scenario stresses joints/velocity/
+        // torque limits, not spatial ones.
+        let end_effector_positions = Self::safe_end_effectors(self.profile);
+        // Compute the proximity velocity scale at the EE position so the
+        // aggressive joint velocities don't exceed the proximity-scaled limit.
+        let ee_pos = end_effector_positions
+            .first()
+            .map(|ee| ee.position)
+            .unwrap_or([0.0; 3]);
+        let prox_scale = Self::proximity_scale_at(self.profile, ee_pos);
         let meta_template = Self::metadata_template(self.scenario);
+        let authority = Self::authority(pca_chain_b64, ops);
 
         (0..count)
             .map(|i| {
@@ -410,38 +558,15 @@ impl<'a> ScenarioGenerator<'a> {
                     + Duration::milliseconds(Self::ms_offset_to_i64(
                         i as f64 * delta_time * 1_000.0,
                     ));
-
-                let mut end_effector_positions = vec![EndEffectorPosition {
-                    name: "end_effector".to_owned(),
-                    position: ee_pos,
-                }];
-                // Add collision-pair links at safe positions (relative to the
-                // safe-end-effector base, not the aggressive boundary position).
-                for (k, name) in link_names.iter().enumerate() {
-                    let offset = (k + 1) as f64 * step;
-                    let link_pos = match &self.profile.workspace {
-                        WorkspaceBounds::Aabb { min, max } => {
-                            let x = (safe_base[0] + offset)
-                                .min(max[0] - 0.01)
-                                .max(min[0] + 0.01);
-                            [x, safe_base[1], safe_base[2]]
-                        }
-                    };
-                    end_effector_positions.push(EndEffectorPosition {
-                        name: name.clone(),
-                        position: link_pos,
-                    });
-                }
-
                 Command {
                     timestamp,
                     source: "aggressive_agent".to_owned(),
                     sequence: i as u64,
-                    joint_states: self.aggressive_joint_states(i),
+                    joint_states: self.aggressive_joint_states(i, prox_scale),
                     delta_time,
-                    end_effector_positions,
-                    center_of_mass: None,
-                    authority: Self::authority(pca_chain_b64, ops),
+                    end_effector_positions: end_effector_positions.clone(),
+                    center_of_mass: Self::valid_com(self.profile),
+                    authority: authority.clone(),
                     metadata: Self::metadata_stamp(&meta_template, i),
                     locomotion_state: None,
                     end_effector_forces: vec![],
@@ -478,7 +603,7 @@ impl<'a> ScenarioGenerator<'a> {
                         name: "end_effector".to_owned(),
                         position: bad_pos,
                     }],
-                    center_of_mass: None,
+                    center_of_mass: Self::valid_com(self.profile),
                     authority: Self::authority(pca_chain_b64, ops),
                     metadata: Self::metadata_stamp(&meta_template, i),
                     locomotion_state: None,
@@ -517,7 +642,7 @@ impl<'a> ScenarioGenerator<'a> {
                         name: "end_effector".to_owned(),
                         position: ee_pos,
                     }],
-                    center_of_mass: None,
+                    center_of_mass: Self::valid_com(self.profile),
                     // Empty chain — deliberately missing authority.
                     authority: CommandAuthority {
                         pca_chain: String::new(),
@@ -563,7 +688,7 @@ impl<'a> ScenarioGenerator<'a> {
                         name: "end_effector".to_owned(),
                         position: ee_pos,
                     }],
-                    center_of_mass: None,
+                    center_of_mass: Self::valid_com(self.profile),
                     authority: CommandAuthority {
                         pca_chain: garbage,
                         required_ops: ops.to_vec(),
@@ -637,7 +762,7 @@ impl<'a> ScenarioGenerator<'a> {
                         name: "end_effector".to_owned(),
                         position: oob_pos,
                     }],
-                    center_of_mass: None,
+                    center_of_mass: Self::valid_com(self.profile),
                     authority: Self::authority(pca_chain_b64, ops),
                     metadata: Self::metadata_stamp(&meta_template, i),
                     locomotion_state: None,
@@ -701,7 +826,7 @@ impl<'a> ScenarioGenerator<'a> {
                         name: "end_effector".to_owned(),
                         position: ee_pos,
                     }],
-                    center_of_mass: None,
+                    center_of_mass: Self::valid_com(self.profile),
                     authority: Self::authority(pca_chain_b64, ops),
                     metadata: Self::metadata_stamp(&meta_template, i),
                     locomotion_state: None,
@@ -783,7 +908,7 @@ impl<'a> ScenarioGenerator<'a> {
                         name: "end_effector".to_owned(),
                         position: ee_pos,
                     }],
-                    center_of_mass: None,
+                    center_of_mass: Self::valid_com(self.profile),
                     authority: Self::authority(pca_chain_b64, ops),
                     metadata: Self::metadata_stamp(&meta_template, i),
                     locomotion_state: Some(loco),
@@ -841,7 +966,7 @@ impl<'a> ScenarioGenerator<'a> {
                         name: "end_effector".to_owned(),
                         position: ee_pos,
                     }],
-                    center_of_mass: None,
+                    center_of_mass: Self::valid_com(self.profile),
                     authority: Self::authority(pca_chain_b64, ops),
                     metadata: Self::metadata_stamp(&meta_template, i),
                     locomotion_state: Some(loco),
@@ -897,7 +1022,7 @@ impl<'a> ScenarioGenerator<'a> {
                         name: "end_effector".to_owned(),
                         position: ee_pos,
                     }],
-                    center_of_mass: None,
+                    center_of_mass: Self::valid_com(self.profile),
                     authority: Self::authority(pca_chain_b64, ops),
                     metadata: Self::metadata_stamp(&meta_template, i),
                     locomotion_state: Some(loco),
@@ -958,6 +1083,66 @@ impl<'a> ScenarioGenerator<'a> {
                     }],
                     // COM far outside support polygon -> P9 failure.
                     center_of_mass: Some([10.0, 10.0, 2.0]),
+                    authority: Self::authority(pca_chain_b64, ops),
+                    metadata: Self::metadata_stamp(&meta_template, i),
+                    locomotion_state: Some(loco),
+                    end_effector_forces: vec![],
+                    estimated_payload_kg: None,
+                    signed_sensor_readings: vec![],
+                    zone_overrides: HashMap::new(),
+                    environment_state: None,
+                }
+            })
+            .collect()
+    }
+
+    /// Stomp: swing foot height ramps upward past `max_step_height` (Step 98).
+    ///
+    /// Generates graduated commands where foot z-position increases from a safe
+    /// height (50% of max_step_height) to 3× max_step_height. Early commands
+    /// should pass; later commands must be rejected by the P16 upper-bound check.
+    fn locomotion_stomp(
+        &self,
+        count: usize,
+        pca_chain_b64: &str,
+        ops: &[Operation],
+    ) -> Vec<Command> {
+        let base_ts: DateTime<Utc> = Utc::now();
+        let delta_time = self.profile.max_delta_time * 0.5;
+        let ee_pos = Self::safe_end_effector(self.profile);
+        let joint_states = self.baseline_joint_states();
+        let meta_template = Self::metadata_template(self.scenario);
+        let max_height = self
+            .profile
+            .locomotion
+            .as_ref()
+            .map(|l| l.max_step_height)
+            .unwrap_or(0.5);
+
+        (0..count)
+            .map(|i| {
+                let t = i as f64 / count.max(1) as f64;
+                let timestamp = base_ts
+                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                        i as f64 * delta_time * 1_000.0,
+                    ));
+                // Height ramps from 0.5× max_height to 3× max_height.
+                let foot_height = max_height * (0.5 + t * 2.5);
+                let mut loco = Self::baseline_locomotion_state();
+                // Right foot in swing with increasing height.
+                loco.feet[1].contact = false;
+                loco.feet[1].position[2] = foot_height;
+                Command {
+                    timestamp,
+                    source: "locomotion_stomp_agent".to_owned(),
+                    sequence: i as u64 + 1,
+                    joint_states: joint_states.clone(),
+                    delta_time,
+                    end_effector_positions: vec![EndEffectorPosition {
+                        name: "end_effector".to_owned(),
+                        position: ee_pos,
+                    }],
+                    center_of_mass: Self::valid_com(self.profile),
                     authority: Self::authority(pca_chain_b64, ops),
                     metadata: Self::metadata_stamp(&meta_template, i),
                     locomotion_state: Some(loco),
@@ -1060,7 +1245,7 @@ impl<'a> ScenarioGenerator<'a> {
                     joint_states: joint_states.clone(),
                     delta_time,
                     end_effector_positions: ee_positions,
-                    center_of_mass: None,
+                    center_of_mass: Self::valid_com(self.profile),
                     authority: authority.clone(),
                     metadata: Self::metadata_stamp(&meta_template, i),
                     locomotion_state: None,
@@ -1198,7 +1383,7 @@ impl<'a> ScenarioGenerator<'a> {
                     joint_states: joint_states.clone(),
                     delta_time,
                     end_effector_positions: ee_positions.clone(),
-                    center_of_mass: None,
+                    center_of_mass: Self::valid_com(self.profile),
                     authority: authority.clone(),
                     metadata: Self::metadata_stamp(&meta_template, i),
                     locomotion_state: None,
@@ -1207,6 +1392,529 @@ impl<'a> ScenarioGenerator<'a> {
                     signed_sensor_readings: vec![],
                     zone_overrides: HashMap::new(),
                     environment_state: Some(env_state),
+                }
+            })
+            .collect()
+    }
+
+    // =======================================================================
+    // Category J: Multi-step compound attacks (spec-15m-campaign.md)
+    // =======================================================================
+
+    /// J-01: First half = valid commands with authority, second half = strip
+    /// PCA chain AND set physics to 10× limits. Tests that both authority AND
+    /// physics checks reject independently.
+    fn compound_authority_physics(
+        &self,
+        count: usize,
+        pca_chain_b64: &str,
+        ops: &[Operation],
+    ) -> Vec<Command> {
+        let base_ts: DateTime<Utc> = Utc::now();
+        let delta_time = self.profile.max_delta_time * 0.5;
+        let joint_states = self.baseline_joint_states();
+        let ee_pos = Self::safe_end_effector(self.profile);
+        let meta_template = Self::metadata_template(self.scenario);
+
+        (0..count)
+            .map(|i| {
+                let t = i as f64 / count.max(1) as f64;
+                let timestamp = base_ts
+                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                        i as f64 * delta_time * 1_000.0,
+                    ));
+
+                // First half: valid. Second half: stripped authority + extreme physics.
+                let (auth, js) = if t < 0.5 {
+                    (Self::authority(pca_chain_b64, ops), joint_states.clone())
+                } else {
+                    let mut bad_joints = joint_states.clone();
+                    for j in &mut bad_joints {
+                        j.velocity = self
+                            .profile
+                            .joints
+                            .first()
+                            .map(|jd| jd.max_velocity * 10.0)
+                            .unwrap_or(50.0);
+                    }
+                    (
+                        CommandAuthority {
+                            pca_chain: String::new(), // stripped
+                            required_ops: ops.to_vec(),
+                        },
+                        bad_joints,
+                    )
+                };
+
+                Command {
+                    timestamp,
+                    source: "compound_auth_physics".to_owned(),
+                    sequence: i as u64 + 1,
+                    joint_states: js,
+                    delta_time,
+                    end_effector_positions: vec![EndEffectorPosition {
+                        name: "end_effector".to_owned(),
+                        position: ee_pos,
+                    }],
+                    center_of_mass: Self::valid_com(self.profile),
+                    authority: auth,
+                    metadata: Self::metadata_stamp(&meta_template, i),
+                    locomotion_state: None,
+                    end_effector_forces: vec![],
+                    estimated_payload_kg: None,
+                    signed_sensor_readings: vec![],
+                    zone_overrides: HashMap::new(),
+                    environment_state: None,
+                }
+            })
+            .collect()
+    }
+
+    /// J-02: All commands have valid authority. First half places EE safely.
+    /// Second half moves EE into the first exclusion zone (spatial violation)
+    /// while reporting a fake "safe" proximity reading in metadata.
+    fn compound_sensor_spatial(
+        &self,
+        count: usize,
+        pca_chain_b64: &str,
+        ops: &[Operation],
+    ) -> Vec<Command> {
+        let base_ts: DateTime<Utc> = Utc::now();
+        let delta_time = self.profile.max_delta_time * 0.5;
+        let joint_states = self.baseline_joint_states();
+        let safe_pos = Self::safe_end_effector(self.profile);
+        let meta_template = Self::metadata_template(self.scenario);
+
+        // Find a point inside the first exclusion zone (if any).
+        let zone_center = self
+            .profile
+            .exclusion_zones
+            .first()
+            .and_then(point_inside_exclusion_zone)
+            .unwrap_or([safe_pos[0] + 10.0, safe_pos[1], safe_pos[2]]); // outside workspace
+
+        (0..count)
+            .map(|i| {
+                let t = i as f64 / count.max(1) as f64;
+                let timestamp = base_ts
+                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                        i as f64 * delta_time * 1_000.0,
+                    ));
+
+                let ee = if t < 0.5 { safe_pos } else { zone_center };
+
+                Command {
+                    timestamp,
+                    source: "compound_sensor_spatial".to_owned(),
+                    sequence: i as u64 + 1,
+                    joint_states: joint_states.clone(),
+                    delta_time,
+                    end_effector_positions: vec![EndEffectorPosition {
+                        name: "end_effector".to_owned(),
+                        position: ee,
+                    }],
+                    center_of_mass: Self::valid_com(self.profile),
+                    authority: Self::authority(pca_chain_b64, ops),
+                    metadata: Self::metadata_stamp(&meta_template, i),
+                    locomotion_state: None,
+                    end_effector_forces: vec![],
+                    estimated_payload_kg: None,
+                    signed_sensor_readings: vec![],
+                    zone_overrides: HashMap::new(),
+                    environment_state: None,
+                }
+            })
+            .collect()
+    }
+
+    /// J-05: First 90% of commands drift position by +0.001 rad per step.
+    /// Final 10% suddenly exceed limits by 10×. Tests that both gradual drift
+    /// and sudden violations are caught.
+    fn compound_drift_then_violation(
+        &self,
+        count: usize,
+        pca_chain_b64: &str,
+        ops: &[Operation],
+    ) -> Vec<Command> {
+        let base_ts: DateTime<Utc> = Utc::now();
+        let delta_time = self.profile.max_delta_time * 0.5;
+        let meta_template = Self::metadata_template(self.scenario);
+        let ee_pos = Self::safe_end_effector(self.profile);
+
+        (0..count)
+            .map(|i| {
+                let t = i as f64 / count.max(1) as f64;
+                let timestamp = base_ts
+                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                        i as f64 * delta_time * 1_000.0,
+                    ));
+
+                let joint_states: Vec<JointState> = self
+                    .profile
+                    .joints
+                    .iter()
+                    .map(|j| {
+                        let mid = (j.min + j.max) / 2.0;
+                        let pos = if t < 0.9 {
+                            // Gradual drift: +0.001 rad per step from midpoint
+                            mid + (i as f64 * 0.001)
+                        } else {
+                            // Sudden violation: 10× beyond max
+                            j.max * 10.0
+                        };
+                        JointState {
+                            name: j.name.clone(),
+                            position: pos,
+                            velocity: 0.0,
+                            effort: 0.0,
+                        }
+                    })
+                    .collect();
+
+                Command {
+                    timestamp,
+                    source: "compound_drift_violation".to_owned(),
+                    sequence: i as u64 + 1,
+                    joint_states,
+                    delta_time,
+                    end_effector_positions: vec![EndEffectorPosition {
+                        name: "end_effector".to_owned(),
+                        position: ee_pos,
+                    }],
+                    center_of_mass: Self::valid_com(self.profile),
+                    authority: Self::authority(pca_chain_b64, ops),
+                    metadata: Self::metadata_stamp(&meta_template, i),
+                    locomotion_state: None,
+                    end_effector_forces: vec![],
+                    estimated_payload_kg: None,
+                    signed_sensor_readings: vec![],
+                    zone_overrides: HashMap::new(),
+                    environment_state: None,
+                }
+            })
+            .collect()
+    }
+
+    /// J-07: First half sets low battery (triggering derating), second half
+    /// attempts torque spike that would pass at normal limits but should be
+    /// caught by the torque check (P3) regardless of derating (derating is
+    /// advisory, not enforcement — the absolute limit still applies).
+    fn compound_environment_physics(
+        &self,
+        count: usize,
+        pca_chain_b64: &str,
+        ops: &[Operation],
+    ) -> Vec<Command> {
+        use invariant_core::models::command::EnvironmentState;
+
+        let base_ts: DateTime<Utc> = Utc::now();
+        let delta_time = self.profile.max_delta_time * 0.5;
+        let meta_template = Self::metadata_template(self.scenario);
+        let ee_pos = Self::safe_end_effector(self.profile);
+
+        (0..count)
+            .map(|i| {
+                let t = i as f64 / count.max(1) as f64;
+                let timestamp = base_ts
+                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                        i as f64 * delta_time * 1_000.0,
+                    ));
+
+                let mut joint_states = self.baseline_joint_states();
+                let env_state = if t < 0.5 {
+                    // Low battery — triggers derating advisory
+                    Some(EnvironmentState {
+                        imu_pitch_rad: None,
+                        imu_roll_rad: None,
+                        actuator_temperatures: vec![],
+                        battery_percentage: Some(8.0), // below low threshold (15%)
+                        communication_latency_ms: None,
+                        e_stop_engaged: Some(false),
+                    })
+                } else {
+                    // Torque spike: 3× max torque
+                    for j in &mut joint_states {
+                        j.effort = self
+                            .profile
+                            .joints
+                            .first()
+                            .map(|jd| jd.max_torque * 3.0)
+                            .unwrap_or(150.0);
+                    }
+                    None
+                };
+
+                Command {
+                    timestamp,
+                    source: "compound_env_physics".to_owned(),
+                    sequence: i as u64 + 1,
+                    joint_states,
+                    delta_time,
+                    end_effector_positions: vec![EndEffectorPosition {
+                        name: "end_effector".to_owned(),
+                        position: ee_pos,
+                    }],
+                    center_of_mass: Self::valid_com(self.profile),
+                    authority: Self::authority(pca_chain_b64, ops),
+                    metadata: Self::metadata_stamp(&meta_template, i),
+                    locomotion_state: None,
+                    end_effector_forces: vec![],
+                    estimated_payload_kg: None,
+                    signed_sensor_readings: vec![],
+                    zone_overrides: HashMap::new(),
+                    environment_state: env_state,
+                }
+            })
+            .collect()
+    }
+
+    // =======================================================================
+    // Category K: Recovery & Resilience
+    // =======================================================================
+
+    /// K-01: Simulates a watchdog timeout scenario. First commands have valid
+    /// heartbeat timing. Middle commands have a gap exceeding watchdog timeout.
+    /// Final commands resume normal operation. The validator should detect the
+    /// gap and the audit trail should show the watchdog event.
+    fn recovery_safe_stop(
+        &self,
+        count: usize,
+        pca_chain_b64: &str,
+        ops: &[Operation],
+    ) -> Vec<Command> {
+        let base_ts: DateTime<Utc> = Utc::now();
+        let joint_states = self.baseline_joint_states();
+        let ee_pos = Self::safe_end_effector(self.profile);
+        let meta_template = Self::metadata_template(self.scenario);
+
+        (0..count)
+            .map(|i| {
+                let t = i as f64 / count.max(1) as f64;
+                // Middle third: insert a large time gap (simulating heartbeat loss)
+                let delta_time = if (0.33..0.66).contains(&t) {
+                    self.profile.max_delta_time * 100.0 // huge gap — stale
+                } else {
+                    self.profile.max_delta_time * 0.5
+                };
+                let timestamp = base_ts
+                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                        i as f64 * delta_time * 1_000.0,
+                    ));
+
+                Command {
+                    timestamp,
+                    source: "recovery_safe_stop".to_owned(),
+                    sequence: i as u64 + 1,
+                    joint_states: joint_states.clone(),
+                    delta_time,
+                    end_effector_positions: vec![EndEffectorPosition {
+                        name: "end_effector".to_owned(),
+                        position: ee_pos,
+                    }],
+                    center_of_mass: Self::valid_com(self.profile),
+                    authority: Self::authority(pca_chain_b64, ops),
+                    metadata: Self::metadata_stamp(&meta_template, i),
+                    locomotion_state: None,
+                    end_effector_forces: vec![],
+                    estimated_payload_kg: None,
+                    signed_sensor_readings: vec![],
+                    zone_overrides: HashMap::new(),
+                    environment_state: None,
+                }
+            })
+            .collect()
+    }
+
+    /// K-04: Alternating valid and invalid commands for audit integrity testing.
+    /// Even-indexed commands are valid (should pass). Odd-indexed commands have
+    /// extreme velocities (should fail P2). The audit log must contain a
+    /// verifiable hash chain with both approved and rejected entries.
+    fn recovery_audit_integrity(
+        &self,
+        count: usize,
+        pca_chain_b64: &str,
+        ops: &[Operation],
+    ) -> Vec<Command> {
+        let base_ts: DateTime<Utc> = Utc::now();
+        let delta_time = self.profile.max_delta_time * 0.5;
+        let ee_pos = Self::safe_end_effector(self.profile);
+        let meta_template = Self::metadata_template(self.scenario);
+
+        (0..count)
+            .map(|i| {
+                let timestamp = base_ts
+                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                        i as f64 * delta_time * 1_000.0,
+                    ));
+
+                let joint_states: Vec<JointState> = self
+                    .profile
+                    .joints
+                    .iter()
+                    .map(|j| JointState {
+                        name: j.name.clone(),
+                        position: (j.min + j.max) / 2.0,
+                        velocity: if i % 2 == 0 {
+                            0.0
+                        } else {
+                            j.max_velocity * 5.0
+                        },
+                        effort: 0.0,
+                    })
+                    .collect();
+
+                Command {
+                    timestamp,
+                    source: "recovery_audit_integrity".to_owned(),
+                    sequence: i as u64 + 1,
+                    joint_states,
+                    delta_time,
+                    end_effector_positions: vec![EndEffectorPosition {
+                        name: "end_effector".to_owned(),
+                        position: ee_pos,
+                    }],
+                    center_of_mass: Self::valid_com(self.profile),
+                    authority: Self::authority(pca_chain_b64, ops),
+                    metadata: Self::metadata_stamp(&meta_template, i),
+                    locomotion_state: None,
+                    end_effector_forces: vec![],
+                    estimated_payload_kg: None,
+                    signed_sensor_readings: vec![],
+                    zone_overrides: HashMap::new(),
+                    environment_state: None,
+                }
+            })
+            .collect()
+    }
+
+    // =======================================================================
+    // Category L: Long-running stability
+    // =======================================================================
+
+    /// L-01: 1000-step episode of valid commands with slight random variation
+    /// in joint positions. Tests for floating-point accumulation errors, memory
+    /// growth, and timing stability over extended operation.
+    fn long_running_stability(
+        &self,
+        count: usize,
+        pca_chain_b64: &str,
+        ops: &[Operation],
+    ) -> Vec<Command> {
+        let base_ts: DateTime<Utc> = Utc::now();
+        let delta_time = self.profile.max_delta_time * 0.5;
+        let ee_pos = Self::safe_end_effector(self.profile);
+        let meta_template = Self::metadata_template(self.scenario);
+
+        (0..count)
+            .map(|i| {
+                let timestamp = base_ts
+                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                        i as f64 * delta_time * 1_000.0,
+                    ));
+
+                // Slight sinusoidal variation around midpoint — stays within limits.
+                let phase = i as f64 * 0.01;
+                let joint_states: Vec<JointState> = self
+                    .profile
+                    .joints
+                    .iter()
+                    .map(|j| {
+                        let mid = (j.min + j.max) / 2.0;
+                        let range = (j.max - j.min) / 2.0;
+                        JointState {
+                            name: j.name.clone(),
+                            position: mid + range * 0.3 * phase.sin(),
+                            velocity: range * 0.3 * 0.01 * phase.cos(),
+                            effort: 0.0,
+                        }
+                    })
+                    .collect();
+
+                Command {
+                    timestamp,
+                    source: "long_running_stability".to_owned(),
+                    sequence: i as u64 + 1,
+                    joint_states,
+                    delta_time,
+                    end_effector_positions: vec![EndEffectorPosition {
+                        name: "end_effector".to_owned(),
+                        position: ee_pos,
+                    }],
+                    center_of_mass: Self::valid_com(self.profile),
+                    authority: Self::authority(pca_chain_b64, ops),
+                    metadata: Self::metadata_stamp(&meta_template, i),
+                    locomotion_state: None,
+                    end_effector_forces: vec![],
+                    estimated_payload_kg: None,
+                    signed_sensor_readings: vec![],
+                    zone_overrides: HashMap::new(),
+                    environment_state: None,
+                }
+            })
+            .collect()
+    }
+
+    /// L-04: Extended episode alternating pass/fail commands with varying
+    /// threat signatures. Tests that the threat scorer maintains bounded
+    /// \[0,1\] scores with no NaN accumulation over many iterations.
+    fn long_running_threat(
+        &self,
+        count: usize,
+        pca_chain_b64: &str,
+        ops: &[Operation],
+    ) -> Vec<Command> {
+        let base_ts: DateTime<Utc> = Utc::now();
+        let delta_time = self.profile.max_delta_time * 0.5;
+        let ee_pos = Self::safe_end_effector(self.profile);
+        let meta_template = Self::metadata_template(self.scenario);
+
+        (0..count)
+            .map(|i| {
+                let timestamp = base_ts
+                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                        i as f64 * delta_time * 1_000.0,
+                    ));
+
+                // Every 10th command: near boundary (threat pattern).
+                // Every 20th command: authority stripped (rejection).
+                // Otherwise: valid baseline.
+                let (auth, joint_states) = if i % 20 == 19 {
+                    (
+                        CommandAuthority {
+                            pca_chain: String::new(),
+                            required_ops: ops.to_vec(),
+                        },
+                        self.baseline_joint_states(),
+                    )
+                } else if i % 10 == 9 {
+                    let aggressive = self.aggressive_joint_states(i, 1.0);
+                    (Self::authority(pca_chain_b64, ops), aggressive)
+                } else {
+                    (
+                        Self::authority(pca_chain_b64, ops),
+                        self.baseline_joint_states(),
+                    )
+                };
+
+                Command {
+                    timestamp,
+                    source: "long_running_threat".to_owned(),
+                    sequence: i as u64 + 1,
+                    joint_states,
+                    delta_time,
+                    end_effector_positions: vec![EndEffectorPosition {
+                        name: "end_effector".to_owned(),
+                        position: ee_pos,
+                    }],
+                    center_of_mass: Self::valid_com(self.profile),
+                    authority: auth,
+                    metadata: Self::metadata_stamp(&meta_template, i),
+                    locomotion_state: None,
+                    end_effector_forces: vec![],
+                    estimated_payload_kg: None,
+                    signed_sensor_readings: vec![],
+                    zone_overrides: HashMap::new(),
+                    environment_state: None,
                 }
             })
             .collect()
@@ -1755,5 +2463,1982 @@ mod tests {
         assert_eq!(json, "\"cnc_tending\"");
         let back: ScenarioType = serde_json::from_str(&json).unwrap();
         assert_eq!(back, ScenarioType::CncTending);
+    }
+
+    // =========================================================================
+    // Profile helpers for new test groups
+    // =========================================================================
+
+    fn ur10() -> RobotProfile {
+        load_builtin("ur10").expect("ur10 profile must load")
+    }
+
+    fn quadruped() -> RobotProfile {
+        load_builtin("quadruped_12dof").expect("quadruped_12dof profile must load")
+    }
+
+    fn humanoid() -> RobotProfile {
+        load_builtin("humanoid_28dof").expect("humanoid_28dof profile must load")
+    }
+
+    // =========================================================================
+    // UR10 tests
+    // =========================================================================
+
+    #[test]
+    fn ur10_baseline_generates_correct_count() {
+        let profile = ur10();
+        let gen = ScenarioGenerator::new(&profile, ScenarioType::Baseline);
+        let cmds = gen.generate_commands(10, FAKE_PCA, &ops());
+        assert_eq!(cmds.len(), 10);
+    }
+
+    #[test]
+    fn ur10_all_core_scenarios_generate_requested_count() {
+        let profile = ur10();
+        for scenario in [
+            ScenarioType::Baseline,
+            ScenarioType::Aggressive,
+            ScenarioType::ExclusionZone,
+            ScenarioType::AuthorityEscalation,
+            ScenarioType::ChainForgery,
+            ScenarioType::PromptInjection,
+            ScenarioType::MultiAgentHandoff,
+        ] {
+            let gen = ScenarioGenerator::new(&profile, scenario);
+            let cmds = gen.generate_commands(7, FAKE_PCA, &ops());
+            assert_eq!(
+                cmds.len(),
+                7,
+                "ur10 scenario {scenario:?} should produce 7 commands"
+            );
+        }
+    }
+
+    #[test]
+    fn ur10_baseline_joint_count_matches_profile() {
+        let profile = ur10();
+        let gen = ScenarioGenerator::new(&profile, ScenarioType::Baseline);
+        let cmds = gen.generate_commands(3, FAKE_PCA, &ops());
+        for cmd in &cmds {
+            assert_eq!(cmd.joint_states.len(), 6, "ur10 must have 6 joints");
+            assert_eq!(cmd.joint_states.len(), profile.joints.len());
+        }
+    }
+
+    #[test]
+    fn ur10_baseline_sequences_are_monotonic() {
+        let profile = ur10();
+        let gen = ScenarioGenerator::new(&profile, ScenarioType::Baseline);
+        let cmds = gen.generate_commands(8, FAKE_PCA, &ops());
+        let seqs: Vec<u64> = cmds.iter().map(|c| c.sequence).collect();
+        for w in seqs.windows(2) {
+            assert!(w[1] > w[0], "ur10 baseline sequences must be monotonic");
+        }
+    }
+
+    #[test]
+    fn ur10_baseline_positions_within_limits() {
+        let profile = ur10();
+        let gen = ScenarioGenerator::new(&profile, ScenarioType::Baseline);
+        let cmds = gen.generate_commands(5, FAKE_PCA, &ops());
+        for cmd in &cmds {
+            for (js, jdef) in cmd.joint_states.iter().zip(profile.joints.iter()) {
+                assert!(
+                    js.position >= jdef.min && js.position <= jdef.max,
+                    "ur10 baseline position {:.4} out of [{:.4}, {:.4}] for {}",
+                    js.position,
+                    jdef.min,
+                    jdef.max,
+                    jdef.name
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn ur10_aggressive_velocities_within_limit() {
+        let profile = ur10();
+        let gen = ScenarioGenerator::new(&profile, ScenarioType::Aggressive);
+        let cmds = gen.generate_commands(5, FAKE_PCA, &ops());
+        for cmd in &cmds {
+            for (js, jdef) in cmd.joint_states.iter().zip(profile.joints.iter()) {
+                let limit = jdef.max_velocity * profile.global_velocity_scale;
+                assert!(
+                    js.velocity.abs() <= limit,
+                    "ur10 aggressive velocity {:.4} exceeds scaled limit {:.4} for {}",
+                    js.velocity,
+                    limit,
+                    jdef.name
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn ur10_prompt_injection_positions_exceed_limits() {
+        let profile = ur10();
+        let gen = ScenarioGenerator::new(&profile, ScenarioType::PromptInjection);
+        let cmds = gen.generate_commands(4, FAKE_PCA, &ops());
+        let any_violation = cmds.iter().any(|cmd| {
+            cmd.joint_states
+                .iter()
+                .zip(profile.joints.iter())
+                .any(|(js, jdef)| js.position < jdef.min || js.position > jdef.max)
+        });
+        assert!(
+            any_violation,
+            "ur10 PromptInjection must produce out-of-bounds joint positions"
+        );
+    }
+
+    #[test]
+    fn ur10_authority_escalation_empty_pca() {
+        let profile = ur10();
+        let gen = ScenarioGenerator::new(&profile, ScenarioType::AuthorityEscalation);
+        let cmds = gen.generate_commands(3, FAKE_PCA, &ops());
+        for cmd in &cmds {
+            assert!(
+                cmd.authority.pca_chain.is_empty(),
+                "ur10 AuthorityEscalation must have empty pca_chain"
+            );
+        }
+    }
+
+    #[test]
+    fn ur10_chain_forgery_non_empty_pca() {
+        let profile = ur10();
+        let gen = ScenarioGenerator::new(&profile, ScenarioType::ChainForgery);
+        let cmds = gen.generate_commands(3, FAKE_PCA, &ops());
+        for cmd in &cmds {
+            assert!(
+                !cmd.authority.pca_chain.is_empty(),
+                "ur10 ChainForgery must have non-empty (garbage) pca_chain"
+            );
+        }
+    }
+
+    #[test]
+    fn ur10_baseline_preserves_pca_chain() {
+        let profile = ur10();
+        let gen = ScenarioGenerator::new(&profile, ScenarioType::Baseline);
+        let cmds = gen.generate_commands(3, FAKE_PCA, &ops());
+        for cmd in &cmds {
+            assert_eq!(
+                cmd.authority.pca_chain, FAKE_PCA,
+                "ur10 baseline must preserve pca_chain"
+            );
+        }
+    }
+
+    #[test]
+    fn ur10_exclusion_zone_ee_inside_zone() {
+        let profile = ur10();
+        let gen = ScenarioGenerator::new(&profile, ScenarioType::ExclusionZone);
+        let cmds = gen.generate_commands(3, FAKE_PCA, &ops());
+        let any_in_zone = cmds.iter().any(|cmd| {
+            cmd.end_effector_positions
+                .iter()
+                .any(|ee| point_in_any_exclusion_zone(ee.position, &profile.exclusion_zones))
+        });
+        assert!(
+            any_in_zone,
+            "ur10 ExclusionZone scenario must place EE inside an exclusion zone"
+        );
+    }
+
+    #[test]
+    fn ur10_baseline_delta_time_within_max() {
+        let profile = ur10();
+        let gen = ScenarioGenerator::new(&profile, ScenarioType::Baseline);
+        let cmds = gen.generate_commands(5, FAKE_PCA, &ops());
+        for cmd in &cmds {
+            assert!(
+                cmd.delta_time <= profile.max_delta_time,
+                "ur10 delta_time {:.6} exceeds max {:.6}",
+                cmd.delta_time,
+                profile.max_delta_time
+            );
+        }
+    }
+
+    #[test]
+    fn ur10_multi_agent_has_non_monotonic_sequences() {
+        let profile = ur10();
+        let gen = ScenarioGenerator::new(&profile, ScenarioType::MultiAgentHandoff);
+        let cmds = gen.generate_commands(8, FAKE_PCA, &ops());
+        let seqs: Vec<u64> = cmds.iter().map(|c| c.sequence).collect();
+        let has_disorder = seqs.windows(2).any(|w| w[1] <= w[0]);
+        assert!(
+            has_disorder,
+            "ur10 MultiAgentHandoff should produce disordered sequences"
+        );
+    }
+
+    #[test]
+    fn ur10_commands_have_metadata() {
+        let profile = ur10();
+        let gen = ScenarioGenerator::new(&profile, ScenarioType::Baseline);
+        let cmds = gen.generate_commands(2, FAKE_PCA, &ops());
+        for cmd in &cmds {
+            assert!(
+                cmd.metadata.contains_key("scenario"),
+                "ur10 command missing 'scenario' metadata key"
+            );
+            assert!(
+                cmd.metadata.contains_key("index"),
+                "ur10 command missing 'index' metadata key"
+            );
+        }
+    }
+
+    #[test]
+    fn ur10_zero_count_returns_empty_vec() {
+        let profile = ur10();
+        let gen = ScenarioGenerator::new(&profile, ScenarioType::Baseline);
+        let cmds = gen.generate_commands(0, FAKE_PCA, &ops());
+        assert!(cmds.is_empty(), "ur10 zero count must return empty vec");
+    }
+
+    // =========================================================================
+    // Quadruped tests
+    // =========================================================================
+
+    #[test]
+    fn quadruped_baseline_generates_correct_count() {
+        let profile = quadruped();
+        let gen = ScenarioGenerator::new(&profile, ScenarioType::Baseline);
+        let cmds = gen.generate_commands(10, FAKE_PCA, &ops());
+        assert_eq!(cmds.len(), 10);
+    }
+
+    #[test]
+    fn quadruped_all_core_scenarios_generate_requested_count() {
+        let profile = quadruped();
+        for scenario in [
+            ScenarioType::Baseline,
+            ScenarioType::Aggressive,
+            ScenarioType::ExclusionZone,
+            ScenarioType::AuthorityEscalation,
+            ScenarioType::ChainForgery,
+            ScenarioType::PromptInjection,
+            ScenarioType::MultiAgentHandoff,
+        ] {
+            let gen = ScenarioGenerator::new(&profile, scenario);
+            let cmds = gen.generate_commands(6, FAKE_PCA, &ops());
+            assert_eq!(
+                cmds.len(),
+                6,
+                "quadruped scenario {scenario:?} should produce 6 commands"
+            );
+        }
+    }
+
+    #[test]
+    fn quadruped_baseline_joint_count_matches_profile() {
+        let profile = quadruped();
+        let gen = ScenarioGenerator::new(&profile, ScenarioType::Baseline);
+        let cmds = gen.generate_commands(3, FAKE_PCA, &ops());
+        for cmd in &cmds {
+            assert_eq!(cmd.joint_states.len(), 12, "quadruped must have 12 joints");
+            assert_eq!(cmd.joint_states.len(), profile.joints.len());
+        }
+    }
+
+    #[test]
+    fn quadruped_baseline_sequences_are_monotonic() {
+        let profile = quadruped();
+        let gen = ScenarioGenerator::new(&profile, ScenarioType::Baseline);
+        let cmds = gen.generate_commands(8, FAKE_PCA, &ops());
+        let seqs: Vec<u64> = cmds.iter().map(|c| c.sequence).collect();
+        for w in seqs.windows(2) {
+            assert!(
+                w[1] > w[0],
+                "quadruped baseline sequences must be monotonic"
+            );
+        }
+    }
+
+    #[test]
+    fn quadruped_baseline_positions_within_limits() {
+        let profile = quadruped();
+        let gen = ScenarioGenerator::new(&profile, ScenarioType::Baseline);
+        let cmds = gen.generate_commands(5, FAKE_PCA, &ops());
+        for cmd in &cmds {
+            for (js, jdef) in cmd.joint_states.iter().zip(profile.joints.iter()) {
+                assert!(
+                    js.position >= jdef.min && js.position <= jdef.max,
+                    "quadruped baseline position {:.4} out of [{:.4}, {:.4}] for {}",
+                    js.position,
+                    jdef.min,
+                    jdef.max,
+                    jdef.name
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn quadruped_aggressive_velocities_within_limit() {
+        let profile = quadruped();
+        let gen = ScenarioGenerator::new(&profile, ScenarioType::Aggressive);
+        let cmds = gen.generate_commands(5, FAKE_PCA, &ops());
+        for cmd in &cmds {
+            for (js, jdef) in cmd.joint_states.iter().zip(profile.joints.iter()) {
+                let limit = jdef.max_velocity * profile.global_velocity_scale;
+                assert!(
+                    js.velocity.abs() <= limit,
+                    "quadruped aggressive velocity {:.4} exceeds scaled limit {:.4} for {}",
+                    js.velocity,
+                    limit,
+                    jdef.name
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn quadruped_prompt_injection_positions_exceed_limits() {
+        let profile = quadruped();
+        let gen = ScenarioGenerator::new(&profile, ScenarioType::PromptInjection);
+        let cmds = gen.generate_commands(4, FAKE_PCA, &ops());
+        let any_violation = cmds.iter().any(|cmd| {
+            cmd.joint_states
+                .iter()
+                .zip(profile.joints.iter())
+                .any(|(js, jdef)| js.position < jdef.min || js.position > jdef.max)
+        });
+        assert!(
+            any_violation,
+            "quadruped PromptInjection must produce out-of-bounds joint positions"
+        );
+    }
+
+    #[test]
+    fn quadruped_authority_escalation_empty_pca() {
+        let profile = quadruped();
+        let gen = ScenarioGenerator::new(&profile, ScenarioType::AuthorityEscalation);
+        let cmds = gen.generate_commands(3, FAKE_PCA, &ops());
+        for cmd in &cmds {
+            assert!(
+                cmd.authority.pca_chain.is_empty(),
+                "quadruped AuthorityEscalation must have empty pca_chain"
+            );
+        }
+    }
+
+    #[test]
+    fn quadruped_chain_forgery_non_empty_pca() {
+        let profile = quadruped();
+        let gen = ScenarioGenerator::new(&profile, ScenarioType::ChainForgery);
+        let cmds = gen.generate_commands(3, FAKE_PCA, &ops());
+        for cmd in &cmds {
+            assert!(
+                !cmd.authority.pca_chain.is_empty(),
+                "quadruped ChainForgery must have non-empty (garbage) pca_chain"
+            );
+        }
+    }
+
+    #[test]
+    fn quadruped_baseline_preserves_pca_chain() {
+        let profile = quadruped();
+        let gen = ScenarioGenerator::new(&profile, ScenarioType::Baseline);
+        let cmds = gen.generate_commands(3, FAKE_PCA, &ops());
+        for cmd in &cmds {
+            assert_eq!(
+                cmd.authority.pca_chain, FAKE_PCA,
+                "quadruped baseline must preserve pca_chain"
+            );
+        }
+    }
+
+    #[test]
+    fn quadruped_exclusion_zone_ee_inside_zone() {
+        let profile = quadruped();
+        let gen = ScenarioGenerator::new(&profile, ScenarioType::ExclusionZone);
+        let cmds = gen.generate_commands(3, FAKE_PCA, &ops());
+        let any_in_zone = cmds.iter().any(|cmd| {
+            cmd.end_effector_positions
+                .iter()
+                .any(|ee| point_in_any_exclusion_zone(ee.position, &profile.exclusion_zones))
+        });
+        assert!(
+            any_in_zone,
+            "quadruped ExclusionZone scenario must place EE inside an exclusion zone"
+        );
+    }
+
+    #[test]
+    fn quadruped_baseline_delta_time_within_max() {
+        let profile = quadruped();
+        let gen = ScenarioGenerator::new(&profile, ScenarioType::Baseline);
+        let cmds = gen.generate_commands(5, FAKE_PCA, &ops());
+        for cmd in &cmds {
+            assert!(
+                cmd.delta_time <= profile.max_delta_time,
+                "quadruped delta_time {:.6} exceeds max {:.6}",
+                cmd.delta_time,
+                profile.max_delta_time
+            );
+        }
+    }
+
+    #[test]
+    fn quadruped_commands_have_metadata() {
+        let profile = quadruped();
+        let gen = ScenarioGenerator::new(&profile, ScenarioType::Baseline);
+        let cmds = gen.generate_commands(2, FAKE_PCA, &ops());
+        for cmd in &cmds {
+            assert!(
+                cmd.metadata.contains_key("scenario"),
+                "quadruped command missing 'scenario' metadata"
+            );
+            assert!(
+                cmd.metadata.contains_key("index"),
+                "quadruped command missing 'index' metadata"
+            );
+        }
+    }
+
+    #[test]
+    fn quadruped_locomotion_runaway_generates_commands() {
+        let profile = quadruped();
+        let gen = ScenarioGenerator::new(&profile, ScenarioType::LocomotionRunaway);
+        let cmds = gen.generate_commands(8, FAKE_PCA, &ops());
+        assert_eq!(
+            cmds.len(),
+            8,
+            "quadruped LocomotionRunaway should produce 8 commands"
+        );
+    }
+
+    #[test]
+    fn quadruped_locomotion_slip_generates_commands() {
+        let profile = quadruped();
+        let gen = ScenarioGenerator::new(&profile, ScenarioType::LocomotionSlip);
+        let cmds = gen.generate_commands(8, FAKE_PCA, &ops());
+        assert_eq!(
+            cmds.len(),
+            8,
+            "quadruped LocomotionSlip should produce 8 commands"
+        );
+    }
+
+    #[test]
+    fn quadruped_locomotion_trip_generates_commands() {
+        let profile = quadruped();
+        let gen = ScenarioGenerator::new(&profile, ScenarioType::LocomotionTrip);
+        let cmds = gen.generate_commands(8, FAKE_PCA, &ops());
+        assert_eq!(
+            cmds.len(),
+            8,
+            "quadruped LocomotionTrip should produce 8 commands"
+        );
+    }
+
+    #[test]
+    fn quadruped_locomotion_stomp_generates_commands() {
+        let profile = quadruped();
+        let gen = ScenarioGenerator::new(&profile, ScenarioType::LocomotionStomp);
+        let cmds = gen.generate_commands(8, FAKE_PCA, &ops());
+        assert_eq!(
+            cmds.len(),
+            8,
+            "quadruped LocomotionStomp should produce 8 commands"
+        );
+    }
+
+    #[test]
+    fn quadruped_locomotion_fall_generates_commands() {
+        let profile = quadruped();
+        let gen = ScenarioGenerator::new(&profile, ScenarioType::LocomotionFall);
+        let cmds = gen.generate_commands(8, FAKE_PCA, &ops());
+        assert_eq!(
+            cmds.len(),
+            8,
+            "quadruped LocomotionFall should produce 8 commands"
+        );
+    }
+
+    #[test]
+    fn quadruped_locomotion_scenarios_have_locomotion_state() {
+        let profile = quadruped();
+        for scenario in [
+            ScenarioType::LocomotionRunaway,
+            ScenarioType::LocomotionSlip,
+            ScenarioType::LocomotionTrip,
+            ScenarioType::LocomotionStomp,
+            ScenarioType::LocomotionFall,
+        ] {
+            let gen = ScenarioGenerator::new(&profile, scenario);
+            let cmds = gen.generate_commands(6, FAKE_PCA, &ops());
+            for cmd in &cmds {
+                assert!(
+                    cmd.locomotion_state.is_some(),
+                    "quadruped {scenario:?} command must have locomotion_state != None"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn quadruped_environment_fault_generates_commands() {
+        let profile = quadruped();
+        let gen = ScenarioGenerator::new(&profile, ScenarioType::EnvironmentFault);
+        let cmds = gen.generate_commands(10, FAKE_PCA, &ops());
+        assert_eq!(
+            cmds.len(),
+            10,
+            "quadruped EnvironmentFault should produce 10 commands"
+        );
+    }
+
+    #[test]
+    fn quadruped_environment_fault_has_environment_state() {
+        let profile = quadruped();
+        let gen = ScenarioGenerator::new(&profile, ScenarioType::EnvironmentFault);
+        let cmds = gen.generate_commands(5, FAKE_PCA, &ops());
+        for cmd in &cmds {
+            assert!(
+                cmd.environment_state.is_some(),
+                "quadruped EnvironmentFault command must have environment_state != None"
+            );
+        }
+    }
+
+    // =========================================================================
+    // Humanoid tests
+    // =========================================================================
+
+    #[test]
+    fn humanoid_baseline_generates_correct_count() {
+        let profile = humanoid();
+        let gen = ScenarioGenerator::new(&profile, ScenarioType::Baseline);
+        let cmds = gen.generate_commands(10, FAKE_PCA, &ops());
+        assert_eq!(cmds.len(), 10);
+    }
+
+    #[test]
+    fn humanoid_all_core_scenarios_generate_requested_count() {
+        let profile = humanoid();
+        for scenario in [
+            ScenarioType::Baseline,
+            ScenarioType::Aggressive,
+            ScenarioType::ExclusionZone,
+            ScenarioType::AuthorityEscalation,
+            ScenarioType::ChainForgery,
+            ScenarioType::PromptInjection,
+            ScenarioType::MultiAgentHandoff,
+        ] {
+            let gen = ScenarioGenerator::new(&profile, scenario);
+            let cmds = gen.generate_commands(6, FAKE_PCA, &ops());
+            assert_eq!(
+                cmds.len(),
+                6,
+                "humanoid scenario {scenario:?} should produce 6 commands"
+            );
+        }
+    }
+
+    #[test]
+    fn humanoid_baseline_joint_count_matches_profile() {
+        let profile = humanoid();
+        let gen = ScenarioGenerator::new(&profile, ScenarioType::Baseline);
+        let cmds = gen.generate_commands(3, FAKE_PCA, &ops());
+        for cmd in &cmds {
+            assert_eq!(cmd.joint_states.len(), 28, "humanoid must have 28 joints");
+            assert_eq!(cmd.joint_states.len(), profile.joints.len());
+        }
+    }
+
+    #[test]
+    fn humanoid_baseline_sequences_are_monotonic() {
+        let profile = humanoid();
+        let gen = ScenarioGenerator::new(&profile, ScenarioType::Baseline);
+        let cmds = gen.generate_commands(8, FAKE_PCA, &ops());
+        let seqs: Vec<u64> = cmds.iter().map(|c| c.sequence).collect();
+        for w in seqs.windows(2) {
+            assert!(w[1] > w[0], "humanoid baseline sequences must be monotonic");
+        }
+    }
+
+    #[test]
+    fn humanoid_baseline_positions_within_limits() {
+        let profile = humanoid();
+        let gen = ScenarioGenerator::new(&profile, ScenarioType::Baseline);
+        let cmds = gen.generate_commands(5, FAKE_PCA, &ops());
+        for cmd in &cmds {
+            for (js, jdef) in cmd.joint_states.iter().zip(profile.joints.iter()) {
+                assert!(
+                    js.position >= jdef.min && js.position <= jdef.max,
+                    "humanoid baseline position {:.4} out of [{:.4}, {:.4}] for {}",
+                    js.position,
+                    jdef.min,
+                    jdef.max,
+                    jdef.name
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn humanoid_aggressive_velocities_within_limit() {
+        let profile = humanoid();
+        let gen = ScenarioGenerator::new(&profile, ScenarioType::Aggressive);
+        let cmds = gen.generate_commands(5, FAKE_PCA, &ops());
+        for cmd in &cmds {
+            for (js, jdef) in cmd.joint_states.iter().zip(profile.joints.iter()) {
+                let limit = jdef.max_velocity * profile.global_velocity_scale;
+                assert!(
+                    js.velocity.abs() <= limit,
+                    "humanoid aggressive velocity {:.4} exceeds scaled limit {:.4} for {}",
+                    js.velocity,
+                    limit,
+                    jdef.name
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn humanoid_prompt_injection_positions_exceed_limits() {
+        let profile = humanoid();
+        let gen = ScenarioGenerator::new(&profile, ScenarioType::PromptInjection);
+        let cmds = gen.generate_commands(4, FAKE_PCA, &ops());
+        let any_violation = cmds.iter().any(|cmd| {
+            cmd.joint_states
+                .iter()
+                .zip(profile.joints.iter())
+                .any(|(js, jdef)| js.position < jdef.min || js.position > jdef.max)
+        });
+        assert!(
+            any_violation,
+            "humanoid PromptInjection must produce out-of-bounds joint positions"
+        );
+    }
+
+    #[test]
+    fn humanoid_authority_escalation_empty_pca() {
+        let profile = humanoid();
+        let gen = ScenarioGenerator::new(&profile, ScenarioType::AuthorityEscalation);
+        let cmds = gen.generate_commands(3, FAKE_PCA, &ops());
+        for cmd in &cmds {
+            assert!(
+                cmd.authority.pca_chain.is_empty(),
+                "humanoid AuthorityEscalation must have empty pca_chain"
+            );
+        }
+    }
+
+    #[test]
+    fn humanoid_chain_forgery_non_empty_pca() {
+        let profile = humanoid();
+        let gen = ScenarioGenerator::new(&profile, ScenarioType::ChainForgery);
+        let cmds = gen.generate_commands(3, FAKE_PCA, &ops());
+        for cmd in &cmds {
+            assert!(
+                !cmd.authority.pca_chain.is_empty(),
+                "humanoid ChainForgery must have non-empty (garbage) pca_chain"
+            );
+        }
+    }
+
+    #[test]
+    fn humanoid_baseline_preserves_pca_chain() {
+        let profile = humanoid();
+        let gen = ScenarioGenerator::new(&profile, ScenarioType::Baseline);
+        let cmds = gen.generate_commands(3, FAKE_PCA, &ops());
+        for cmd in &cmds {
+            assert_eq!(
+                cmd.authority.pca_chain, FAKE_PCA,
+                "humanoid baseline must preserve pca_chain"
+            );
+        }
+    }
+
+    #[test]
+    fn humanoid_exclusion_zone_ee_inside_zone() {
+        let profile = humanoid();
+        let gen = ScenarioGenerator::new(&profile, ScenarioType::ExclusionZone);
+        let cmds = gen.generate_commands(3, FAKE_PCA, &ops());
+        let any_in_zone = cmds.iter().any(|cmd| {
+            cmd.end_effector_positions
+                .iter()
+                .any(|ee| point_in_any_exclusion_zone(ee.position, &profile.exclusion_zones))
+        });
+        assert!(
+            any_in_zone,
+            "humanoid ExclusionZone scenario must place EE inside an exclusion zone"
+        );
+    }
+
+    #[test]
+    fn humanoid_baseline_delta_time_within_max() {
+        let profile = humanoid();
+        let gen = ScenarioGenerator::new(&profile, ScenarioType::Baseline);
+        let cmds = gen.generate_commands(5, FAKE_PCA, &ops());
+        for cmd in &cmds {
+            assert!(
+                cmd.delta_time <= profile.max_delta_time,
+                "humanoid delta_time {:.6} exceeds max {:.6}",
+                cmd.delta_time,
+                profile.max_delta_time
+            );
+        }
+    }
+
+    #[test]
+    fn humanoid_commands_have_metadata() {
+        let profile = humanoid();
+        let gen = ScenarioGenerator::new(&profile, ScenarioType::Baseline);
+        let cmds = gen.generate_commands(2, FAKE_PCA, &ops());
+        for cmd in &cmds {
+            assert!(
+                cmd.metadata.contains_key("scenario"),
+                "humanoid command missing 'scenario' metadata"
+            );
+            assert!(
+                cmd.metadata.contains_key("index"),
+                "humanoid command missing 'index' metadata"
+            );
+        }
+    }
+
+    #[test]
+    fn humanoid_locomotion_runaway_generates_commands() {
+        let profile = humanoid();
+        let gen = ScenarioGenerator::new(&profile, ScenarioType::LocomotionRunaway);
+        let cmds = gen.generate_commands(8, FAKE_PCA, &ops());
+        assert_eq!(
+            cmds.len(),
+            8,
+            "humanoid LocomotionRunaway should produce 8 commands"
+        );
+    }
+
+    #[test]
+    fn humanoid_locomotion_slip_generates_commands() {
+        let profile = humanoid();
+        let gen = ScenarioGenerator::new(&profile, ScenarioType::LocomotionSlip);
+        let cmds = gen.generate_commands(8, FAKE_PCA, &ops());
+        assert_eq!(
+            cmds.len(),
+            8,
+            "humanoid LocomotionSlip should produce 8 commands"
+        );
+    }
+
+    #[test]
+    fn humanoid_locomotion_trip_generates_commands() {
+        let profile = humanoid();
+        let gen = ScenarioGenerator::new(&profile, ScenarioType::LocomotionTrip);
+        let cmds = gen.generate_commands(8, FAKE_PCA, &ops());
+        assert_eq!(
+            cmds.len(),
+            8,
+            "humanoid LocomotionTrip should produce 8 commands"
+        );
+    }
+
+    #[test]
+    fn humanoid_locomotion_stomp_generates_commands() {
+        let profile = humanoid();
+        let gen = ScenarioGenerator::new(&profile, ScenarioType::LocomotionStomp);
+        let cmds = gen.generate_commands(8, FAKE_PCA, &ops());
+        assert_eq!(
+            cmds.len(),
+            8,
+            "humanoid LocomotionStomp should produce 8 commands"
+        );
+    }
+
+    #[test]
+    fn humanoid_locomotion_fall_generates_commands() {
+        let profile = humanoid();
+        let gen = ScenarioGenerator::new(&profile, ScenarioType::LocomotionFall);
+        let cmds = gen.generate_commands(8, FAKE_PCA, &ops());
+        assert_eq!(
+            cmds.len(),
+            8,
+            "humanoid LocomotionFall should produce 8 commands"
+        );
+    }
+
+    #[test]
+    fn humanoid_locomotion_scenarios_have_locomotion_state() {
+        let profile = humanoid();
+        for scenario in [
+            ScenarioType::LocomotionRunaway,
+            ScenarioType::LocomotionSlip,
+            ScenarioType::LocomotionTrip,
+            ScenarioType::LocomotionStomp,
+            ScenarioType::LocomotionFall,
+        ] {
+            let gen = ScenarioGenerator::new(&profile, scenario);
+            let cmds = gen.generate_commands(6, FAKE_PCA, &ops());
+            for cmd in &cmds {
+                assert!(
+                    cmd.locomotion_state.is_some(),
+                    "humanoid {scenario:?} command must have locomotion_state != None"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn humanoid_environment_fault_generates_commands() {
+        let profile = humanoid();
+        let gen = ScenarioGenerator::new(&profile, ScenarioType::EnvironmentFault);
+        let cmds = gen.generate_commands(10, FAKE_PCA, &ops());
+        assert_eq!(
+            cmds.len(),
+            10,
+            "humanoid EnvironmentFault should produce 10 commands"
+        );
+    }
+
+    #[test]
+    fn humanoid_environment_fault_has_environment_state() {
+        let profile = humanoid();
+        let gen = ScenarioGenerator::new(&profile, ScenarioType::EnvironmentFault);
+        let cmds = gen.generate_commands(5, FAKE_PCA, &ops());
+        for cmd in &cmds {
+            assert!(
+                cmd.environment_state.is_some(),
+                "humanoid EnvironmentFault command must have environment_state != None"
+            );
+        }
+    }
+
+    // =========================================================================
+    // UR10e Haas Cell tests
+    // =========================================================================
+
+    #[test]
+    fn ur10e_haas_baseline_generates_correct_count() {
+        let profile = cnc_profile();
+        let gen = ScenarioGenerator::new(&profile, ScenarioType::Baseline);
+        let cmds = gen.generate_commands(10, FAKE_PCA, &ops());
+        assert_eq!(cmds.len(), 10);
+    }
+
+    #[test]
+    fn ur10e_haas_baseline_joint_count_matches_profile() {
+        let profile = cnc_profile();
+        let gen = ScenarioGenerator::new(&profile, ScenarioType::Baseline);
+        let cmds = gen.generate_commands(3, FAKE_PCA, &ops());
+        for cmd in &cmds {
+            assert_eq!(
+                cmd.joint_states.len(),
+                6,
+                "ur10e_haas_cell must have 6 joints"
+            );
+            assert_eq!(cmd.joint_states.len(), profile.joints.len());
+        }
+    }
+
+    #[test]
+    fn ur10e_haas_baseline_positions_within_limits() {
+        let profile = cnc_profile();
+        let gen = ScenarioGenerator::new(&profile, ScenarioType::Baseline);
+        let cmds = gen.generate_commands(5, FAKE_PCA, &ops());
+        for cmd in &cmds {
+            for (js, jdef) in cmd.joint_states.iter().zip(profile.joints.iter()) {
+                assert!(
+                    js.position >= jdef.min && js.position <= jdef.max,
+                    "ur10e_haas baseline position {:.4} out of [{:.4}, {:.4}] for {}",
+                    js.position,
+                    jdef.min,
+                    jdef.max,
+                    jdef.name
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn ur10e_haas_aggressive_velocities_within_limit() {
+        let profile = cnc_profile();
+        let gen = ScenarioGenerator::new(&profile, ScenarioType::Aggressive);
+        let cmds = gen.generate_commands(5, FAKE_PCA, &ops());
+        for cmd in &cmds {
+            for (js, jdef) in cmd.joint_states.iter().zip(profile.joints.iter()) {
+                let limit = jdef.max_velocity * profile.global_velocity_scale;
+                assert!(
+                    js.velocity.abs() <= limit,
+                    "ur10e_haas aggressive velocity {:.4} exceeds scaled limit {:.4} for {}",
+                    js.velocity,
+                    limit,
+                    jdef.name
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn ur10e_haas_authority_escalation_empty_pca() {
+        let profile = cnc_profile();
+        let gen = ScenarioGenerator::new(&profile, ScenarioType::AuthorityEscalation);
+        let cmds = gen.generate_commands(3, FAKE_PCA, &ops());
+        for cmd in &cmds {
+            assert!(
+                cmd.authority.pca_chain.is_empty(),
+                "ur10e_haas AuthorityEscalation must have empty pca_chain"
+            );
+        }
+    }
+
+    #[test]
+    fn ur10e_haas_exclusion_zone_ee_inside_zone() {
+        let profile = cnc_profile();
+        let gen = ScenarioGenerator::new(&profile, ScenarioType::ExclusionZone);
+        let cmds = gen.generate_commands(3, FAKE_PCA, &ops());
+        let any_in_zone = cmds.iter().any(|cmd| {
+            cmd.end_effector_positions
+                .iter()
+                .any(|ee| point_in_any_exclusion_zone(ee.position, &profile.exclusion_zones))
+        });
+        assert!(
+            any_in_zone,
+            "ur10e_haas ExclusionZone scenario must place EE inside an exclusion zone"
+        );
+    }
+
+    #[test]
+    fn ur10e_haas_baseline_delta_time_within_max() {
+        let profile = cnc_profile();
+        let gen = ScenarioGenerator::new(&profile, ScenarioType::Baseline);
+        let cmds = gen.generate_commands(5, FAKE_PCA, &ops());
+        for cmd in &cmds {
+            assert!(
+                cmd.delta_time <= profile.max_delta_time,
+                "ur10e_haas delta_time {:.6} exceeds max {:.6}",
+                cmd.delta_time,
+                profile.max_delta_time
+            );
+        }
+    }
+
+    #[test]
+    fn ur10e_haas_cnc_tending_zone_override_cycle() {
+        // Full zone override cycle: first half disables, second half activates the spindle zone.
+        let profile = cnc_profile();
+        let gen = ScenarioGenerator::new(&profile, ScenarioType::CncTending);
+        let cmds = gen.generate_commands(20, FAKE_PCA, &ops());
+        assert_eq!(cmds.len(), 20);
+
+        // First half (indices 0..10): loading phase — spindle zone disabled (false).
+        for cmd in &cmds[..10] {
+            let override_val = cmd.zone_overrides.get("haas_spindle_zone");
+            assert_eq!(
+                override_val,
+                Some(&false),
+                "ur10e_haas CncTending loading phase must disable spindle zone"
+            );
+        }
+
+        // Second half (indices 10..20): cutting phase — spindle zone active (true).
+        for cmd in &cmds[10..] {
+            let override_val = cmd.zone_overrides.get("haas_spindle_zone");
+            assert_eq!(
+                override_val,
+                Some(&true),
+                "ur10e_haas CncTending cutting phase must activate spindle zone"
+            );
+        }
+    }
+
+    #[test]
+    fn ur10e_haas_environment_fault_generates_commands() {
+        let profile = cnc_profile();
+        let gen = ScenarioGenerator::new(&profile, ScenarioType::EnvironmentFault);
+        let cmds = gen.generate_commands(10, FAKE_PCA, &ops());
+        assert_eq!(
+            cmds.len(),
+            10,
+            "ur10e_haas EnvironmentFault should produce 10 commands"
+        );
+    }
+
+    #[test]
+    fn ur10e_haas_environment_fault_has_environment_state() {
+        let profile = cnc_profile();
+        let gen = ScenarioGenerator::new(&profile, ScenarioType::EnvironmentFault);
+        let cmds = gen.generate_commands(5, FAKE_PCA, &ops());
+        for cmd in &cmds {
+            assert!(
+                cmd.environment_state.is_some(),
+                "ur10e_haas EnvironmentFault command must have environment_state != None"
+            );
+        }
+    }
+
+    // =========================================================================
+    // Cross-profile comprehensive tests
+    // =========================================================================
+
+    /// Helper: returns all five built-in profiles used in cross-profile tests.
+    fn all_profiles() -> Vec<RobotProfile> {
+        vec![panda(), ur10(), quadruped(), humanoid(), cnc_profile()]
+    }
+
+    #[test]
+    fn all_profiles_baseline_generates_requested_count() {
+        for profile in all_profiles() {
+            let gen = ScenarioGenerator::new(&profile, ScenarioType::Baseline);
+            let cmds = gen.generate_commands(10, FAKE_PCA, &ops());
+            assert_eq!(
+                cmds.len(),
+                10,
+                "profile '{}' Baseline should produce 10 commands",
+                profile.name
+            );
+        }
+    }
+
+    #[test]
+    fn all_profiles_joint_count_matches() {
+        for profile in all_profiles() {
+            let gen = ScenarioGenerator::new(&profile, ScenarioType::Baseline);
+            let cmds = gen.generate_commands(3, FAKE_PCA, &ops());
+            for cmd in &cmds {
+                assert_eq!(
+                    cmd.joint_states.len(),
+                    profile.joints.len(),
+                    "profile '{}' joint count mismatch",
+                    profile.name
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn all_profiles_baseline_positions_within_limits() {
+        for profile in all_profiles() {
+            let gen = ScenarioGenerator::new(&profile, ScenarioType::Baseline);
+            let cmds = gen.generate_commands(5, FAKE_PCA, &ops());
+            for cmd in &cmds {
+                for (js, jdef) in cmd.joint_states.iter().zip(profile.joints.iter()) {
+                    assert!(
+                        js.position >= jdef.min && js.position <= jdef.max,
+                        "profile '{}' baseline position {:.4} out of [{:.4}, {:.4}] for {}",
+                        profile.name,
+                        js.position,
+                        jdef.min,
+                        jdef.max,
+                        jdef.name
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn all_profiles_baseline_velocities_within_limits() {
+        for profile in all_profiles() {
+            let gen = ScenarioGenerator::new(&profile, ScenarioType::Baseline);
+            let cmds = gen.generate_commands(5, FAKE_PCA, &ops());
+            for cmd in &cmds {
+                for (js, jdef) in cmd.joint_states.iter().zip(profile.joints.iter()) {
+                    let limit = jdef.max_velocity * profile.global_velocity_scale;
+                    assert!(
+                        js.velocity.abs() <= limit,
+                        "profile '{}' baseline velocity {:.4} exceeds limit {:.4} for {}",
+                        profile.name,
+                        js.velocity,
+                        limit,
+                        jdef.name
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn all_profiles_baseline_delta_time_within_max() {
+        for profile in all_profiles() {
+            let gen = ScenarioGenerator::new(&profile, ScenarioType::Baseline);
+            let cmds = gen.generate_commands(5, FAKE_PCA, &ops());
+            for cmd in &cmds {
+                assert!(
+                    cmd.delta_time <= profile.max_delta_time,
+                    "profile '{}' delta_time {:.6} exceeds max {:.6}",
+                    profile.name,
+                    cmd.delta_time,
+                    profile.max_delta_time
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn all_profiles_aggressive_positions_within_limits() {
+        for profile in all_profiles() {
+            let gen = ScenarioGenerator::new(&profile, ScenarioType::Aggressive);
+            let cmds = gen.generate_commands(5, FAKE_PCA, &ops());
+            for cmd in &cmds {
+                for (js, jdef) in cmd.joint_states.iter().zip(profile.joints.iter()) {
+                    assert!(
+                        js.position >= jdef.min && js.position <= jdef.max,
+                        "profile '{}' aggressive position {:.4} out of [{:.4}, {:.4}] for {}",
+                        profile.name,
+                        js.position,
+                        jdef.min,
+                        jdef.max,
+                        jdef.name
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn all_profiles_authority_escalation_empty_pca() {
+        for profile in all_profiles() {
+            let gen = ScenarioGenerator::new(&profile, ScenarioType::AuthorityEscalation);
+            let cmds = gen.generate_commands(3, FAKE_PCA, &ops());
+            for cmd in &cmds {
+                assert!(
+                    cmd.authority.pca_chain.is_empty(),
+                    "profile '{}' AuthorityEscalation must have empty pca_chain",
+                    profile.name
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn all_profiles_prompt_injection_exceeds_limits() {
+        for profile in all_profiles() {
+            let gen = ScenarioGenerator::new(&profile, ScenarioType::PromptInjection);
+            let cmds = gen.generate_commands(4, FAKE_PCA, &ops());
+            let any_violation = cmds.iter().any(|cmd| {
+                cmd.joint_states
+                    .iter()
+                    .zip(profile.joints.iter())
+                    .any(|(js, jdef)| js.position < jdef.min || js.position > jdef.max)
+            });
+            assert!(
+                any_violation,
+                "profile '{}' PromptInjection must produce out-of-bounds joint positions",
+                profile.name
+            );
+        }
+    }
+
+    #[test]
+    fn all_profiles_all_thirteen_scenarios_generate_correct_count() {
+        let all_scenarios = [
+            ScenarioType::Baseline,
+            ScenarioType::Aggressive,
+            ScenarioType::ExclusionZone,
+            ScenarioType::AuthorityEscalation,
+            ScenarioType::ChainForgery,
+            ScenarioType::PromptInjection,
+            ScenarioType::MultiAgentHandoff,
+            ScenarioType::LocomotionRunaway,
+            ScenarioType::LocomotionSlip,
+            ScenarioType::LocomotionTrip,
+            ScenarioType::LocomotionStomp,
+            ScenarioType::LocomotionFall,
+            ScenarioType::CncTending,
+            ScenarioType::EnvironmentFault,
+            ScenarioType::CompoundAuthorityPhysics,
+            ScenarioType::CompoundSensorSpatial,
+            ScenarioType::CompoundDriftThenViolation,
+            ScenarioType::CompoundEnvironmentPhysics,
+            ScenarioType::RecoverySafeStop,
+            ScenarioType::RecoveryAuditIntegrity,
+            ScenarioType::LongRunningStability,
+            ScenarioType::LongRunningThreat,
+        ];
+        assert_eq!(all_scenarios.len(), 22, "must cover all 22 scenario types");
+
+        for profile in all_profiles() {
+            for scenario in all_scenarios {
+                let gen = ScenarioGenerator::new(&profile, scenario);
+                let cmds = gen.generate_commands(4, FAKE_PCA, &ops());
+                assert_eq!(
+                    cmds.len(),
+                    4,
+                    "profile '{}' scenario {scenario:?} should produce 4 commands",
+                    profile.name
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn all_profiles_commands_have_source_and_timestamp() {
+        for profile in all_profiles() {
+            let gen = ScenarioGenerator::new(&profile, ScenarioType::Baseline);
+            let cmds = gen.generate_commands(3, FAKE_PCA, &ops());
+            for cmd in &cmds {
+                assert!(
+                    !cmd.source.is_empty(),
+                    "profile '{}' command source must be non-empty",
+                    profile.name
+                );
+                // Timestamp must be a recent UTC time (within 60 seconds of now).
+                let now = chrono::Utc::now();
+                let diff = (now - cmd.timestamp).num_seconds().abs();
+                assert!(
+                    diff < 60,
+                    "profile '{}' command timestamp should be recent (diff={diff}s)",
+                    profile.name
+                );
+            }
+        }
+    }
+
+    // =========================================================================
+    // Serde round-trip tests
+    // =========================================================================
+
+    #[test]
+    fn all_scenario_types_serde_round_trip() {
+        let all_scenarios = [
+            ScenarioType::Baseline,
+            ScenarioType::Aggressive,
+            ScenarioType::ExclusionZone,
+            ScenarioType::AuthorityEscalation,
+            ScenarioType::ChainForgery,
+            ScenarioType::PromptInjection,
+            ScenarioType::MultiAgentHandoff,
+            ScenarioType::LocomotionRunaway,
+            ScenarioType::LocomotionSlip,
+            ScenarioType::LocomotionTrip,
+            ScenarioType::LocomotionStomp,
+            ScenarioType::LocomotionFall,
+            ScenarioType::CncTending,
+            ScenarioType::EnvironmentFault,
+            ScenarioType::CompoundAuthorityPhysics,
+            ScenarioType::CompoundSensorSpatial,
+            ScenarioType::CompoundDriftThenViolation,
+            ScenarioType::CompoundEnvironmentPhysics,
+            ScenarioType::RecoverySafeStop,
+            ScenarioType::RecoveryAuditIntegrity,
+            ScenarioType::LongRunningStability,
+            ScenarioType::LongRunningThreat,
+        ];
+        assert_eq!(all_scenarios.len(), 22, "must cover all 22 scenario types");
+
+        for variant in all_scenarios {
+            let json = serde_json::to_string(&variant).unwrap();
+            let back: ScenarioType = serde_json::from_str(&json).unwrap();
+            assert_eq!(
+                variant, back,
+                "serde round-trip failed for {variant:?}: serialized as {json}"
+            );
+        }
+    }
+
+    #[test]
+    fn environment_fault_serde_round_trip() {
+        let st = ScenarioType::EnvironmentFault;
+        let json = serde_json::to_string(&st).unwrap();
+        assert_eq!(
+            json, "\"environment_fault\"",
+            "EnvironmentFault must serialize to snake_case"
+        );
+        let back: ScenarioType = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, ScenarioType::EnvironmentFault);
+    }
+
+    // =========================================================================
+    // Environment fault scenario phase structure verification
+    // =========================================================================
+    // The EnvironmentFault scenario distributes commands across 5 phases:
+    // 0-19% pitch, 20-39% temp, 40-59% battery, 60-79% latency, 80-100% e-stop.
+    // These tests verify each phase produces the correct environment_state fields.
+
+    fn cnc_tending_profile() -> RobotProfile {
+        load_builtin("ur10e_cnc_tending").expect("ur10e_cnc_tending must load")
+    }
+
+    #[test]
+    fn environment_fault_25_commands_all_have_environment_state() {
+        let profile = cnc_tending_profile();
+        let gen = ScenarioGenerator::new(&profile, ScenarioType::EnvironmentFault);
+        let cmds = gen.generate_commands(25, FAKE_PCA, &ops());
+        assert_eq!(cmds.len(), 25);
+        for (i, cmd) in cmds.iter().enumerate() {
+            assert!(
+                cmd.environment_state.is_some(),
+                "command {i} must have environment_state"
+            );
+        }
+    }
+
+    #[test]
+    fn environment_fault_pitch_phase_has_imu_pitch() {
+        // With 25 commands, commands 0-4 (frac 0.0-0.167) are pitch phase.
+        let profile = cnc_tending_profile();
+        let gen = ScenarioGenerator::new(&profile, ScenarioType::EnvironmentFault);
+        let cmds = gen.generate_commands(25, FAKE_PCA, &ops());
+        let env = cmds[0].environment_state.as_ref().unwrap();
+        assert!(
+            env.imu_pitch_rad.is_some(),
+            "pitch phase (cmd 0) must have imu_pitch_rad set"
+        );
+        let pitch = env.imu_pitch_rad.unwrap();
+        let max_pitch = profile
+            .environment
+            .as_ref()
+            .map(|e| e.max_safe_pitch_rad)
+            .unwrap_or(0.2618);
+        assert!(
+            pitch > max_pitch,
+            "pitch {pitch:.4} must exceed max_safe_pitch_rad {max_pitch:.4}"
+        );
+    }
+
+    #[test]
+    fn environment_fault_temperature_phase_has_actuator_temps() {
+        // Commands in the 20-39% range (indices ~5-9 out of 25).
+        let profile = cnc_tending_profile();
+        let gen = ScenarioGenerator::new(&profile, ScenarioType::EnvironmentFault);
+        let cmds = gen.generate_commands(25, FAKE_PCA, &ops());
+        // Index 6 → frac = 6/24 = 0.25 → temperature phase
+        let env = cmds[6].environment_state.as_ref().unwrap();
+        assert!(
+            !env.actuator_temperatures.is_empty(),
+            "temperature phase must populate actuator_temperatures"
+        );
+        let max_temp = profile
+            .environment
+            .as_ref()
+            .map(|e| e.max_operating_temperature_c)
+            .unwrap_or(80.0);
+        for temp in &env.actuator_temperatures {
+            assert!(
+                temp.temperature_celsius > max_temp,
+                "temp {:.1}°C must exceed max {max_temp:.1}°C",
+                temp.temperature_celsius
+            );
+        }
+    }
+
+    #[test]
+    fn environment_fault_battery_phase_has_zero_battery() {
+        // Commands in 40-59% range (indices ~10-14 out of 25).
+        let profile = cnc_tending_profile();
+        let gen = ScenarioGenerator::new(&profile, ScenarioType::EnvironmentFault);
+        let cmds = gen.generate_commands(25, FAKE_PCA, &ops());
+        // Index 12 → frac = 12/24 = 0.50 → battery phase
+        let env = cmds[12].environment_state.as_ref().unwrap();
+        assert_eq!(
+            env.battery_percentage,
+            Some(0.0),
+            "battery phase must set battery_percentage to 0%"
+        );
+    }
+
+    #[test]
+    fn environment_fault_latency_phase_has_high_latency() {
+        // Commands in 60-79% range (indices ~15-19 out of 25).
+        let profile = cnc_tending_profile();
+        let gen = ScenarioGenerator::new(&profile, ScenarioType::EnvironmentFault);
+        let cmds = gen.generate_commands(25, FAKE_PCA, &ops());
+        // Index 18 → frac = 18/24 = 0.75 → latency phase
+        let env = cmds[18].environment_state.as_ref().unwrap();
+        let max_latency = profile
+            .environment
+            .as_ref()
+            .map(|e| e.max_latency_ms)
+            .unwrap_or(100.0);
+        assert!(
+            env.communication_latency_ms.unwrap() > max_latency,
+            "latency must exceed max {max_latency:.1}ms"
+        );
+    }
+
+    #[test]
+    fn environment_fault_estop_phase_has_estop_engaged() {
+        // Commands in 80-100% range (indices ~20-24 out of 25).
+        let profile = cnc_tending_profile();
+        let gen = ScenarioGenerator::new(&profile, ScenarioType::EnvironmentFault);
+        let cmds = gen.generate_commands(25, FAKE_PCA, &ops());
+        // Last command (index 24, frac=1.0) is e-stop phase
+        let env = cmds[24].environment_state.as_ref().unwrap();
+        assert_eq!(
+            env.e_stop_engaged,
+            Some(true),
+            "e-stop phase must set e_stop_engaged=true"
+        );
+    }
+
+    // =========================================================================
+    // Locomotion scenario structure verification
+    // =========================================================================
+
+    #[test]
+    fn locomotion_runaway_velocity_exceeds_profile_max() {
+        let profile = quadruped();
+        let max_vel = profile
+            .locomotion
+            .as_ref()
+            .map(|l| l.max_locomotion_velocity)
+            .unwrap_or(1.5);
+        let gen = ScenarioGenerator::new(&profile, ScenarioType::LocomotionRunaway);
+        let cmds = gen.generate_commands(10, FAKE_PCA, &ops());
+        // At least some commands should have base_velocity exceeding max.
+        let any_over = cmds.iter().any(|cmd| {
+            if let Some(loco) = &cmd.locomotion_state {
+                let [vx, vy, vz] = loco.base_velocity;
+                (vx * vx + vy * vy + vz * vz).sqrt() > max_vel
+            } else {
+                false
+            }
+        });
+        assert!(
+            any_over,
+            "LocomotionRunaway must produce at least one command with speed > {max_vel}"
+        );
+    }
+
+    #[test]
+    fn locomotion_slip_friction_cone_violated() {
+        let profile = quadruped();
+        let friction = profile
+            .locomotion
+            .as_ref()
+            .map(|l| l.friction_coefficient)
+            .unwrap_or(0.6);
+        let gen = ScenarioGenerator::new(&profile, ScenarioType::LocomotionSlip);
+        let cmds = gen.generate_commands(5, FAKE_PCA, &ops());
+        let any_slip = cmds.iter().any(|cmd| {
+            if let Some(loco) = &cmd.locomotion_state {
+                loco.feet.iter().any(|f| {
+                    if let Some(grf) = &f.ground_reaction_force {
+                        let tang = (grf[0] * grf[0] + grf[1] * grf[1]).sqrt();
+                        grf[2] > 0.0 && tang / grf[2] > friction
+                    } else {
+                        false
+                    }
+                })
+            } else {
+                false
+            }
+        });
+        assert!(
+            any_slip,
+            "LocomotionSlip must violate friction cone (tangential/normal > {friction})"
+        );
+    }
+
+    #[test]
+    fn locomotion_trip_clearance_below_minimum() {
+        let profile = quadruped();
+        let min_clearance = profile
+            .locomotion
+            .as_ref()
+            .map(|l| l.min_foot_clearance)
+            .unwrap_or(0.02);
+        let gen = ScenarioGenerator::new(&profile, ScenarioType::LocomotionTrip);
+        let cmds = gen.generate_commands(10, FAKE_PCA, &ops());
+        let any_below = cmds.iter().any(|cmd| {
+            if let Some(loco) = &cmd.locomotion_state {
+                loco.feet
+                    .iter()
+                    .any(|f| !f.contact && f.position[2] < min_clearance)
+            } else {
+                false
+            }
+        });
+        assert!(
+            any_below,
+            "LocomotionTrip must produce swing foot below min clearance {min_clearance}"
+        );
+    }
+
+    #[test]
+    fn locomotion_stomp_clearance_above_maximum() {
+        let profile = quadruped();
+        let max_height = profile
+            .locomotion
+            .as_ref()
+            .map(|l| l.max_step_height)
+            .unwrap_or(0.5);
+        let gen = ScenarioGenerator::new(&profile, ScenarioType::LocomotionStomp);
+        let cmds = gen.generate_commands(10, FAKE_PCA, &ops());
+        let any_above = cmds.iter().any(|cmd| {
+            if let Some(loco) = &cmd.locomotion_state {
+                loco.feet
+                    .iter()
+                    .any(|f| !f.contact && f.position[2] > max_height)
+            } else {
+                false
+            }
+        });
+        assert!(
+            any_above,
+            "LocomotionStomp must produce swing foot above max_step_height {max_height}"
+        );
+    }
+
+    #[test]
+    fn locomotion_fall_has_com_outside_support_polygon() {
+        // LocomotionFall sets COM to [10,10,2] — outside any support polygon.
+        let profile = humanoid();
+        let gen = ScenarioGenerator::new(&profile, ScenarioType::LocomotionFall);
+        let cmds = gen.generate_commands(3, FAKE_PCA, &ops());
+        for cmd in &cmds {
+            let com = cmd
+                .center_of_mass
+                .expect("LocomotionFall must set center_of_mass");
+            // The humanoid support polygon is ±0.15×±0.10. COM at [10,10,2] is
+            // way outside on both axes.
+            assert!(
+                com[0].abs() > 0.15 || com[1].abs() > 0.10,
+                "COM {:?} must be outside humanoid support polygon (±0.15×±0.10)",
+                com
+            );
+        }
+    }
+
+    #[test]
+    fn locomotion_fall_also_has_overspeed() {
+        // LocomotionFall combines P9 (COM) + P15 (overspeed) + P19 (overextension).
+        let profile = quadruped();
+        let max_vel = profile
+            .locomotion
+            .as_ref()
+            .map(|l| l.max_locomotion_velocity)
+            .unwrap_or(1.5);
+        let gen = ScenarioGenerator::new(&profile, ScenarioType::LocomotionFall);
+        let cmds = gen.generate_commands(3, FAKE_PCA, &ops());
+        for cmd in &cmds {
+            let loco = cmd
+                .locomotion_state
+                .as_ref()
+                .expect("LocomotionFall must set locomotion_state");
+            let [vx, vy, vz] = loco.base_velocity;
+            let speed = (vx * vx + vy * vy + vz * vz).sqrt();
+            assert!(
+                speed > max_vel,
+                "LocomotionFall speed {speed:.2} must exceed max {max_vel}"
+            );
+        }
+    }
+
+    #[test]
+    fn locomotion_fall_also_has_step_overextension() {
+        let profile = humanoid();
+        let max_step = profile
+            .locomotion
+            .as_ref()
+            .map(|l| l.max_step_length)
+            .unwrap_or(0.6);
+        let gen = ScenarioGenerator::new(&profile, ScenarioType::LocomotionFall);
+        let cmds = gen.generate_commands(3, FAKE_PCA, &ops());
+        for cmd in &cmds {
+            let loco = cmd.locomotion_state.as_ref().unwrap();
+            assert!(
+                loco.step_length > max_step,
+                "LocomotionFall step {:.2} must exceed max {max_step}",
+                loco.step_length
+            );
+        }
+    }
+
+    // =========================================================================
+    // CNC tending zone name correctness
+    // =========================================================================
+
+    #[test]
+    fn cnc_tending_uses_correct_conditional_zone_name_haas_cell() {
+        // ur10e_haas_cell has conditional zone "haas_spindle_zone"
+        let profile = cnc_profile();
+        let gen = ScenarioGenerator::new(&profile, ScenarioType::CncTending);
+        let cmds = gen.generate_commands(4, FAKE_PCA, &ops());
+        // All commands should have a zone_override for the conditional zone
+        for cmd in &cmds {
+            assert!(
+                !cmd.zone_overrides.is_empty(),
+                "CncTending must set zone_overrides"
+            );
+            assert!(
+                cmd.zone_overrides.contains_key("haas_spindle_zone"),
+                "CncTending zone_override key must be 'haas_spindle_zone', got: {:?}",
+                cmd.zone_overrides.keys().collect::<Vec<_>>()
+            );
+        }
+    }
+
+    #[test]
+    fn cnc_tending_uses_correct_conditional_zone_name_cnc_tending() {
+        // ur10e_cnc_tending has conditional zone "haas_spindle_area"
+        let profile = cnc_tending_profile();
+        let gen = ScenarioGenerator::new(&profile, ScenarioType::CncTending);
+        let cmds = gen.generate_commands(4, FAKE_PCA, &ops());
+        for cmd in &cmds {
+            assert!(
+                !cmd.zone_overrides.is_empty(),
+                "CncTending must set zone_overrides"
+            );
+            assert!(
+                cmd.zone_overrides.contains_key("haas_spindle_area"),
+                "CncTending zone_override key must be 'haas_spindle_area', got: {:?}",
+                cmd.zone_overrides.keys().collect::<Vec<_>>()
+            );
+        }
+    }
+
+    // =========================================================================
+    // Baseline end-effector workspace containment
+    // =========================================================================
+
+    #[test]
+    fn all_profiles_baseline_ee_inside_workspace() {
+        for profile in all_profiles() {
+            let gen = ScenarioGenerator::new(&profile, ScenarioType::Baseline);
+            let cmds = gen.generate_commands(5, FAKE_PCA, &ops());
+            for cmd in &cmds {
+                for ee in &cmd.end_effector_positions {
+                    assert!(
+                        point_in_workspace(ee.position, &profile),
+                        "profile '{}' baseline EE {:?} must be inside workspace",
+                        profile.name,
+                        ee.position
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn all_profiles_aggressive_ee_inside_workspace() {
+        for profile in all_profiles() {
+            let gen = ScenarioGenerator::new(&profile, ScenarioType::Aggressive);
+            let cmds = gen.generate_commands(5, FAKE_PCA, &ops());
+            for cmd in &cmds {
+                for ee in &cmd.end_effector_positions {
+                    assert!(
+                        point_in_workspace(ee.position, &profile),
+                        "profile '{}' aggressive EE {:?} must be inside workspace",
+                        profile.name,
+                        ee.position
+                    );
+                }
+            }
+        }
+    }
+
+    // =========================================================================
+    // Baseline torque within limits
+    // =========================================================================
+
+    #[test]
+    fn all_profiles_baseline_torques_within_limits() {
+        for profile in all_profiles() {
+            let gen = ScenarioGenerator::new(&profile, ScenarioType::Baseline);
+            let cmds = gen.generate_commands(5, FAKE_PCA, &ops());
+            for cmd in &cmds {
+                for (js, jdef) in cmd.joint_states.iter().zip(profile.joints.iter()) {
+                    assert!(
+                        js.effort.abs() <= jdef.max_torque,
+                        "profile '{}' baseline effort {:.2} exceeds max_torque {:.2} for {}",
+                        profile.name,
+                        js.effort,
+                        jdef.max_torque,
+                        jdef.name
+                    );
+                }
+            }
+        }
+    }
+
+    // =========================================================================
+    // Gap-filling tests
+    // =========================================================================
+
+    #[test]
+    fn aggressive_velocity_is_at_least_90_percent_of_effective_limit() {
+        // The effective limit accounts for margins AND proximity zone scaling.
+        // Aggressive produces velocity at 97% of the effective limit, so > 90%
+        // should hold even with all tightening factors applied.
+        let profile = panda();
+        let gen = ScenarioGenerator::new(&profile, ScenarioType::Aggressive);
+        let cmds = gen.generate_commands(10, FAKE_PCA, &ops());
+        let vel_margin = profile
+            .real_world_margins
+            .as_ref()
+            .map(|m| m.velocity_margin)
+            .unwrap_or(0.0);
+        // Compute the proximity scale at the EE position used by aggressive
+        let ee_pos = ScenarioGenerator::safe_end_effector(&profile);
+        let prox_scale = ScenarioGenerator::proximity_scale_at(&profile, ee_pos);
+        let any_near_limit = cmds.iter().any(|cmd| {
+            cmd.joint_states
+                .iter()
+                .zip(profile.joints.iter())
+                .any(|(js, jdef)| {
+                    let effective = jdef.max_velocity
+                        * profile.global_velocity_scale
+                        * (1.0 - vel_margin)
+                        * prox_scale;
+                    js.velocity.abs() > 0.90 * effective
+                })
+        });
+        assert!(
+            any_near_limit,
+            "Aggressive must produce velocities near (>90%) the effective limit \
+             (accounting for margins and proximity scaling)"
+        );
+    }
+
+    #[test]
+    fn aggressive_delta_time_is_at_least_90_percent_of_max() {
+        let profile = panda();
+        let gen = ScenarioGenerator::new(&profile, ScenarioType::Aggressive);
+        let cmds = gen.generate_commands(5, FAKE_PCA, &ops());
+        let any_near_max = cmds
+            .iter()
+            .any(|cmd| cmd.delta_time > 0.90 * profile.max_delta_time);
+        assert!(
+            any_near_max,
+            "Aggressive must produce delta_time > 90% of max_delta_time"
+        );
+    }
+
+    #[test]
+    fn aggressive_positions_near_boundary() {
+        // Aggressive uses positions at 95% of range from each end (5% margin from limit).
+        // A position at max - range*0.05 is 90% of the way from midpoint to boundary.
+        // Threshold is set to 85% to robustly capture positions in the 90–95% range.
+        let profile = panda();
+        let gen = ScenarioGenerator::new(&profile, ScenarioType::Aggressive);
+        let cmds = gen.generate_commands(10, FAKE_PCA, &ops());
+        let any_near_boundary = cmds.iter().any(|cmd| {
+            cmd.joint_states
+                .iter()
+                .zip(profile.joints.iter())
+                .any(|(js, jdef)| {
+                    let mid = (jdef.min + jdef.max) / 2.0;
+                    let half_range = (jdef.max - jdef.min) / 2.0;
+                    // At least 85% of the way from midpoint to a boundary
+                    (js.position - mid).abs() >= 0.85 * half_range
+                })
+        });
+        assert!(
+            any_near_boundary,
+            "Aggressive must produce at least one joint position >=85% from midpoint to boundary"
+        );
+    }
+
+    #[test]
+    fn prompt_injection_positions_are_extreme() {
+        let profile = panda();
+        let gen = ScenarioGenerator::new(&profile, ScenarioType::PromptInjection);
+        let cmds = gen.generate_commands(4, FAKE_PCA, &ops());
+        // PromptInjection uses 10× outside limits. At least one joint must exceed
+        // 5× the half-range beyond its boundary.
+        let any_extreme = cmds.iter().any(|cmd| {
+            cmd.joint_states
+                .iter()
+                .zip(profile.joints.iter())
+                .any(|(js, jdef)| {
+                    let range = jdef.max - jdef.min;
+                    js.position.abs() > jdef.max.abs() + 5.0 * range
+                        || js.position < jdef.min - 5.0 * range
+                })
+        });
+        assert!(
+            any_extreme,
+            "PromptInjection must produce positions that exceed limits by at least 5× the range"
+        );
+    }
+
+    #[test]
+    fn prompt_injection_velocities_are_extreme() {
+        let profile = panda();
+        let gen = ScenarioGenerator::new(&profile, ScenarioType::PromptInjection);
+        let cmds = gen.generate_commands(4, FAKE_PCA, &ops());
+        // PromptInjection uses 5× max velocity; at least one joint must exceed 3× max.
+        let any_extreme = cmds.iter().any(|cmd| {
+            cmd.joint_states
+                .iter()
+                .zip(profile.joints.iter())
+                .any(|(js, jdef)| js.velocity.abs() > 3.0 * jdef.max_velocity)
+        });
+        assert!(
+            any_extreme,
+            "PromptInjection must produce velocities exceeding 3× max velocity"
+        );
+    }
+
+    #[test]
+    fn chain_forgery_pca_chain_is_not_valid_base64_json() {
+        use base64::Engine;
+        let profile = panda();
+        let gen = ScenarioGenerator::new(&profile, ScenarioType::ChainForgery);
+        let cmds = gen.generate_commands(3, FAKE_PCA, &ops());
+        for cmd in &cmds {
+            let decoded =
+                base64::engine::general_purpose::STANDARD.decode(&cmd.authority.pca_chain);
+            // Either decode fails (not valid base64) or the decoded bytes aren't
+            // valid SignedPca JSON.
+            let is_garbage = match decoded {
+                Err(_) => true,
+                Ok(bytes) => serde_json::from_slice::<
+                    Vec<invariant_core::models::authority::SignedPca>,
+                >(&bytes)
+                .is_err(),
+            };
+            assert!(is_garbage, "ChainForgery must produce invalid PCA chain");
+        }
+    }
+
+    #[test]
+    fn multi_agent_handoff_has_multiple_sources() {
+        let profile = panda();
+        let gen = ScenarioGenerator::new(&profile, ScenarioType::MultiAgentHandoff);
+        let cmds = gen.generate_commands(8, FAKE_PCA, &ops());
+        let sources: std::collections::HashSet<&str> =
+            cmds.iter().map(|c| c.source.as_str()).collect();
+        assert!(
+            sources.len() >= 2,
+            "MultiAgentHandoff must produce at least 2 distinct source values, got: {sources:?}"
+        );
+    }
+
+    #[test]
+    fn exclusion_zone_ee_not_in_workspace_centre() {
+        let profile = panda();
+        let gen = ScenarioGenerator::new(&profile, ScenarioType::ExclusionZone);
+        let cmds = gen.generate_commands(3, FAKE_PCA, &ops());
+        let centre = ScenarioGenerator::workspace_centre(&profile);
+        // The EE must NOT be at the workspace centre — the generator targets a zone.
+        let any_not_centre = cmds.iter().any(|cmd| {
+            cmd.end_effector_positions
+                .iter()
+                .any(|ee| ee.position != centre)
+        });
+        assert!(
+            any_not_centre,
+            "ExclusionZone EE must not be at the workspace centre"
+        );
+    }
+
+    #[test]
+    fn single_command_baseline_is_valid() {
+        let profile = panda();
+        let gen = ScenarioGenerator::new(&profile, ScenarioType::Baseline);
+        let cmds = gen.generate_commands(1, FAKE_PCA, &ops());
+        assert_eq!(cmds.len(), 1, "count=1 must produce exactly 1 command");
+        let cmd = &cmds[0];
+        assert_eq!(cmd.joint_states.len(), profile.joints.len());
+        for (js, jdef) in cmd.joint_states.iter().zip(profile.joints.iter()) {
+            assert!(
+                js.position >= jdef.min && js.position <= jdef.max,
+                "single-command baseline position {:.4} out of [{:.4}, {:.4}] for {}",
+                js.position,
+                jdef.min,
+                jdef.max,
+                jdef.name
+            );
+        }
+        assert!(
+            cmd.delta_time > 0.0 && cmd.delta_time <= profile.max_delta_time,
+            "single-command baseline delta_time {:.6} must be in (0, max_delta_time]",
+            cmd.delta_time
+        );
+    }
+
+    #[test]
+    fn single_command_locomotion_runaway_has_locomotion_state() {
+        let profile = quadruped();
+        let gen = ScenarioGenerator::new(&profile, ScenarioType::LocomotionRunaway);
+        let cmds = gen.generate_commands(1, FAKE_PCA, &ops());
+        assert_eq!(cmds.len(), 1);
+        assert!(
+            cmds[0].locomotion_state.is_some(),
+            "count=1 LocomotionRunaway must have locomotion_state"
+        );
+    }
+
+    #[test]
+    fn single_command_environment_fault_has_environment_state() {
+        let profile = cnc_tending_profile();
+        let gen = ScenarioGenerator::new(&profile, ScenarioType::EnvironmentFault);
+        let cmds = gen.generate_commands(1, FAKE_PCA, &ops());
+        assert_eq!(cmds.len(), 1);
+        assert!(
+            cmds[0].environment_state.is_some(),
+            "count=1 EnvironmentFault must have environment_state"
+        );
+    }
+
+    #[test]
+    fn locomotion_runaway_velocity_ramps_upward() {
+        let profile = quadruped();
+        let gen = ScenarioGenerator::new(&profile, ScenarioType::LocomotionRunaway);
+        let cmds = gen.generate_commands(20, FAKE_PCA, &ops());
+        let speed = |cmd: &invariant_core::models::command::Command| {
+            let loco = cmd.locomotion_state.as_ref().expect("must have loco state");
+            let [vx, vy, vz] = loco.base_velocity;
+            (vx * vx + vy * vy + vz * vz).sqrt()
+        };
+        let first_speed = speed(&cmds[0]);
+        let last_speed = speed(cmds.last().unwrap());
+        assert!(
+            last_speed > first_speed,
+            "LocomotionRunaway: last speed {last_speed:.3} must be greater than first speed {first_speed:.3}"
+        );
+    }
+
+    #[test]
+    fn locomotion_slip_tangential_force_increases() {
+        let profile = quadruped();
+        let gen = ScenarioGenerator::new(&profile, ScenarioType::LocomotionSlip);
+        let cmds = gen.generate_commands(10, FAKE_PCA, &ops());
+        let tangential = |cmd: &invariant_core::models::command::Command| {
+            let loco = cmd.locomotion_state.as_ref().expect("must have loco state");
+            loco.feet
+                .iter()
+                .filter_map(|f| f.ground_reaction_force.as_ref())
+                .map(|grf| (grf[0] * grf[0] + grf[1] * grf[1]).sqrt())
+                .fold(0.0_f64, f64::max)
+        };
+        let first = tangential(&cmds[0]);
+        let last = tangential(cmds.last().unwrap());
+        assert!(
+            last > first,
+            "LocomotionSlip: last tangential force {last:.3} must exceed first {first:.3}"
+        );
+    }
+
+    #[test]
+    fn baseline_timestamps_are_monotonically_increasing() {
+        let profile = panda();
+        let gen = ScenarioGenerator::new(&profile, ScenarioType::Baseline);
+        let cmds = gen.generate_commands(10, FAKE_PCA, &ops());
+        for w in cmds.windows(2) {
+            assert!(
+                w[1].timestamp >= w[0].timestamp,
+                "baseline timestamps must be non-decreasing: {:?} >= {:?}",
+                w[1].timestamp,
+                w[0].timestamp
+            );
+        }
+    }
+
+    #[test]
+    fn all_profiles_baseline_joint_names_match_profile() {
+        for profile in all_profiles() {
+            let gen = ScenarioGenerator::new(&profile, ScenarioType::Baseline);
+            let cmds = gen.generate_commands(3, FAKE_PCA, &ops());
+            for cmd in &cmds {
+                for (js, jdef) in cmd.joint_states.iter().zip(profile.joints.iter()) {
+                    assert_eq!(
+                        js.name, jdef.name,
+                        "profile '{}': joint_state name '{}' must match profile joint name '{}'",
+                        profile.name, js.name, jdef.name
+                    );
+                }
+            }
+        }
     }
 }

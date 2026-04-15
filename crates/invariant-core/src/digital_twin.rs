@@ -6,9 +6,9 @@
 //! simulation-derived safety margins may no longer be valid.
 //!
 //! Integration points:
-//! - [`DivergenceDetector`] runs per-command in the validation loop
-//! - Produces [`MonitorResult`]-compatible outputs for the incident pipeline
-//! - Thresholds calibrated from [`invariant transfer`] reports
+//! - `DivergenceDetector` runs per-command in the validation loop
+//! - Produces `MonitorResult`-compatible outputs for the incident pipeline
+//! - Thresholds calibrated from `invariant transfer` reports
 //!
 //! # Architecture
 //!
@@ -49,6 +49,22 @@ use crate::monitors::{MonitorAction, MonitorResult, MonitorSeverity};
 // ---------------------------------------------------------------------------
 
 /// Configuration for the divergence detector.
+///
+/// # Examples
+///
+/// ```
+/// use invariant_robotics_core::digital_twin::DivergenceConfig;
+///
+/// // Default configuration based on typical sim-to-real transfer reports.
+/// let config = DivergenceConfig::default();
+/// assert_eq!(config.window_size, 100);
+/// assert!((config.position_alert_threshold - 0.03).abs() < 1e-9);
+///
+/// // Custom configuration from margin factors.
+/// let custom = DivergenceConfig::from_margins(0.01, 0.05, 3.14);
+/// assert!(custom.position_alert_threshold > 0.0);
+/// assert!(custom.position_reject_threshold > custom.position_alert_threshold);
+/// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DivergenceConfig {
     /// Sliding window size (number of observations).
@@ -116,9 +132,13 @@ impl DivergenceConfig {
 /// Error measurements for a single joint at a single observation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct JointError {
+    /// Name of the joint this error record belongs to.
     pub joint_name: String,
+    /// Absolute difference between predicted and observed position (rad or m).
     pub position_error: f64,
+    /// Absolute difference between predicted and observed velocity (rad/s or m/s).
     pub velocity_error: f64,
+    /// Absolute difference between predicted and observed effort (Nm or N).
     pub effort_error: f64,
 }
 
@@ -128,9 +148,11 @@ pub struct JointError {
 
 #[derive(Debug, Clone)]
 struct Observation {
+    #[allow(dead_code)] // Retained for diagnostics and future per-joint alerting.
     joint_errors: Vec<JointError>,
     max_position_error: f64,
     max_velocity_error: f64,
+    #[allow(dead_code)] // Retained for future drift-rate alerting.
     mean_position_error: f64,
 }
 
@@ -189,7 +211,28 @@ pub enum DivergenceLevel {
 /// Feed it pairs of (predicted, observed) joint states on every command
 /// cycle. It maintains a sliding window of error statistics and produces
 /// [`DivergenceSnapshot`] values for monitoring/logging and
-/// [`MonitorResult`] values for the incident response pipeline.
+/// `MonitorResult` values for the incident response pipeline.
+///
+/// # Examples
+///
+/// ```
+/// use invariant_robotics_core::digital_twin::{DivergenceDetector, DivergenceLevel};
+/// use invariant_robotics_core::models::command::JointState;
+///
+/// let mut detector = DivergenceDetector::with_defaults();
+///
+/// let predicted = vec![
+///     JointState { name: "shoulder_pan_joint".to_string(), position: 0.0, velocity: 0.0, effort: 0.0 },
+/// ];
+/// let observed = vec![
+///     JointState { name: "shoulder_pan_joint".to_string(), position: 0.001, velocity: 0.0, effort: 0.0 },
+/// ];
+///
+/// // Small error (1 mrad) — within normal bounds.
+/// let snapshot = detector.observe(&predicted, &observed);
+/// assert_eq!(snapshot.level, DivergenceLevel::Normal);
+/// assert!(snapshot.max_position_error < 0.01);
+/// ```
 pub struct DivergenceDetector {
     config: DivergenceConfig,
     window: VecDeque<Observation>,
@@ -200,7 +243,16 @@ pub struct DivergenceDetector {
 
 impl DivergenceDetector {
     /// Create a new detector with the given configuration.
+    /// Create a new detector with the given configuration.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `config.window_size` is 0 (would silently misconfigure the detector).
     pub fn new(config: DivergenceConfig) -> Self {
+        assert!(
+            config.window_size > 0,
+            "DivergenceConfig::window_size must be >= 1"
+        );
         Self {
             window: VecDeque::with_capacity(config.window_size),
             config,
@@ -314,7 +366,7 @@ impl DivergenceDetector {
         }
     }
 
-    /// Convert the most recent snapshot into a [`MonitorResult`] for the
+    /// Convert the most recent snapshot into a `MonitorResult` for the
     /// incident response pipeline.
     pub fn to_monitor_result(&self, snapshot: &DivergenceSnapshot) -> MonitorResult {
         match snapshot.level {
@@ -387,11 +439,30 @@ fn compute_joint_errors(predicted: &[JointState], observed: &[JointState]) -> Ve
     let mut errors = Vec::with_capacity(predicted.len());
     for pred in predicted {
         if let Some(obs) = observed.iter().find(|o| o.name == pred.name) {
+            let position_error = (pred.position - obs.position).abs();
+            let velocity_error = (pred.velocity - obs.velocity).abs();
+            let effort_error = (pred.effort - obs.effort).abs();
+
+            // Fail-closed: if any error is NaN/Inf (from non-finite sensor data),
+            // treat it as the maximum possible error to ensure the divergence
+            // detector escalates rather than silently classifying as Normal.
             errors.push(JointError {
                 joint_name: pred.name.clone(),
-                position_error: (pred.position - obs.position).abs(),
-                velocity_error: (pred.velocity - obs.velocity).abs(),
-                effort_error: (pred.effort - obs.effort).abs(),
+                position_error: if position_error.is_finite() {
+                    position_error
+                } else {
+                    f64::MAX
+                },
+                velocity_error: if velocity_error.is_finite() {
+                    velocity_error
+                } else {
+                    f64::MAX
+                },
+                effort_error: if effort_error.is_finite() {
+                    effort_error
+                } else {
+                    f64::MAX
+                },
             });
         }
     }
@@ -869,5 +940,87 @@ mod tests {
         // Window now has 3 zero-error observations; the big one was evicted.
         assert_eq!(snap.window_count, 3);
         assert!(snap.window_max_position_error < 1e-9);
+    }
+
+    // ── NaN fail-closed tests (Step 101) ──────────────────────────────
+
+    #[test]
+    fn observe_nan_position_does_not_classify_as_normal() {
+        // NaN in observed position must escalate to Catastrophic, not Normal.
+        let config = DivergenceConfig {
+            warmup_observations: 0, // no warmup
+            ..DivergenceConfig::default()
+        };
+        let mut det = DivergenceDetector::new(config);
+        let pred = vec![joint("j1", 0.0, 0.0, 0.0)];
+        let obs = vec![joint("j1", f64::NAN, 0.0, 0.0)];
+        let snap = det.observe(&pred, &obs);
+        assert_ne!(
+            snap.level,
+            DivergenceLevel::Normal,
+            "NaN position error must not classify as Normal"
+        );
+        // f64::MAX triggers Catastrophic (exceeds all thresholds).
+        assert_eq!(snap.level, DivergenceLevel::Catastrophic);
+    }
+
+    #[test]
+    fn observe_inf_velocity_does_not_classify_as_normal() {
+        let config = DivergenceConfig {
+            warmup_observations: 0,
+            ..DivergenceConfig::default()
+        };
+        let mut det = DivergenceDetector::new(config);
+        let pred = vec![joint("j1", 0.0, 0.0, 0.0)];
+        let obs = vec![joint("j1", 0.0, f64::INFINITY, 0.0)];
+        let snap = det.observe(&pred, &obs);
+        assert_ne!(
+            snap.level,
+            DivergenceLevel::Normal,
+            "Inf velocity error must not classify as Normal"
+        );
+    }
+
+    #[test]
+    fn nan_error_does_not_poison_subsequent_observations() {
+        // After a NaN observation, subsequent clean observations should still
+        // classify correctly (the NaN was converted to f64::MAX, not propagated).
+        let config = DivergenceConfig {
+            window_size: 2,
+            warmup_observations: 0,
+            ..DivergenceConfig::default()
+        };
+        let mut det = DivergenceDetector::new(config);
+        let pred = vec![joint("j1", 0.0, 0.0, 0.0)];
+
+        // First: NaN observation → Catastrophic.
+        let obs_nan = vec![joint("j1", f64::NAN, 0.0, 0.0)];
+        let snap = det.observe(&pred, &obs_nan);
+        assert_eq!(snap.level, DivergenceLevel::Catastrophic);
+
+        // Second: clean observation. Window still has the f64::MAX one.
+        let obs_clean = vec![joint("j1", 0.0, 0.0, 0.0)];
+        let snap2 = det.observe(&pred, &obs_clean);
+        // The max_position_error for this observation is 0.0, but window still
+        // contains the MAX entry, so window_max is still huge.
+        assert!(snap2.max_position_error < 1e-9, "this observation is clean");
+
+        // Third: push the MAX entry out of the window.
+        let snap3 = det.observe(&pred, &obs_clean);
+        // Now the window only has clean observations.
+        assert!(snap3.window_max_position_error < 1e-9);
+        assert_eq!(snap3.level, DivergenceLevel::Normal);
+    }
+
+    // ── window_size=0 validation (Step 101) ───────────────────────────
+
+    #[test]
+    #[should_panic(expected = "window_size must be >= 1")]
+    fn detector_rejects_window_size_zero() {
+        let config = DivergenceConfig {
+            window_size: 0,
+            ..DivergenceConfig::default()
+        };
+        let _det = DivergenceDetector::new(config);
     }
 }

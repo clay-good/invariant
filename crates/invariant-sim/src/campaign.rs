@@ -8,14 +8,42 @@ use thiserror::Error;
 // Error type
 // ---------------------------------------------------------------------------
 
+/// Errors that can occur when loading or validating a campaign configuration.
+///
+/// # Examples
+///
+/// ```
+/// use invariant_robotics_sim::campaign::{CampaignError, load_config};
+///
+/// // A YAML parse error surfaces as CampaignError::YamlParse.
+/// let result = load_config(": this is not valid yaml: [");
+/// assert!(result.is_err());
+///
+/// // A validation error (empty name) surfaces as CampaignError::Validation.
+/// let bad_yaml = "
+/// name: ''
+/// profile: franka_panda
+/// environments: 1
+/// episodes_per_env: 1
+/// steps_per_episode: 10
+/// scenarios:
+///   - scenario_type: baseline
+///     weight: 1.0
+/// ";
+/// let result = load_config(bad_yaml);
+/// assert!(matches!(result, Err(CampaignError::Validation(_))));
+/// ```
 #[derive(Debug, Error)]
 pub enum CampaignError {
+    /// The campaign YAML could not be parsed.
     #[error("YAML parse error: {0}")]
     YamlParse(#[from] serde_yaml::Error),
 
+    /// An I/O error occurred while reading the campaign file.
     #[error("I/O error reading campaign file: {0}")]
     Io(#[from] std::io::Error),
 
+    /// The campaign configuration failed semantic validation.
     #[error("campaign validation error: {0}")]
     Validation(String),
 }
@@ -25,6 +53,30 @@ pub enum CampaignError {
 // ---------------------------------------------------------------------------
 
 /// Top-level campaign configuration, loaded from YAML.
+///
+/// # Examples
+///
+/// ```
+/// use invariant_robotics_sim::campaign::{CampaignConfig, ScenarioConfig, SuccessCriteria};
+///
+/// let config = CampaignConfig {
+///     name: "franka_baseline".to_string(),
+///     profile: "franka_panda".to_string(),
+///     environments: 4,
+///     episodes_per_env: 10,
+///     steps_per_episode: 100,
+///     scenarios: vec![ScenarioConfig {
+///         scenario_type: "baseline".to_string(),
+///         weight: 1.0,
+///         injections: vec![],
+///     }],
+///     success_criteria: SuccessCriteria::default(),
+/// };
+///
+/// assert_eq!(config.name, "franka_baseline");
+/// assert_eq!(config.environments, 4);
+/// assert_eq!(config.scenarios.len(), 1);
+/// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CampaignConfig {
     /// Human-readable campaign name.
@@ -45,6 +97,22 @@ pub struct CampaignConfig {
 }
 
 /// Per-scenario configuration entry.
+///
+/// # Examples
+///
+/// ```
+/// use invariant_robotics_sim::campaign::ScenarioConfig;
+///
+/// let sc = ScenarioConfig {
+///     scenario_type: "exclusion_zone".to_string(),
+///     weight: 1.5,
+///     injections: vec!["velocity_overshoot".to_string()],
+/// };
+///
+/// assert_eq!(sc.scenario_type, "exclusion_zone");
+/// assert!((sc.weight - 1.5).abs() < f64::EPSILON);
+/// assert_eq!(sc.injections.len(), 1);
+/// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScenarioConfig {
     /// Must match a variant name in `crate::scenario::ScenarioType`.
@@ -57,6 +125,26 @@ pub struct ScenarioConfig {
 }
 
 /// Campaign success thresholds (IEC 61508-inspired defaults).
+///
+/// # Examples
+///
+/// ```
+/// use invariant_robotics_sim::campaign::SuccessCriteria;
+///
+/// // Default thresholds match IEC 61508-inspired values.
+/// let criteria = SuccessCriteria::default();
+/// assert!((criteria.min_legitimate_pass_rate - 0.98).abs() < f64::EPSILON);
+/// assert_eq!(criteria.max_violation_escape_rate, 0.0);
+/// assert!((criteria.max_false_rejection_rate - 0.02).abs() < f64::EPSILON);
+///
+/// // Custom thresholds can be constructed directly.
+/// let custom = SuccessCriteria {
+///     min_legitimate_pass_rate: 0.995,
+///     max_violation_escape_rate: 0.0,
+///     max_false_rejection_rate: 0.005,
+/// };
+/// assert!((custom.min_legitimate_pass_rate - 0.995).abs() < f64::EPSILON);
+/// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SuccessCriteria {
     /// Minimum fraction of legitimate commands that must be approved (default 0.98).
@@ -89,6 +177,53 @@ impl Default for SuccessCriteria {
 // ---------------------------------------------------------------------------
 
 /// Parse a `CampaignConfig` from a YAML string.
+///
+/// Returns `CampaignError::YamlParse` on malformed YAML and
+/// `CampaignError::Validation` when the config fails semantic checks.
+///
+/// # Examples
+///
+/// ```
+/// use invariant_robotics_sim::campaign::load_config;
+///
+/// let yaml = "
+/// name: franka_safety_campaign
+/// profile: franka_panda
+/// environments: 2
+/// episodes_per_env: 5
+/// steps_per_episode: 100
+/// scenarios:
+///   - scenario_type: baseline
+///     weight: 3.0
+///   - scenario_type: exclusion_zone
+///     weight: 1.5
+///     injections:
+///       - velocity_overshoot
+/// success_criteria:
+///   min_legitimate_pass_rate: 0.98
+///   max_violation_escape_rate: 0.0
+///   max_false_rejection_rate: 0.02
+/// ";
+///
+/// let config = load_config(yaml).expect("valid YAML should parse");
+/// assert_eq!(config.name, "franka_safety_campaign");
+/// assert_eq!(config.profile, "franka_panda");
+/// assert_eq!(config.environments, 2);
+/// assert_eq!(config.episodes_per_env, 5);
+/// assert_eq!(config.steps_per_episode, 100);
+/// assert_eq!(config.scenarios.len(), 2);
+/// assert_eq!(config.scenarios[0].scenario_type, "baseline");
+/// assert!((config.scenarios[0].weight - 3.0).abs() < f64::EPSILON);
+/// assert_eq!(config.scenarios[1].injections[0], "velocity_overshoot");
+/// ```
+///
+/// Invalid YAML is rejected:
+///
+/// ```
+/// use invariant_robotics_sim::campaign::load_config;
+///
+/// assert!(load_config(": bad: [yaml").is_err());
+/// ```
 pub fn load_config(yaml: &str) -> Result<CampaignConfig, CampaignError> {
     let config: CampaignConfig = serde_yaml::from_str(yaml)?;
     validate_config(&config)?;
@@ -129,7 +264,13 @@ const MAX_EPISODES_PER_ENV: u32 = 100_000;
 /// At 100 Hz a 10 000-step episode corresponds to 100 seconds of wall time.
 const MAX_STEPS_PER_EPISODE: u32 = 1_000_000;
 /// Maximum total commands (environments × episodes × steps) in a campaign.
-const MAX_TOTAL_COMMANDS: u64 = 10_000_000;
+///
+/// Set to 100M to support large-scale SIL 3 certification campaigns.
+/// At 100 Hz a 100M-command campaign corresponds to ~278 hours of simulated
+/// wall time.  Memory usage scales linearly with steps_per_episode (not total
+/// commands) because only one episode's worth of commands is held in memory
+/// at a time.
+const MAX_TOTAL_COMMANDS: u64 = 100_000_000;
 
 fn validate_config(config: &CampaignConfig) -> Result<(), CampaignError> {
     if config.name.is_empty() {
@@ -222,6 +363,221 @@ fn validate_config(config: &CampaignConfig) -> Result<(), CampaignError> {
     }
 
     Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// 15M Campaign Config Generator (spec-15m-campaign.md Step 3)
+// ---------------------------------------------------------------------------
+
+/// Profile weight and applicable scenario categories for the 15M campaign.
+struct ProfileAllocation {
+    name: &'static str,
+    /// Fraction of total episodes allocated to this profile (sums to 1.0).
+    weight: f64,
+    /// Whether this profile has locomotion config (enables D-category scenarios).
+    has_locomotion: bool,
+}
+
+/// All 22 scenario types with their category weight.
+fn all_scenario_entries() -> Vec<ScenarioConfig> {
+    let entries = [
+        // A: Normal operation
+        ("baseline", 3.0),
+        ("aggressive", 2.0),
+        // B: Joint safety
+        ("prompt_injection", 2.0),
+        // C: Spatial safety
+        ("exclusion_zone", 1.5),
+        // D: Stability & locomotion
+        ("locomotion_runaway", 1.0),
+        ("locomotion_slip", 1.0),
+        ("locomotion_trip", 1.0),
+        ("locomotion_stomp", 1.0),
+        ("locomotion_fall", 1.0),
+        // E: Manipulation (not weighted here — added per-profile)
+        // F: Environmental
+        ("environment_fault", 1.5),
+        // G: Authority & crypto
+        ("authority_escalation", 1.5),
+        ("chain_forgery", 1.5),
+        // H: Temporal & sequence
+        ("multi_agent_handoff", 1.0),
+        // I: Cognitive escape (uses compound scenarios as proxies)
+        ("compound_authority_physics", 1.5),
+        ("compound_sensor_spatial", 1.0),
+        ("compound_drift_then_violation", 1.5),
+        ("compound_environment_physics", 1.0),
+        // J: (included above)
+        // K: Recovery
+        ("recovery_safe_stop", 0.8),
+        ("recovery_audit_integrity", 0.8),
+        // L: Long-running
+        ("long_running_stability", 0.5),
+        ("long_running_threat", 0.5),
+        // M: CNC tending
+        ("cnc_tending", 0.5),
+    ];
+    entries
+        .iter()
+        .map(|(name, weight)| ScenarioConfig {
+            scenario_type: name.to_string(),
+            weight: *weight,
+            injections: vec![],
+        })
+        .collect()
+}
+
+/// Generate per-profile `CampaignConfig`s for the full 15M campaign.
+///
+/// Each profile gets its weighted share of `total_episodes` distributed
+/// across the applicable scenarios. The `shards` parameter controls how
+/// many GPU shards the campaign is split across (typically 8).
+///
+/// Returns one `CampaignConfig` per (profile, shard) pair, ready to be
+/// serialized to YAML and submitted to RunPod workers.
+pub fn generate_15m_configs(total_episodes: u64, shards: u32) -> Vec<CampaignConfig> {
+    let profiles = [
+        ProfileAllocation {
+            name: "humanoid_28dof",
+            weight: 0.10,
+            has_locomotion: true,
+        },
+        ProfileAllocation {
+            name: "unitree_h1",
+            weight: 0.08,
+            has_locomotion: true,
+        },
+        ProfileAllocation {
+            name: "unitree_g1",
+            weight: 0.07,
+            has_locomotion: true,
+        },
+        ProfileAllocation {
+            name: "ur10e_haas_cell",
+            weight: 0.09,
+            has_locomotion: false,
+        },
+        ProfileAllocation {
+            name: "ur10e_cnc_tending",
+            weight: 0.07,
+            has_locomotion: false,
+        },
+        ProfileAllocation {
+            name: "franka_panda",
+            weight: 0.07,
+            has_locomotion: false,
+        },
+        ProfileAllocation {
+            name: "kuka_iiwa14",
+            weight: 0.06,
+            has_locomotion: false,
+        },
+        ProfileAllocation {
+            name: "kinova_gen3",
+            weight: 0.05,
+            has_locomotion: false,
+        },
+        ProfileAllocation {
+            name: "abb_gofa",
+            weight: 0.05,
+            has_locomotion: false,
+        },
+        ProfileAllocation {
+            name: "spot",
+            weight: 0.07,
+            has_locomotion: true,
+        },
+        ProfileAllocation {
+            name: "quadruped_12dof",
+            weight: 0.05,
+            has_locomotion: false,
+        },
+        ProfileAllocation {
+            name: "shadow_hand",
+            weight: 0.04,
+            has_locomotion: false,
+        },
+        ProfileAllocation {
+            name: "ur10",
+            weight: 0.04,
+            has_locomotion: false,
+        },
+        ProfileAllocation {
+            name: "adversarial_zero_margin",
+            weight: 0.04,
+            has_locomotion: false,
+        },
+        ProfileAllocation {
+            name: "adversarial_max_workspace",
+            weight: 0.04,
+            has_locomotion: false,
+        },
+        ProfileAllocation {
+            name: "adversarial_single_joint",
+            weight: 0.04,
+            has_locomotion: false,
+        },
+        ProfileAllocation {
+            name: "adversarial_max_joints",
+            weight: 0.04,
+            has_locomotion: false,
+        },
+    ];
+
+    let mut configs = Vec::new();
+
+    for profile in &profiles {
+        let profile_episodes = (total_episodes as f64 * profile.weight).round() as u64;
+        if profile_episodes == 0 {
+            continue;
+        }
+
+        // Filter scenarios to those applicable to this profile.
+        let mut scenarios = all_scenario_entries();
+        if !profile.has_locomotion {
+            scenarios.retain(|s| !s.scenario_type.starts_with("locomotion_"));
+        }
+
+        let episodes_per_shard = (profile_episodes / shards as u64).max(1);
+        let steps_per_episode: u32 = 200;
+
+        // Split into environments × episodes_per_env to respect MAX_EPISODES_PER_ENV.
+        let max_eps = MAX_EPISODES_PER_ENV as u64;
+        let envs = episodes_per_shard.div_ceil(max_eps) as u32;
+        let eps_per_env = (episodes_per_shard / envs as u64) as u32;
+
+        for shard_id in 0..shards {
+            configs.push(CampaignConfig {
+                name: format!("15m_{}_{}", profile.name, shard_id),
+                profile: profile.name.to_string(),
+                environments: envs,
+                episodes_per_env: eps_per_env,
+                steps_per_episode,
+                scenarios: scenarios.clone(),
+                success_criteria: SuccessCriteria {
+                    min_legitimate_pass_rate: 0.99,
+                    max_violation_escape_rate: 0.0,
+                    max_false_rejection_rate: 0.01,
+                },
+            });
+        }
+    }
+
+    configs
+}
+
+/// Serialize a list of campaign configs to a single YAML string
+/// (multi-document format with `---` separators).
+pub fn configs_to_yaml(configs: &[CampaignConfig]) -> Result<String, CampaignError> {
+    let mut output = String::new();
+    for config in configs {
+        if !output.is_empty() {
+            output.push_str("---\n");
+        }
+        let yaml = serde_yaml::to_string(config)?;
+        output.push_str(&yaml);
+    }
+    Ok(output)
 }
 
 // ---------------------------------------------------------------------------
@@ -480,14 +836,12 @@ scenarios:
 
     #[test]
     fn total_commands_at_max_is_valid() {
-        // MAX_TOTAL_COMMANDS = 10_000_000. Use 1 env × 10_000_000 steps × 1 episode
-        // but stay within per-field limits.  Use 10 envs × 1_000_000 steps = 10M.
-        // However MAX_STEPS_PER_EPISODE = 1_000_000 and MAX_ENVIRONMENTS = 10_000.
-        // 10 × 1 × 1_000_000 = 10_000_000 exactly.
+        // MAX_TOTAL_COMMANDS = 100_000_000.
+        // 100 envs × 1 ep × 1_000_000 steps = 100_000_000 exactly.
         let config = CampaignConfig {
             name: "boundary_test".to_string(),
             profile: "franka_panda".to_string(),
-            environments: 10,
+            environments: 100,
             episodes_per_env: 1,
             steps_per_episode: 1_000_000,
             scenarios: vec![ScenarioConfig {
@@ -506,13 +860,13 @@ scenarios:
 
     #[test]
     fn total_commands_above_max_returns_validation_error() {
-        // 10 envs × 1 episode × 1_000_001 steps = 10_000_010 > MAX_TOTAL_COMMANDS.
+        // 101 envs × 1 ep × 1_000_000 steps = 101_000_000 > MAX_TOTAL_COMMANDS.
         let config = CampaignConfig {
             name: "over_limit".to_string(),
             profile: "franka_panda".to_string(),
-            environments: 10,
+            environments: 101,
             episodes_per_env: 1,
-            steps_per_episode: 1_000_001,
+            steps_per_episode: 1_000_000,
             scenarios: vec![ScenarioConfig {
                 scenario_type: "Baseline".to_string(),
                 weight: 1.0,
@@ -520,8 +874,6 @@ scenarios:
             }],
             success_criteria: SuccessCriteria::default(),
         };
-        // steps_per_episode > MAX_STEPS_PER_EPISODE fires first, but
-        // the resulting total would also exceed MAX_TOTAL_COMMANDS.
         let err = validate_config(&config).unwrap_err();
         assert!(matches!(err, CampaignError::Validation(_)));
     }
@@ -768,5 +1120,92 @@ scenarios:
             matches!(&err, CampaignError::Validation(msg) if msg.contains("profile")),
             "got: {err:?}"
         );
+    }
+
+    // ── 15M campaign config generator tests ───────────────────────────
+
+    #[test]
+    fn generate_15m_produces_configs_for_all_profiles() {
+        let configs = generate_15m_configs(15_000_000, 8);
+        // 17 profiles × 8 shards = 136 configs
+        assert_eq!(configs.len(), 136, "17 profiles × 8 shards");
+    }
+
+    #[test]
+    fn generate_15m_total_episodes_approximately_correct() {
+        let configs = generate_15m_configs(15_000_000, 8);
+        let total: u64 = configs
+            .iter()
+            .map(|c| c.environments as u64 * c.episodes_per_env as u64)
+            .sum();
+        // Allow 5% tolerance due to integer rounding across 17 profiles × 8 shards
+        assert!(
+            total >= 14_000_000 && total <= 16_000_000,
+            "total episodes {total} should be ~15M"
+        );
+    }
+
+    #[test]
+    fn generate_15m_all_configs_have_scenarios() {
+        let configs = generate_15m_configs(15_000_000, 8);
+        for config in &configs {
+            assert!(
+                !config.scenarios.is_empty(),
+                "config {} must have scenarios",
+                config.name
+            );
+        }
+    }
+
+    #[test]
+    fn generate_15m_locomotion_profiles_have_locomotion_scenarios() {
+        let configs = generate_15m_configs(15_000_000, 8);
+        let humanoid_config = configs
+            .iter()
+            .find(|c| c.name.starts_with("15m_humanoid_28dof_"))
+            .unwrap();
+        assert!(
+            humanoid_config
+                .scenarios
+                .iter()
+                .any(|s| s.scenario_type == "locomotion_runaway"),
+            "humanoid must have locomotion_runaway scenario"
+        );
+    }
+
+    #[test]
+    fn generate_15m_arm_profiles_skip_locomotion_scenarios() {
+        let configs = generate_15m_configs(15_000_000, 8);
+        let panda_config = configs
+            .iter()
+            .find(|c| c.name.starts_with("15m_franka_panda_"))
+            .unwrap();
+        assert!(
+            !panda_config
+                .scenarios
+                .iter()
+                .any(|s| s.scenario_type.starts_with("locomotion_")),
+            "franka_panda must not have locomotion scenarios"
+        );
+    }
+
+    #[test]
+    fn generate_15m_configs_serializable_to_yaml() {
+        let configs = generate_15m_configs(1_000_000, 2);
+        let yaml = configs_to_yaml(&configs).expect("must serialize");
+        assert!(yaml.contains("15m_"));
+        assert!(yaml.contains("scenarios:"));
+    }
+
+    #[test]
+    fn generate_15m_success_criteria_strict() {
+        let configs = generate_15m_configs(15_000_000, 8);
+        for config in &configs {
+            assert_eq!(
+                config.success_criteria.max_violation_escape_rate, 0.0,
+                "zero escape rate required for {}",
+                config.name
+            );
+        }
     }
 }

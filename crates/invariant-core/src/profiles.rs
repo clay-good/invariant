@@ -1,6 +1,6 @@
 //! Profile library — built-in robot profiles embedded at compile time.
 //!
-//! Provides 4 validated profiles: humanoid_28dof, franka_panda, quadruped_12dof, ur10.
+//! Provides 10 validated profiles covering humanoids, quadrupeds, and collaborative arms.
 //! Custom profiles can be loaded from JSON strings or file bytes.
 
 use std::sync::OnceLock;
@@ -10,12 +10,23 @@ use crate::models::profile::RobotProfile;
 use thiserror::Error;
 
 // Embed profile JSON at compile time.
-const HUMANOID_28DOF_JSON: &str = include_str!("../../../profiles/humanoid_28dof.json");
-const FRANKA_PANDA_JSON: &str = include_str!("../../../profiles/franka_panda.json");
-const QUADRUPED_12DOF_JSON: &str = include_str!("../../../profiles/quadruped_12dof.json");
-const UR10_JSON: &str = include_str!("../../../profiles/ur10.json");
-const UR10E_HAAS_CELL_JSON: &str = include_str!("../../../profiles/ur10e_haas_cell.json");
-const UR10E_CNC_TENDING_JSON: &str = include_str!("../../../profiles/ur10e_cnc_tending.json");
+const HUMANOID_28DOF_JSON: &str = include_str!("../profiles/humanoid_28dof.json");
+const FRANKA_PANDA_JSON: &str = include_str!("../profiles/franka_panda.json");
+const QUADRUPED_12DOF_JSON: &str = include_str!("../profiles/quadruped_12dof.json");
+const UR10_JSON: &str = include_str!("../profiles/ur10.json");
+const UR10E_HAAS_CELL_JSON: &str = include_str!("../profiles/ur10e_haas_cell.json");
+const UR10E_CNC_TENDING_JSON: &str = include_str!("../profiles/ur10e_cnc_tending.json");
+const UNITREE_H1_JSON: &str = include_str!("../profiles/unitree_h1.json");
+const UNITREE_G1_JSON: &str = include_str!("../profiles/unitree_g1.json");
+const SPOT_JSON: &str = include_str!("../profiles/spot.json");
+const KUKA_IIWA14_JSON: &str = include_str!("../profiles/kuka_iiwa14.json");
+const KINOVA_GEN3_JSON: &str = include_str!("../profiles/kinova_gen3.json");
+const ABB_GOFA_JSON: &str = include_str!("../profiles/abb_gofa.json");
+const SHADOW_HAND_JSON: &str = include_str!("../profiles/shadow_hand.json");
+const ADV_ZERO_MARGIN_JSON: &str = include_str!("../profiles/adversarial_zero_margin.json");
+const ADV_MAX_WORKSPACE_JSON: &str = include_str!("../profiles/adversarial_max_workspace.json");
+const ADV_SINGLE_JOINT_JSON: &str = include_str!("../profiles/adversarial_single_joint.json");
+const ADV_MAX_JOINTS_JSON: &str = include_str!("../profiles/adversarial_max_joints.json");
 
 // Process-lifetime caches for parsed and validated built-in profiles.
 // Populated on first access; subsequent calls clone the cached value.
@@ -25,6 +36,17 @@ static CACHED_QUADRUPED_12DOF: OnceLock<RobotProfile> = OnceLock::new();
 static CACHED_UR10: OnceLock<RobotProfile> = OnceLock::new();
 static CACHED_UR10E_HAAS_CELL: OnceLock<RobotProfile> = OnceLock::new();
 static CACHED_UR10E_CNC_TENDING: OnceLock<RobotProfile> = OnceLock::new();
+static CACHED_UNITREE_H1: OnceLock<RobotProfile> = OnceLock::new();
+static CACHED_UNITREE_G1: OnceLock<RobotProfile> = OnceLock::new();
+static CACHED_SPOT: OnceLock<RobotProfile> = OnceLock::new();
+static CACHED_KUKA_IIWA14: OnceLock<RobotProfile> = OnceLock::new();
+static CACHED_KINOVA_GEN3: OnceLock<RobotProfile> = OnceLock::new();
+static CACHED_ABB_GOFA: OnceLock<RobotProfile> = OnceLock::new();
+static CACHED_SHADOW_HAND: OnceLock<RobotProfile> = OnceLock::new();
+static CACHED_ADV_ZERO_MARGIN: OnceLock<RobotProfile> = OnceLock::new();
+static CACHED_ADV_MAX_WORKSPACE: OnceLock<RobotProfile> = OnceLock::new();
+static CACHED_ADV_SINGLE_JOINT: OnceLock<RobotProfile> = OnceLock::new();
+static CACHED_ADV_MAX_JOINTS: OnceLock<RobotProfile> = OnceLock::new();
 
 /// Parse and validate a built-in profile from its embedded JSON constant.
 ///
@@ -60,22 +82,43 @@ const BUILTIN_NAMES: &[&str] = &[
     "ur10",
     "ur10e_haas_cell",
     "ur10e_cnc_tending",
+    "unitree_h1",
+    "unitree_g1",
+    "spot",
+    "kuka_iiwa14",
+    "kinova_gen3",
+    "abb_gofa",
+    "shadow_hand",
+    "adversarial_zero_margin",
+    "adversarial_max_workspace",
+    "adversarial_single_joint",
+    "adversarial_max_joints",
 ];
 
 /// Maximum JSON input size for custom profiles (256 KiB).
 const MAX_PROFILE_JSON_BYTES: usize = 256 * 1024;
 
+/// Errors that can occur when loading or parsing a robot profile.
 #[derive(Debug, Error)]
 pub enum ProfileError {
+    /// The requested built-in profile name does not exist.
     #[error("unknown built-in profile: {0:?}")]
     UnknownProfile(String),
 
+    /// The supplied JSON byte length exceeds the maximum allowed size (256 KiB).
     #[error("profile JSON exceeds maximum size of {max} bytes (got {got})")]
-    InputTooLarge { got: usize, max: usize },
+    InputTooLarge {
+        /// Actual byte length of the input.
+        got: usize,
+        /// Maximum allowed byte length.
+        max: usize,
+    },
 
+    /// The JSON could not be parsed into a `RobotProfile`.
     #[error("profile JSON parse error: {0}")]
     ParseError(#[from] serde_json::Error),
 
+    /// The parsed profile failed structural validation.
     #[error("profile validation failed: {0}")]
     ValidationFailed(#[from] ValidationError),
 }
@@ -109,6 +152,39 @@ pub fn load_builtin(name: &str) -> Result<RobotProfile, ProfileError> {
             .clone(),
         "ur10e_cnc_tending" => CACHED_UR10E_CNC_TENDING
             .get_or_init(|| parse_and_validate(UR10E_CNC_TENDING_JSON))
+            .clone(),
+        "unitree_h1" => CACHED_UNITREE_H1
+            .get_or_init(|| parse_and_validate(UNITREE_H1_JSON))
+            .clone(),
+        "unitree_g1" => CACHED_UNITREE_G1
+            .get_or_init(|| parse_and_validate(UNITREE_G1_JSON))
+            .clone(),
+        "spot" => CACHED_SPOT
+            .get_or_init(|| parse_and_validate(SPOT_JSON))
+            .clone(),
+        "kuka_iiwa14" => CACHED_KUKA_IIWA14
+            .get_or_init(|| parse_and_validate(KUKA_IIWA14_JSON))
+            .clone(),
+        "kinova_gen3" => CACHED_KINOVA_GEN3
+            .get_or_init(|| parse_and_validate(KINOVA_GEN3_JSON))
+            .clone(),
+        "abb_gofa" => CACHED_ABB_GOFA
+            .get_or_init(|| parse_and_validate(ABB_GOFA_JSON))
+            .clone(),
+        "shadow_hand" => CACHED_SHADOW_HAND
+            .get_or_init(|| parse_and_validate(SHADOW_HAND_JSON))
+            .clone(),
+        "adversarial_zero_margin" => CACHED_ADV_ZERO_MARGIN
+            .get_or_init(|| parse_and_validate(ADV_ZERO_MARGIN_JSON))
+            .clone(),
+        "adversarial_max_workspace" => CACHED_ADV_MAX_WORKSPACE
+            .get_or_init(|| parse_and_validate(ADV_MAX_WORKSPACE_JSON))
+            .clone(),
+        "adversarial_single_joint" => CACHED_ADV_SINGLE_JOINT
+            .get_or_init(|| parse_and_validate(ADV_SINGLE_JOINT_JSON))
+            .clone(),
+        "adversarial_max_joints" => CACHED_ADV_MAX_JOINTS
+            .get_or_init(|| parse_and_validate(ADV_MAX_JOINTS_JSON))
             .clone(),
         _ => return Err(ProfileError::UnknownProfile(name.to_string())),
     };
@@ -210,16 +286,90 @@ mod tests {
         assert_eq!(p.safe_stop_profile.target_joint_positions.len(), 6);
     }
 
+    #[test]
+    fn load_unitree_h1() {
+        let p = load_builtin("unitree_h1").expect("load unitree_h1");
+        assert_eq!(p.name, "unitree_h1");
+        assert_eq!(p.joints.len(), 19);
+        assert!(p.stability.is_some());
+        assert!(p.locomotion.is_some());
+        let loco = p.locomotion.as_ref().unwrap();
+        assert!((loco.max_locomotion_velocity - 3.3).abs() < 0.01);
+        assert!(p.environment.is_some());
+        assert!(p.real_world_margins.is_some());
+        assert_eq!(
+            p.safe_stop_profile.strategy,
+            SafeStopStrategy::ControlledCrouch
+        );
+        assert!(p.joints.iter().all(|j| j.joint_type == JointType::Revolute));
+    }
+
+    #[test]
+    fn load_unitree_g1() {
+        let p = load_builtin("unitree_g1").expect("load unitree_g1");
+        assert_eq!(p.name, "unitree_g1");
+        assert_eq!(p.joints.len(), 23);
+        assert!(p.stability.is_some());
+        assert!(p.locomotion.is_some());
+        let loco = p.locomotion.as_ref().unwrap();
+        assert!((loco.max_locomotion_velocity - 2.0).abs() < 0.01);
+        assert!(p.environment.is_some());
+        assert!(p.real_world_margins.is_some());
+        // G1 has head joints
+        assert!(p.joints.iter().any(|j| j.name == "head_yaw"));
+        assert!(p.joints.iter().any(|j| j.name == "head_pitch"));
+    }
+
+    #[test]
+    fn load_spot() {
+        let p = load_builtin("spot").expect("load spot");
+        assert_eq!(p.name, "spot");
+        assert_eq!(p.joints.len(), 12);
+        assert!(p.stability.is_some());
+        assert!(p.locomotion.is_some());
+        let loco = p.locomotion.as_ref().unwrap();
+        assert!((loco.max_locomotion_velocity - 1.6).abs() < 0.01);
+        assert_eq!(p.collision_pairs.len(), 4);
+        assert!(p.environment.is_some());
+        assert!(p.real_world_margins.is_some());
+        // Spot has wider terrain tolerance
+        let env = p.environment.as_ref().unwrap();
+        assert!(env.max_safe_pitch_rad > 0.3);
+    }
+
+    #[test]
+    fn load_kuka_iiwa14() {
+        let p = load_builtin("kuka_iiwa14").expect("load kuka_iiwa14");
+        assert_eq!(p.name, "kuka_iiwa14");
+        assert_eq!(p.joints.len(), 7);
+        assert!(p.stability.is_none());
+        assert!(p.locomotion.is_none());
+        assert_eq!(p.end_effectors.len(), 1);
+        assert_eq!(p.end_effectors[0].name, "flange");
+        assert!((p.end_effectors[0].max_payload_kg - 14.0).abs() < 0.01);
+        assert_eq!(
+            p.safe_stop_profile.strategy,
+            SafeStopStrategy::ImmediateStop
+        );
+        assert_eq!(p.safe_stop_profile.target_joint_positions.len(), 7);
+        assert!(p.environment.is_some());
+        assert!(p.real_world_margins.is_some());
+    }
+
     // --- List builtins ---
 
     #[test]
-    fn list_builtins_returns_all_six() {
+    fn list_builtins_returns_all_seventeen() {
         let names = list_builtins();
-        assert_eq!(names.len(), 6);
+        assert_eq!(names.len(), 17);
         assert!(names.contains(&"humanoid_28dof"));
         assert!(names.contains(&"franka_panda"));
         assert!(names.contains(&"quadruped_12dof"));
         assert!(names.contains(&"ur10"));
+        assert!(names.contains(&"unitree_h1"));
+        assert!(names.contains(&"unitree_g1"));
+        assert!(names.contains(&"spot"));
+        assert!(names.contains(&"kuka_iiwa14"));
     }
 
     // --- Error cases ---

@@ -19,35 +19,64 @@ use thiserror::Error;
 // Error type
 // ---------------------------------------------------------------------------
 
+/// Errors that can occur while parsing a URDF file or computing forward kinematics.
 #[derive(Debug, Error)]
 pub enum UrdfError {
+    /// The XML input could not be parsed.
     #[error("XML parse error: {0}")]
     XmlParse(String),
 
+    /// A required XML attribute was absent on the given element.
     #[error("missing attribute '{attr}' on element '{element}'")]
-    MissingAttribute { element: String, attr: String },
+    MissingAttribute {
+        /// The element tag where the attribute was expected.
+        element: String,
+        /// The name of the missing attribute.
+        attr: String,
+    },
 
+    /// A string value could not be parsed as an `f64` in the given context.
     #[error("invalid float in '{context}': {value}")]
-    InvalidFloat { context: String, value: String },
+    InvalidFloat {
+        /// The XML context (e.g. `"origin xyz"`) where parsing failed.
+        context: String,
+        /// The raw string that could not be converted to a float.
+        value: String,
+    },
 
+    /// A joint referenced a parent link that was not declared.
     #[error("unknown parent link '{parent}' in joint '{joint}'")]
-    UnknownParent { joint: String, parent: String },
+    UnknownParent {
+        /// The name of the joint that has the unknown parent.
+        joint: String,
+        /// The name of the parent link that was not found.
+        parent: String,
+    },
 
+    /// No root link could be identified (every link is a child of some joint).
     #[error("no root link found (no link is never a child)")]
     NoRootLink,
 
+    /// The URDF contains more links than the hard limit allows.
     #[error("URDF too large: {count} links exceeds limit {max}")]
-    TooManyLinks { count: usize, max: usize },
+    TooManyLinks {
+        /// Actual number of links found in the URDF.
+        count: usize,
+        /// Maximum number of links permitted.
+        max: usize,
+    },
 }
 
 // ---------------------------------------------------------------------------
 // URDF data model
 // ---------------------------------------------------------------------------
 
-/// A 3D transform: translation [x,y,z] + rotation [roll,pitch,yaw] (RPY).
+/// A 3D transform: translation `[x,y,z]` + rotation `[roll,pitch,yaw]` (RPY).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Transform {
+    /// Translation vector `[x, y, z]` in metres.
     pub xyz: [f64; 3],
+    /// Rotation as roll-pitch-yaw `[roll, pitch, yaw]` in radians.
     pub rpy: [f64; 3],
 }
 
@@ -92,18 +121,26 @@ impl Transform {
 /// Joint type from the URDF.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UrdfJointType {
+    /// Revolute joint: rotates around an axis within defined limits.
     Revolute,
+    /// Continuous joint: rotates around an axis without limits.
     Continuous,
+    /// Prismatic joint: translates along an axis (treated as fixed at zero).
     Prismatic,
+    /// Fixed joint: no relative motion between parent and child link.
     Fixed,
 }
 
 /// A joint parsed from the URDF.
 #[derive(Debug, Clone)]
 pub struct UrdfJoint {
+    /// Unique joint name as declared in the URDF.
     pub name: String,
+    /// Kinematic type of this joint.
     pub joint_type: UrdfJointType,
+    /// Name of the parent link in the kinematic tree.
     pub parent_link: String,
+    /// Name of the child link in the kinematic tree.
     pub child_link: String,
     /// Transform from parent link frame to joint frame.
     pub origin: Transform,
@@ -114,14 +151,18 @@ pub struct UrdfJoint {
 /// A link parsed from the URDF (just name — geometry is not needed for FK).
 #[derive(Debug, Clone)]
 pub struct UrdfLink {
+    /// Unique link name as declared in the URDF.
     pub name: String,
 }
 
 /// Parsed URDF robot model.
 #[derive(Debug, Clone)]
 pub struct UrdfModel {
+    /// Robot name from the `<robot name="...">` attribute.
     pub name: String,
+    /// All links declared in the URDF.
     pub links: Vec<UrdfLink>,
+    /// All joints declared in the URDF.
     pub joints: Vec<UrdfJoint>,
 }
 
@@ -178,28 +219,34 @@ pub fn parse_urdf(xml: &str) -> Result<UrdfModel, UrdfError> {
                         });
                     }
                     "parent" if current_joint.is_some() => {
-                        if let Some(link) = attr_str(e, "link") {
-                            current_joint.as_mut().unwrap().parent = link;
+                        if let (Some(ref mut builder), Some(link)) =
+                            (&mut current_joint, attr_str(e, "link"))
+                        {
+                            builder.parent = link;
                         }
                     }
                     "child" if current_joint.is_some() => {
-                        if let Some(link) = attr_str(e, "link") {
-                            current_joint.as_mut().unwrap().child = link;
+                        if let (Some(ref mut builder), Some(link)) =
+                            (&mut current_joint, attr_str(e, "link"))
+                        {
+                            builder.child = link;
                         }
                     }
                     "origin" if current_joint.is_some() => {
-                        let builder = current_joint.as_mut().unwrap();
-                        if let Some(xyz_str) = attr_str(e, "xyz") {
-                            builder.origin.xyz = parse_vec3(&xyz_str, "origin xyz")?;
-                        }
-                        if let Some(rpy_str) = attr_str(e, "rpy") {
-                            builder.origin.rpy = parse_vec3(&rpy_str, "origin rpy")?;
+                        if let Some(ref mut builder) = current_joint {
+                            if let Some(xyz_str) = attr_str(e, "xyz") {
+                                builder.origin.xyz = parse_vec3(&xyz_str, "origin xyz")?;
+                            }
+                            if let Some(rpy_str) = attr_str(e, "rpy") {
+                                builder.origin.rpy = parse_vec3(&rpy_str, "origin rpy")?;
+                            }
                         }
                     }
                     "axis" if current_joint.is_some() => {
-                        if let Some(xyz_str) = attr_str(e, "xyz") {
-                            current_joint.as_mut().unwrap().axis =
-                                parse_vec3(&xyz_str, "axis xyz")?;
+                        if let (Some(ref mut builder), Some(xyz_str)) =
+                            (&mut current_joint, attr_str(e, "xyz"))
+                        {
+                            builder.axis = parse_vec3(&xyz_str, "axis xyz")?;
                         }
                     }
                     _ => {}

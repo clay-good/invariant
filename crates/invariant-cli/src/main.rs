@@ -1,4 +1,6 @@
-use clap::{Parser, Subcommand};
+#![forbid(unsafe_code)]
+
+use clap::{CommandFactory, Parser, Subcommand};
 
 mod commands;
 pub mod key_file;
@@ -58,6 +60,12 @@ enum Commands {
     Intent(commands::intent::IntentArgs),
     /// Verify the integrity of the Invariant binary (Section 10.3)
     VerifySelf,
+    /// Generate shell completions for bash, zsh, fish, elvish, or PowerShell
+    Completions {
+        /// Shell to generate completions for
+        #[arg(value_enum)]
+        shell: clap_complete::Shell,
+    },
 }
 
 fn main() {
@@ -90,9 +98,17 @@ fn main() {
         Some(Commands::AuditGaps(args)) => commands::audit_gaps::run(&args),
         Some(Commands::Intent(args)) => commands::intent::run(&args),
         Some(Commands::VerifySelf) => commands::verify_self::run(),
+        Some(Commands::Completions { shell }) => {
+            clap_complete::generate(
+                shell,
+                &mut Cli::command(),
+                "invariant",
+                &mut std::io::stdout(),
+            );
+            0
+        }
         None => {
             // No subcommand and no --verify-self: print help.
-            use clap::CommandFactory;
             Cli::command().print_help().unwrap();
             println!();
             2

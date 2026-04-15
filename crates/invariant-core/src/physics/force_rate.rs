@@ -30,6 +30,7 @@ pub fn check_force_rate_limits(
             category: "physics".to_string(),
             passed: true,
             details: "skipped on first command (no previous end-effector forces)".to_string(),
+            derating: None,
         };
     };
 
@@ -39,6 +40,7 @@ pub fn check_force_rate_limits(
             category: "physics".to_string(),
             passed: true,
             details: "no end-effector force data or profile configs to check".to_string(),
+            derating: None,
         };
     }
 
@@ -65,6 +67,7 @@ pub fn check_force_rate_limits(
                 category: "physics".to_string(),
                 passed: true,
                 details: "no end-effector force data or profile configs to check".to_string(),
+                derating: None,
             };
         }
 
@@ -77,6 +80,7 @@ pub fn check_force_rate_limits(
                 delta_time,
                 affected.join(", ")
             ),
+            derating: None,
         };
     }
 
@@ -126,6 +130,7 @@ pub fn check_force_rate_limits(
             category: "physics".to_string(),
             passed: true,
             details: "all end-effector force rates within limits".to_string(),
+            derating: None,
         }
     } else {
         CheckResult {
@@ -133,6 +138,7 @@ pub fn check_force_rate_limits(
             category: "physics".to_string(),
             passed: false,
             details: violations.join("; "),
+            derating: None,
         }
     }
 }

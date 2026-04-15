@@ -237,6 +237,41 @@ mod tests {
         ));
     }
 
+    // ── Step 102: Operation wildcard edge case tests ────────────────────
+
+    #[test]
+    fn wildcard_does_not_match_exact_prefix_segment() {
+        // "actuate:*" must NOT match "actuate" (bare prefix, no colon after).
+        // strip_prefix("actuate") on "actuate" returns Some(""), and
+        // "".starts_with(':') is false → correctly does not match.
+        assert!(!operation_matches(&op("actuate:*"), &op("actuate")));
+    }
+
+    #[test]
+    fn short_prefix_wildcard_covers_deep_path() {
+        // "a:*" must cover "a:b:c:d" because strip_prefix("a") on "a:b:c:d"
+        // returns ":b:c:d" which starts with ':'.
+        assert!(operation_matches(&op("a:*"), &op("a:b:c:d")));
+    }
+
+    #[test]
+    fn wildcard_does_not_match_different_root() {
+        assert!(!operation_matches(&op("actuate:*"), &op("read:sensor")));
+    }
+
+    #[test]
+    fn bare_wildcard_covers_single_segment() {
+        assert!(operation_matches(&op("*"), &op("anything")));
+    }
+
+    #[test]
+    fn exact_match_is_case_sensitive() {
+        assert!(!operation_matches(
+            &op("actuate:Arm:Shoulder"),
+            &op("actuate:arm:shoulder")
+        ));
+    }
+
     // ───── crypto::sign_pca + verify_signed_pca ─────
 
     #[test]
@@ -741,6 +776,65 @@ mod tests {
         ));
     }
 
+    // ── Single-hop chain edge cases (Step 99) ───────────────────────────
+
+    #[test]
+    fn single_hop_chain_with_sufficient_ops_succeeds() {
+        let (sk, vk) = make_keypair();
+        let claim = make_pca("alice", "key-1", &["actuate:arm:*"]);
+        let hops = vec![sign_pca(&claim, &sk).unwrap()];
+        let keys = trusted_keys(&[("key-1", &vk)]);
+
+        let chain = verify_chain(&hops, &keys, Utc::now()).unwrap();
+        let result = check_required_ops(&chain, &[op("actuate:arm:shoulder")]);
+        assert!(
+            result.is_ok(),
+            "single-hop chain granting actuate:arm:* must cover actuate:arm:shoulder"
+        );
+    }
+
+    #[test]
+    fn single_hop_chain_with_insufficient_ops_rejected() {
+        let (sk, vk) = make_keypair();
+        let claim = make_pca("alice", "key-1", &["actuate:arm:*"]);
+        let hops = vec![sign_pca(&claim, &sk).unwrap()];
+        let keys = trusted_keys(&[("key-1", &vk)]);
+
+        let chain = verify_chain(&hops, &keys, Utc::now()).unwrap();
+        let result = check_required_ops(&chain, &[op("actuate:leg:knee")]);
+        assert!(
+            matches!(result, Err(AuthorityError::InsufficientOps { .. })),
+            "single-hop chain granting actuate:arm:* must NOT cover actuate:leg:knee"
+        );
+    }
+
+    #[test]
+    fn single_hop_chain_empty_required_ops_passes() {
+        let (sk, vk) = make_keypair();
+        let claim = make_pca("alice", "key-1", &["actuate:arm:*"]);
+        let hops = vec![sign_pca(&claim, &sk).unwrap()];
+        let keys = trusted_keys(&[("key-1", &vk)]);
+
+        let chain = verify_chain(&hops, &keys, Utc::now()).unwrap();
+        let result = check_required_ops(&chain, &[]);
+        assert!(result.is_ok(), "empty required_ops must always pass");
+    }
+
+    #[test]
+    fn single_hop_chain_expired_pca_rejected() {
+        let (sk, vk) = make_keypair();
+        let mut claim = make_pca("alice", "key-1", &["actuate:*"]);
+        claim.exp = Some(Utc::now() - Duration::hours(1)); // expired 1 hour ago
+        let hops = vec![sign_pca(&claim, &sk).unwrap()];
+        let keys = trusted_keys(&[("key-1", &vk)]);
+
+        let result = verify_chain(&hops, &keys, Utc::now());
+        assert!(
+            matches!(result, Err(AuthorityError::Expired { hop: 0, .. })),
+            "expired single-hop chain must be rejected"
+        );
+    }
+
     #[test]
     fn exactly_max_hops_succeeds() {
         let (sk, vk) = make_keypair();
@@ -753,5 +847,50 @@ mod tests {
         let keys = trusted_keys(&[("key-1", &vk)]);
         let result = verify_chain(&hops, &keys, Utc::now());
         assert!(result.is_ok());
+    }
+
+    // ── Step 106: COSE malformed input tests ──────────────────────────
+
+    #[test]
+    fn empty_cose_bytes_returns_error_not_panic() {
+        // An empty COSE_Sign1 envelope must produce a typed error, not panic.
+        use crate::models::authority::SignedPca;
+        let hops = vec![SignedPca {
+            raw: vec![], // empty bytes
+        }];
+        let (_, vk) = make_keypair();
+        let keys = trusted_keys(&[("key-1", &vk)]);
+        let result = verify_chain(&hops, &keys, Utc::now());
+        assert!(result.is_err(), "empty COSE bytes must return error");
+        // Should be a CoseError, not a panic.
+        match result.unwrap_err() {
+            AuthorityError::CoseError { hop: 0, .. } => {}
+            other => panic!("expected CoseError at hop 0, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn garbage_cose_bytes_returns_error_not_panic() {
+        use crate::models::authority::SignedPca;
+        let hops = vec![SignedPca {
+            raw: vec![0xFF, 0xFE, 0xFD, 0xFC, 0x00, 0x01], // random garbage
+        }];
+        let (_, vk) = make_keypair();
+        let keys = trusted_keys(&[("key-1", &vk)]);
+        let result = verify_chain(&hops, &keys, Utc::now());
+        assert!(
+            result.is_err(),
+            "garbage COSE bytes must return error, not panic"
+        );
+    }
+
+    #[test]
+    fn single_null_byte_cose_returns_error() {
+        use crate::models::authority::SignedPca;
+        let hops = vec![SignedPca { raw: vec![0x00] }];
+        let (_, vk) = make_keypair();
+        let keys = trusted_keys(&[("key-1", &vk)]);
+        let result = verify_chain(&hops, &keys, Utc::now());
+        assert!(result.is_err());
     }
 }

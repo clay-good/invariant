@@ -20,13 +20,19 @@ use crate::models::profile::{SafeStopProfile, SafeStopStrategy};
 // Error type
 // ---------------------------------------------------------------------------
 
+/// Errors returned by watchdog operations.
 #[derive(Debug, Error, PartialEq)]
 pub enum WatchdogError {
+    /// The watchdog has already triggered; operator reset is required before resuming.
     #[error("watchdog already triggered — operator reset required")]
     AlreadyTriggered,
 
+    /// Signing the safe-stop actuation command failed.
     #[error("failed to sign safe-stop command: {reason}")]
-    SigningFailed { reason: String },
+    SigningFailed {
+        /// Human-readable reason for the signing failure.
+        reason: String,
+    },
 }
 
 // ---------------------------------------------------------------------------
@@ -34,6 +40,16 @@ pub enum WatchdogError {
 // ---------------------------------------------------------------------------
 
 /// The watchdog's operational state.
+///
+/// # Examples
+///
+/// ```
+/// use invariant_robotics_core::watchdog::WatchdogState;
+///
+/// let state = WatchdogState::Armed;
+/// assert_eq!(state, WatchdogState::Armed);
+/// assert_ne!(state, WatchdogState::Triggered);
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WatchdogState {
     /// Normal operation. Heartbeats are being received.
@@ -75,6 +91,26 @@ impl Watchdog {
     /// use — the watchdog would trigger on the first `check()` call. Callers
     /// that treat 0 as "watchdog disabled" must gate on that value themselves
     /// and skip constructing a `Watchdog` entirely (see `serve.rs`).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use invariant_robotics_core::watchdog::{Watchdog, WatchdogState};
+    /// use invariant_robotics_core::models::profile::{SafeStopProfile, SafeStopStrategy};
+    /// use ed25519_dalek::SigningKey;
+    /// use std::collections::HashMap;
+    ///
+    /// let signing_key = SigningKey::from_bytes(&[1u8; 32]);
+    /// let safe_stop = SafeStopProfile {
+    ///     strategy: SafeStopStrategy::ImmediateStop,
+    ///     max_deceleration: 5.0,
+    ///     target_joint_positions: HashMap::new(),
+    /// };
+    ///
+    /// let wd = Watchdog::new(500, safe_stop, signing_key, "kid-1".to_string(), 0);
+    /// assert_eq!(wd.state(), WatchdogState::Armed);
+    /// assert_eq!(wd.timeout_ms(), 500);
+    /// ```
     pub fn new(
         timeout_ms: u64,
         safe_stop_profile: SafeStopProfile,
@@ -93,6 +129,24 @@ impl Watchdog {
     }
 
     /// Current watchdog state.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use invariant_robotics_core::watchdog::{Watchdog, WatchdogState};
+    /// use invariant_robotics_core::models::profile::{SafeStopProfile, SafeStopStrategy};
+    /// use ed25519_dalek::SigningKey;
+    /// use std::collections::HashMap;
+    ///
+    /// let signing_key = SigningKey::from_bytes(&[4u8; 32]);
+    /// let safe_stop = SafeStopProfile {
+    ///     strategy: SafeStopStrategy::ImmediateStop,
+    ///     max_deceleration: 5.0,
+    ///     target_joint_positions: HashMap::new(),
+    /// };
+    /// let wd = Watchdog::new(500, safe_stop, signing_key, "kid".to_string(), 0);
+    /// assert_eq!(wd.state(), WatchdogState::Armed);
+    /// ```
     pub fn state(&self) -> WatchdogState {
         self.state
     }
@@ -110,6 +164,32 @@ impl Watchdog {
     /// Non-monotonic timestamps (now_ms < last_heartbeat_ms) are silently
     /// ignored: the timer is not advanced backward, preventing a clock
     /// regression from artificially extending the deadline.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use invariant_robotics_core::watchdog::{Watchdog, WatchdogState};
+    /// use invariant_robotics_core::models::profile::{SafeStopProfile, SafeStopStrategy};
+    /// use ed25519_dalek::SigningKey;
+    /// use std::collections::HashMap;
+    /// use chrono::Utc;
+    ///
+    /// let signing_key = SigningKey::from_bytes(&[2u8; 32]);
+    /// let safe_stop = SafeStopProfile {
+    ///     strategy: SafeStopStrategy::ImmediateStop,
+    ///     max_deceleration: 5.0,
+    ///     target_joint_positions: HashMap::new(),
+    /// };
+    /// let mut wd = Watchdog::new(100, safe_stop, signing_key, "kid".to_string(), 0);
+    ///
+    /// // Heartbeat at t=50 resets the timer.
+    /// wd.heartbeat(50).unwrap();
+    ///
+    /// // Checking at t=120 — only 70 ms since heartbeat — should NOT trigger.
+    /// let result = wd.check(120, Utc::now()).unwrap();
+    /// assert!(result.is_none());
+    /// assert_eq!(wd.state(), WatchdogState::Armed);
+    /// ```
     pub fn heartbeat(&mut self, now_ms: u64) -> Result<(), WatchdogError> {
         if self.state == WatchdogState::Triggered {
             return Err(WatchdogError::AlreadyTriggered);
@@ -127,6 +207,33 @@ impl Watchdog {
     ///
     /// - `now_ms`: current monotonic time in milliseconds.
     /// - `now_utc`: wall-clock time for the actuation command timestamp.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use invariant_robotics_core::watchdog::{Watchdog, WatchdogState};
+    /// use invariant_robotics_core::models::profile::{SafeStopProfile, SafeStopStrategy};
+    /// use ed25519_dalek::SigningKey;
+    /// use std::collections::HashMap;
+    /// use chrono::Utc;
+    ///
+    /// let signing_key = SigningKey::from_bytes(&[3u8; 32]);
+    /// let safe_stop = SafeStopProfile {
+    ///     strategy: SafeStopStrategy::ImmediateStop,
+    ///     max_deceleration: 5.0,
+    ///     target_joint_positions: HashMap::new(),
+    /// };
+    /// let mut wd = Watchdog::new(50, safe_stop, signing_key, "kid".to_string(), 0);
+    ///
+    /// // No timeout yet — returns None.
+    /// let no_trigger = wd.check(30, Utc::now()).unwrap();
+    /// assert!(no_trigger.is_none());
+    ///
+    /// // Timeout elapsed — returns a signed safe-stop command.
+    /// let triggered = wd.check(60, Utc::now()).unwrap();
+    /// assert!(triggered.is_some());
+    /// assert_eq!(wd.state(), WatchdogState::Triggered);
+    /// ```
     pub fn check(
         &mut self,
         now_ms: u64,
@@ -165,9 +272,14 @@ impl Watchdog {
     ///
     /// This is the only way to recover from `Triggered` state. The operator
     /// must manually confirm it is safe to resume operations.
+    ///
+    /// Applies the same monotonicity guard as `heartbeat()`: if `now_ms` is
+    /// less than the last heartbeat, the baseline is not regressed. This
+    /// prevents a buggy caller from setting a stale baseline that would
+    /// cause immediate re-trigger on the next `check()`.
     pub fn reset(&mut self, now_ms: u64) {
         self.state = WatchdogState::Armed;
-        self.last_heartbeat_ms = now_ms;
+        self.last_heartbeat_ms = now_ms.max(self.last_heartbeat_ms);
     }
 }
 
@@ -534,5 +646,118 @@ mod tests {
         assert_eq!(cmd.joint_states[0].position, 0.0);
         assert_eq!(cmd.joint_states[1].name, "j2");
         assert_eq!(cmd.joint_states[1].position, 1.5);
+    }
+
+    // ── Step 102: Watchdog edge case tests ────────────────────────────
+
+    #[test]
+    fn latch_is_truly_one_way_heartbeat_cannot_clear() {
+        // The safe-stop latch must be one-way: once Triggered, heartbeat()
+        // must return AlreadyTriggered and state must remain Triggered.
+        let mut wd = make_watchdog(50, 0);
+        wd.check(100, Utc::now()).unwrap(); // trigger
+        assert_eq!(wd.state(), WatchdogState::Triggered);
+
+        // Multiple heartbeat attempts must all fail.
+        for t in [100, 200, 300, u64::MAX] {
+            assert_eq!(wd.heartbeat(t), Err(WatchdogError::AlreadyTriggered));
+            assert_eq!(wd.state(), WatchdogState::Triggered);
+        }
+    }
+
+    #[test]
+    fn reset_with_stale_timestamp_does_not_regress_baseline() {
+        let mut wd = make_watchdog(50, 0);
+
+        // Heartbeat at t=200 establishes a baseline.
+        wd.heartbeat(200).unwrap();
+
+        // Trigger at t=300.
+        wd.check(300, Utc::now()).unwrap();
+        assert_eq!(wd.state(), WatchdogState::Triggered);
+
+        // Reset with stale timestamp t=100 (before the last heartbeat).
+        // The monotonicity guard must keep the baseline at 200, not 100.
+        wd.reset(100);
+        assert_eq!(wd.state(), WatchdogState::Armed);
+
+        // Check at t=210: only 10ms since baseline(200), should NOT trigger.
+        let result = wd.check(210, Utc::now()).unwrap();
+        assert!(
+            result.is_none(),
+            "stale reset must not regress baseline — should NOT trigger at t=210"
+        );
+    }
+
+    #[test]
+    fn heartbeat_with_backwards_timestamp_does_not_regress() {
+        let mut wd = make_watchdog(50, 0);
+
+        // Heartbeat at t=100, then at t=50 (backwards clock).
+        wd.heartbeat(100).unwrap();
+        wd.heartbeat(50).unwrap(); // should be silently ignored
+
+        // Check at t=120: only 20ms since last real heartbeat(100).
+        let result = wd.check(120, Utc::now()).unwrap();
+        assert!(
+            result.is_none(),
+            "backwards heartbeat must not regress timer"
+        );
+    }
+
+    #[test]
+    fn large_timeout_no_overflow() {
+        // u64::MAX timeout should not cause overflow in check().
+        let mut wd = make_watchdog(u64::MAX, 0);
+        wd.heartbeat(1000).unwrap();
+
+        // saturating_sub(1000, 1000) = 0, which is <= u64::MAX. No trigger.
+        let result = wd.check(1000, Utc::now()).unwrap();
+        assert!(result.is_none());
+        assert_eq!(wd.state(), WatchdogState::Armed);
+    }
+
+    #[test]
+    fn check_with_backwards_clock_does_not_false_trigger() {
+        // If the check clock goes backwards (now_ms < last_heartbeat_ms),
+        // saturating_sub returns 0, which is <= timeout. The watchdog must
+        // NOT false-trigger — backwards clocks are a timing anomaly, not a
+        // missed heartbeat.
+        let mut wd = make_watchdog(50, 0);
+        wd.heartbeat(200).unwrap();
+
+        // Check at t=100 — earlier than the heartbeat at t=200.
+        let result = wd.check(100, Utc::now()).unwrap();
+        assert!(
+            result.is_none(),
+            "backwards check clock must NOT trigger watchdog"
+        );
+        assert_eq!(wd.state(), WatchdogState::Armed);
+    }
+
+    #[test]
+    fn check_at_exact_heartbeat_time_does_not_trigger() {
+        // Elapsed = 0 when check time == heartbeat time. Must not trigger.
+        let mut wd = make_watchdog(50, 0);
+        wd.heartbeat(100).unwrap();
+
+        let result = wd.check(100, Utc::now()).unwrap();
+        assert!(
+            result.is_none(),
+            "check at exact heartbeat time (elapsed=0) must not trigger"
+        );
+        assert_eq!(wd.state(), WatchdogState::Armed);
+    }
+
+    #[test]
+    fn safe_stop_command_has_sentinel_hash_not_content_hash() {
+        // Documents that the watchdog uses a sentinel string "watchdog:safe-stop"
+        // as command_hash, not a SHA-256 of the payload. This is intentional:
+        // the motor controller identifies watchdog-originated commands by this
+        // sentinel.
+        let mut wd = make_watchdog(50, 0);
+        let cmd = wd.check(100, Utc::now()).unwrap().unwrap();
+        assert_eq!(cmd.command_hash, "watchdog:safe-stop");
+        assert!(!cmd.command_hash.starts_with("sha256:"));
     }
 }

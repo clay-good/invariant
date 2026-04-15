@@ -11,7 +11,7 @@
 //! | Memory canary         | 1s        | Immediate shutdown + alert     |
 //! | Clock drift           | 10s       | Switch to hardware timer       |
 //!
-//! Each monitor function returns a [`MonitorResult`]. The caller (e.g. the
+//! Each monitor function returns a `MonitorResult`. The caller (e.g. the
 //! `serve` command's tokio runtime) is responsible for scheduling checks at
 //! the appropriate frequency and acting on failures.
 
@@ -52,9 +52,13 @@ pub enum MonitorAction {
 /// Result of a single monitor check.
 #[derive(Debug, Clone)]
 pub struct MonitorResult {
+    /// Name of the monitor that produced this result.
     pub monitor: &'static str,
+    /// Severity classification of this result.
     pub severity: MonitorSeverity,
+    /// Recommended action the caller should take.
     pub action: MonitorAction,
+    /// Human-readable detail string (describes the failure or "ok").
     pub detail: String,
 }
 
@@ -358,6 +362,7 @@ impl ClockMonitor {
 
 /// Aggregated results from running all monitors.
 pub struct MonitorSuiteResults {
+    /// Individual results from each monitor in the suite.
     pub results: Vec<MonitorResult>,
 }
 

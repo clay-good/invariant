@@ -4,6 +4,7 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 description = "Multi-robot coordination safety monitor for Invariant (Step 39)."
+readme = "../../README.md"
 
 [dependencies]
 invariant-core = { package = "invariant-robotics-core", path = "../invariant-core", version = "0.0.2" }

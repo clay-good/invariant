@@ -4,6 +4,7 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 description = "Core types, physics checks, authority validation, and cryptography for Invariant."
+readme = "../../README.md"
 
 [dependencies]
 ed25519-dalek.workspace = true
@@ -15,6 +16,7 @@ chrono.workspace = true
 base64.workspace = true
 rand.workspace = true
 thiserror.workspace = true
+tracing.workspace = true
 quick-xml.workspace = true
 
 [dev-dependencies]

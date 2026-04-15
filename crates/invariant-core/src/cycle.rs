@@ -83,10 +83,15 @@ pub enum HaasSignal {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ActuatorCommand {
+    /// Close the end-effector gripper.
     GripperClose,
+    /// Open the end-effector gripper.
     GripperOpen,
+    /// Command the vise jaws to clamp.
     ViseClamp,
+    /// Command the vise jaws to unclamp.
     ViseUnclamp,
+    /// Signal the Haas CNC to start its machining cycle.
     HaasCycleStart,
 }
 
@@ -615,5 +620,64 @@ mod tests {
             None,                                // → PlaceDone
             None,                                // → CheckStock
         ]
+    }
+
+    // ── Reset re-arms spindle zone (Step 100) ─────────────────────────
+
+    #[test]
+    fn reset_from_mid_cycle_state_is_rejected() {
+        let mut coord = CycleCoordinator::new(5);
+        // Advance past Idle.
+        coord.advance(None).unwrap();
+        assert_ne!(coord.state(), CycleState::Idle);
+        // Reset should fail from a mid-cycle state.
+        let result = coord.reset(5);
+        assert!(
+            result.is_err(),
+            "reset must be rejected from mid-cycle state {:?}",
+            coord.state()
+        );
+    }
+
+    /// Advance a coordinator through a full single-billet cycle to CycleComplete.
+    fn run_full_cycle(coord: &mut CycleCoordinator) {
+        let signals = full_cycle_signals();
+        for sig in &signals {
+            coord.advance(*sig).unwrap();
+        }
+        // The signals above end at CheckStock. One more advance to CycleComplete.
+        coord.advance(None).unwrap();
+        assert_eq!(coord.state(), CycleState::CycleComplete);
+    }
+
+    #[test]
+    fn reset_from_cycle_complete_rearms_spindle_zone() {
+        let mut coord = CycleCoordinator::new(1);
+        run_full_cycle(&mut coord);
+        assert!(
+            coord.spindle_zone_active(),
+            "spindle zone must be active after full cycle"
+        );
+        coord.reset(5).unwrap();
+        assert_eq!(coord.state(), CycleState::Idle);
+        assert!(
+            coord.spindle_zone_active(),
+            "spindle zone must be active after reset"
+        );
+        assert_eq!(coord.billets_remaining(), 5);
+    }
+
+    #[test]
+    fn reset_always_rearms_spindle_zone_invariant() {
+        let mut coord = CycleCoordinator::new(1);
+        run_full_cycle(&mut coord);
+        // Reset multiple times; each time the zone must be re-armed.
+        for billets in [1, 10, 100] {
+            coord.reset(billets).unwrap();
+            assert!(
+                coord.spindle_zone_active(),
+                "spindle zone must be active after reset with {billets} billets"
+            );
+        }
     }
 }

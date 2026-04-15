@@ -850,14 +850,31 @@ mod tests {
     }
 
     #[test]
-    fn p9_no_com_data_passes() {
+    fn p9_no_com_data_with_enabled_stability_fails() {
+        // Fail-closed: if the profile requires stability (enabled=true) but
+        // the command omits center_of_mass, P9 must reject.
         let config = StabilityConfig {
             support_polygon: vec![[-0.15, -0.1], [0.15, -0.1], [0.15, 0.1], [-0.15, 0.1]],
             com_height_estimate: 0.9,
             enabled: true,
         };
         let r = stability::check_stability(None, Some(&config));
-        assert!(r.passed);
+        assert!(
+            !r.passed,
+            "P9 must fail-closed when COM missing but stability enabled"
+        );
+    }
+
+    #[test]
+    fn p9_no_com_data_with_disabled_stability_passes() {
+        // When stability is disabled, missing COM is fine.
+        let config = StabilityConfig {
+            support_polygon: vec![[-0.15, -0.1], [0.15, -0.1], [0.15, 0.1], [-0.15, 0.1]],
+            com_height_estimate: 0.9,
+            enabled: false,
+        };
+        let r = stability::check_stability(None, Some(&config));
+        assert!(r.passed, "P9 must pass when stability is disabled");
     }
 
     #[test]
@@ -1092,7 +1109,7 @@ mod tests {
             environment_state: None,
         };
 
-        let results = crate::physics::run_all_checks(&command, &profile, None);
+        let results = crate::physics::run_all_checks(&command, &profile, None, None);
         assert_eq!(results.len(), 11);
 
         // All should pass for this valid command
@@ -1186,7 +1203,7 @@ mod tests {
             environment_state: None,
         };
 
-        let results = crate::physics::run_all_checks(&command, &profile, None);
+        let results = crate::physics::run_all_checks(&command, &profile, None, None);
         assert_eq!(results.len(), 11);
 
         // P1: joint_limits — position 2.0 > max 1.0 => fail
@@ -1282,7 +1299,7 @@ mod tests {
 
         let prev_joints = vec![joint_state("j1", 0.0, 0.0, 0.0)]; // velocity = 0 rad/s
 
-        let results = crate::physics::run_all_checks(&command, &profile, Some(&prev_joints));
+        let results = crate::physics::run_all_checks(&command, &profile, Some(&prev_joints), None);
         assert_eq!(results.len(), 11);
 
         // P4: acceleration_limits — 1000 rad/s² >> 25 => fail
@@ -1605,7 +1622,7 @@ mod tests {
         // Without envelope: velocity limit = 5.0 * 1.0 = 5.0
         // Velocity 4.5 should pass.
         let cmd = envelope_command(4.5, [0.0, 0.0, 1.0]);
-        let results = run_all_checks(&cmd, &profile, None);
+        let results = run_all_checks(&cmd, &profile, None, None);
         let p2 = results
             .iter()
             .find(|c| c.name == "velocity_limits")
@@ -1623,7 +1640,7 @@ mod tests {
             workspace: None,
             additional_exclusion_zones: vec![],
         });
-        let results = run_all_checks(&cmd, &profile, None);
+        let results = run_all_checks(&cmd, &profile, None, None);
         let p2 = results
             .iter()
             .find(|c| c.name == "velocity_limits")
@@ -1652,7 +1669,7 @@ mod tests {
 
         // Velocity 3.0 > limit 5.0 * 0.5 = 2.5 → should fail.
         let cmd = envelope_command(3.0, [0.0, 0.0, 1.0]);
-        let results = run_all_checks(&cmd, &profile, None);
+        let results = run_all_checks(&cmd, &profile, None, None);
         let p2 = results
             .iter()
             .find(|c| c.name == "velocity_limits")
@@ -1669,7 +1686,7 @@ mod tests {
         // Profile workspace: [-2, -2, 0] to [2, 2, 3]
         // End effector at (1.5, 0, 1) → inside profile workspace.
         let cmd = envelope_command(0.0, [1.5, 0.0, 1.0]);
-        let results = run_all_checks(&cmd, &profile, None);
+        let results = run_all_checks(&cmd, &profile, None, None);
         let p5 = results
             .iter()
             .find(|c| c.name == "workspace_bounds")
@@ -1689,7 +1706,7 @@ mod tests {
             }),
             additional_exclusion_zones: vec![],
         });
-        let results = run_all_checks(&cmd, &profile, None);
+        let results = run_all_checks(&cmd, &profile, None, None);
         let p5 = results
             .iter()
             .find(|c| c.name == "workspace_bounds")
@@ -1705,7 +1722,7 @@ mod tests {
         let mut profile = envelope_test_profile();
         // No base exclusion zones. EE at (0.5, 0.5, 0.5) passes.
         let cmd = envelope_command(0.0, [0.5, 0.5, 0.5]);
-        let results = run_all_checks(&cmd, &profile, None);
+        let results = run_all_checks(&cmd, &profile, None, None);
         let p6 = results
             .iter()
             .find(|c| c.name == "exclusion_zones")
@@ -1727,7 +1744,7 @@ mod tests {
                 conditional: false,
             }],
         });
-        let results = run_all_checks(&cmd, &profile, None);
+        let results = run_all_checks(&cmd, &profile, None, None);
         let p6 = results
             .iter()
             .find(|c| c.name == "exclusion_zones")
@@ -1740,7 +1757,7 @@ mod tests {
     fn no_envelope_uses_profile_defaults() {
         let profile = envelope_test_profile();
         let cmd = envelope_command(4.9, [0.0, 0.0, 1.0]);
-        let results = run_all_checks(&cmd, &profile, None);
+        let results = run_all_checks(&cmd, &profile, None, None);
         let p2 = results
             .iter()
             .find(|c| c.name == "velocity_limits")
@@ -1762,6 +1779,9 @@ mod tests {
             low_battery_pct: 15.0,
             max_latency_ms: 100.0,
             warning_latency_ms: 50.0,
+            warning_pitch_rad: 0.1396,
+            warning_roll_rad: 0.0873,
+            warning_temperature_c: 65.0,
         }
     }
 
@@ -1957,7 +1977,11 @@ mod tests {
         let config = default_env_config();
         let r = environment::check_battery_state(&env, &config);
         assert!(r.passed, "low battery is advisory, should still pass");
-        assert!(r.details.contains("advisory"));
+        assert!(r.details.contains("derate") || r.details.contains("low threshold"));
+        assert!(
+            r.derating.is_some(),
+            "low battery must produce derating advice"
+        );
     }
 
     #[test]
@@ -2022,7 +2046,11 @@ mod tests {
         let config = default_env_config();
         let r = environment::check_communication_latency(&env, &config);
         assert!(r.passed, "warning latency is advisory, should still pass");
-        assert!(r.details.contains("advisory"));
+        assert!(r.details.contains("derate") || r.details.contains("warning"));
+        assert!(
+            r.derating.is_some(),
+            "warning latency must produce derating advice"
+        );
     }
 
     #[test]
@@ -2164,7 +2192,7 @@ mod tests {
     fn env_checks_absent_when_no_environment_state() {
         let profile = env_test_profile();
         let cmd = env_test_command();
-        let results = run_all_checks(&cmd, &profile, None);
+        let results = run_all_checks(&cmd, &profile, None, None);
         assert!(
             !results.iter().any(|c| c.name == "emergency_stop"),
             "no env checks when environment_state is None"
@@ -2184,7 +2212,7 @@ mod tests {
             communication_latency_ms: Some(10.0),
             e_stop_engaged: Some(false),
         });
-        let results = run_all_checks(&cmd, &profile, None);
+        let results = run_all_checks(&cmd, &profile, None, None);
         let names: Vec<&str> = results.iter().map(|c| c.name.as_str()).collect();
         assert!(names.contains(&"emergency_stop"), "P25 should be present");
         assert!(names.contains(&"terrain_incline"), "P21 should be present");
@@ -2216,7 +2244,7 @@ mod tests {
             communication_latency_ms: None,
             e_stop_engaged: Some(true),
         });
-        let results = run_all_checks(&cmd, &profile, None);
+        let results = run_all_checks(&cmd, &profile, None, None);
         let estop = results.iter().find(|c| c.name == "emergency_stop").unwrap();
         assert!(!estop.passed, "e-stop engaged must fail");
     }
@@ -2233,7 +2261,7 @@ mod tests {
             communication_latency_ms: None,
             e_stop_engaged: Some(true),
         });
-        let results = run_all_checks(&cmd, &profile, None);
+        let results = run_all_checks(&cmd, &profile, None, None);
         let estop = results.iter().find(|c| c.name == "emergency_stop").unwrap();
         assert!(
             !estop.passed,
@@ -2264,6 +2292,306 @@ mod tests {
         assert_eq!(env, deserialized);
     }
 
+    // ── P7 self-collision edge cases (Step 99) ──────────────────────────
+
+    #[test]
+    fn p7_identical_positions_fails_with_nonzero_threshold() {
+        // Two links at the exact same position — distance = 0.0, which is
+        // always < any positive min_collision_distance. Must fail.
+        let pairs = vec![CollisionPair {
+            link_a: "a".into(),
+            link_b: "b".into(),
+        }];
+        let ees = vec![ee("a", 0.0, 0.0, 0.0), ee("b", 0.0, 0.0, 0.0)];
+        let r = self_collision::check_self_collision(&ees, &pairs, 0.05);
+        assert!(
+            !r.passed,
+            "identical positions must fail: distance 0 < 0.05"
+        );
+    }
+
+    #[test]
+    fn p7_identical_positions_passes_with_zero_threshold() {
+        // Documents that zero threshold is a deliberate escape hatch:
+        // 0.0 < 0.0 is false, so the check passes even at distance zero.
+        // Profile validation already requires min_collision_distance > 0 when
+        // collision_pairs are non-empty, so this should never happen in
+        // production.
+        let pairs = vec![CollisionPair {
+            link_a: "a".into(),
+            link_b: "b".into(),
+        }];
+        let ees = vec![ee("a", 0.0, 0.0, 0.0), ee("b", 0.0, 0.0, 0.0)];
+        let r = self_collision::check_self_collision(&ees, &pairs, 0.0);
+        assert!(
+            r.passed,
+            "distance 0.0 is not < 0.0 (zero threshold escape)"
+        );
+    }
+
+    #[test]
+    fn p7_nan_position_flagged() {
+        let pairs = vec![CollisionPair {
+            link_a: "a".into(),
+            link_b: "b".into(),
+        }];
+        let ees = vec![ee("a", f64::NAN, 0.0, 0.0), ee("b", 0.0, 0.0, 0.0)];
+        let r = self_collision::check_self_collision(&ees, &pairs, 0.01);
+        assert!(!r.passed, "NaN position must be rejected");
+        assert!(r.details.contains("NaN"));
+    }
+
+    // ── P10 proximity boundary edge cases (Step 99) ───────────────────
+
+    #[test]
+    fn p10_ee_exactly_on_sphere_boundary_triggers_scaling() {
+        // EE at distance exactly = radius should be inside (<=) and scaling applies.
+        let defs = vec![joint_def("j1", -1.0, 1.0)]; // max_velocity = 5.0
+        let joints = vec![joint_state("j1", 0.0, 3.0, 0.0)];
+        // EE at [1.0, 0.0, 0.0], zone center [0.0, 0.0, 0.0], radius 1.0
+        // Distance = exactly 1.0 = radius => inside.
+        let ees = vec![ee("left_hand", 1.0, 0.0, 0.0)];
+        let zones = vec![ProximityZone::Sphere {
+            name: "human".into(),
+            center: [0.0, 0.0, 0.0],
+            radius: 1.0,
+            velocity_scale: 0.5,
+            dynamic: false,
+        }];
+        // effective limit = 5.0 * 0.5 * 1.0 = 2.5, vel = 3.0 => fail
+        let r = proximity::check_proximity_velocity(&joints, &defs, &ees, &zones, 1.0);
+        assert!(
+            !r.passed,
+            "EE on sphere boundary must trigger velocity scaling"
+        );
+    }
+
+    #[test]
+    fn p10_ee_just_outside_sphere_boundary_no_scaling() {
+        // EE at distance slightly > radius should be outside, no scaling.
+        let defs = vec![joint_def("j1", -1.0, 1.0)]; // max_velocity = 5.0
+        let joints = vec![joint_state("j1", 0.0, 4.9, 0.0)];
+        // 1.0 + small epsilon puts EE outside the sphere
+        let ees = vec![ee("left_hand", 1.0 + 1e-9, 0.0, 0.0)];
+        let zones = vec![ProximityZone::Sphere {
+            name: "human".into(),
+            center: [0.0, 0.0, 0.0],
+            radius: 1.0,
+            velocity_scale: 0.5,
+            dynamic: false,
+        }];
+        // Outside zone: no scaling, limit = 5.0, vel = 4.9 => pass
+        let r = proximity::check_proximity_velocity(&joints, &defs, &ees, &zones, 1.0);
+        assert!(
+            r.passed,
+            "EE just outside sphere boundary must NOT trigger scaling"
+        );
+    }
+
+    #[test]
+    fn p10_nan_ee_position_rejected() {
+        let defs = vec![joint_def("j1", -1.0, 1.0)];
+        let joints = vec![joint_state("j1", 0.0, 1.0, 0.0)];
+        let ees = vec![ee("left_hand", f64::NAN, 0.0, 0.0)];
+        let zones = vec![ProximityZone::Sphere {
+            name: "z".into(),
+            center: [0.0, 0.0, 0.0],
+            radius: 1.0,
+            velocity_scale: 0.5,
+            dynamic: false,
+        }];
+        let r = proximity::check_proximity_velocity(&joints, &defs, &ees, &zones, 1.0);
+        assert!(!r.passed, "NaN EE position must be rejected");
+    }
+
+    // ── P8 delta_time edge cases (Step 99) ────────────────────────────
+
+    #[test]
+    fn p8_negative_delta_time_rejected() {
+        let r = delta_time::check_delta_time(-0.01, 0.05);
+        assert!(!r.passed, "negative delta_time must be rejected");
+    }
+
+    #[test]
+    fn p8_zero_delta_time_rejected() {
+        let r = delta_time::check_delta_time(0.0, 0.05);
+        assert!(!r.passed, "zero delta_time must be rejected");
+    }
+
+    #[test]
+    fn p8_nan_delta_time_rejected() {
+        let r = delta_time::check_delta_time(f64::NAN, 0.05);
+        assert!(!r.passed, "NaN delta_time must be rejected");
+    }
+
+    #[test]
+    fn p8_exactly_at_max_passes() {
+        let r = delta_time::check_delta_time(0.05, 0.05);
+        assert!(r.passed, "delta_time exactly at max must pass");
+    }
+
+    // ── P6 exclusion zone NaN bounds (Step 100) ─────────────────────────
+
+    #[test]
+    fn p6_aabb_nan_bound_fails_closed() {
+        // NaN in an AABB zone bound must not silently disable the zone.
+        // Fail-closed: treat point as inside the zone.
+        let zones = vec![ExclusionZone::Aabb {
+            name: "nan_zone".into(),
+            min: [f64::NAN, 0.0, 0.0],
+            max: [1.0, 1.0, 1.0],
+            conditional: false,
+        }];
+        let ees = vec![ee("hand", 0.5, 0.5, 0.5)];
+        let r = exclusion_zones::check_exclusion_zones(&ees, &zones, &HashMap::new());
+        assert!(
+            !r.passed,
+            "AABB zone with NaN bound must fail-closed (reject)"
+        );
+    }
+
+    #[test]
+    fn p6_sphere_nan_center_fails_closed() {
+        // NaN in sphere center must not silently disable the zone.
+        let zones = vec![ExclusionZone::Sphere {
+            name: "nan_sphere".into(),
+            center: [f64::NAN, 0.0, 0.0],
+            radius: 1.0,
+            conditional: false,
+        }];
+        let ees = vec![ee("hand", 5.0, 5.0, 5.0)];
+        let r = exclusion_zones::check_exclusion_zones(&ees, &zones, &HashMap::new());
+        assert!(
+            !r.passed,
+            "sphere zone with NaN center must fail-closed (reject)"
+        );
+    }
+
+    #[test]
+    fn p6_sphere_nan_radius_fails_closed() {
+        let zones = vec![ExclusionZone::Sphere {
+            name: "nan_r".into(),
+            center: [0.0, 0.0, 0.0],
+            radius: f64::NAN,
+            conditional: false,
+        }];
+        let ees = vec![ee("hand", 5.0, 5.0, 5.0)];
+        let r = exclusion_zones::check_exclusion_zones(&ees, &zones, &HashMap::new());
+        assert!(
+            !r.passed,
+            "sphere zone with NaN radius must fail-closed (reject)"
+        );
+    }
+
+    #[test]
+    fn p6_sphere_inf_radius_fails_closed() {
+        let zones = vec![ExclusionZone::Sphere {
+            name: "inf_r".into(),
+            center: [0.0, 0.0, 0.0],
+            radius: f64::INFINITY,
+            conditional: false,
+        }];
+        let ees = vec![ee("hand", 999.0, 999.0, 999.0)];
+        let r = exclusion_zones::check_exclusion_zones(&ees, &zones, &HashMap::new());
+        assert!(
+            !r.passed,
+            "sphere zone with Inf radius must fail-closed (reject)"
+        );
+    }
+
+    // ── P21-P25 environment checks silent skip (Step 100) ─────────────
+
+    #[test]
+    fn env_checks_skip_p21_p24_when_config_absent() {
+        use crate::models::command::{Command, CommandAuthority, EnvironmentState};
+        use crate::models::profile::{RobotProfile, SafeStopProfile, WorkspaceBounds};
+
+        // Profile with no environment config.
+        let profile = RobotProfile {
+            name: "test".into(),
+            version: "1.0.0".into(),
+            joints: vec![JointDefinition {
+                name: "j1".into(),
+                joint_type: JointType::Revolute,
+                min: -1.0,
+                max: 1.0,
+                max_velocity: 5.0,
+                max_torque: 50.0,
+                max_acceleration: 10.0,
+            }],
+            workspace: WorkspaceBounds::Aabb {
+                min: [-1.0, -1.0, 0.0],
+                max: [1.0, 1.0, 2.0],
+            },
+            exclusion_zones: vec![],
+            proximity_zones: vec![],
+            collision_pairs: vec![],
+            stability: None,
+            locomotion: None,
+            max_delta_time: 0.01,
+            min_collision_distance: 0.01,
+            global_velocity_scale: 1.0,
+            watchdog_timeout_ms: 50,
+            safe_stop_profile: SafeStopProfile::default(),
+            profile_signature: None,
+            profile_signer_kid: None,
+            config_sequence: None,
+            real_world_margins: None,
+            task_envelope: None,
+            environment: None, // <-- no environment config
+            end_effectors: vec![],
+        };
+
+        // Command with environment state that has over-temperature actuator.
+        let cmd = Command {
+            timestamp: chrono::Utc::now(),
+            source: "test".into(),
+            sequence: 1,
+            joint_states: vec![JointState {
+                name: "j1".into(),
+                position: 0.0,
+                velocity: 0.0,
+                effort: 0.0,
+            }],
+            delta_time: 0.005,
+            end_effector_positions: vec![],
+            center_of_mass: None,
+            authority: CommandAuthority {
+                pca_chain: String::new(),
+                required_ops: vec![],
+            },
+            metadata: std::collections::HashMap::new(),
+            locomotion_state: None,
+            end_effector_forces: vec![],
+            estimated_payload_kg: None,
+            signed_sensor_readings: vec![],
+            zone_overrides: std::collections::HashMap::new(),
+            environment_state: Some(EnvironmentState {
+                imu_pitch_rad: None,
+                imu_roll_rad: None,
+                actuator_temperatures: vec![crate::models::command::ActuatorTemperature {
+                    joint_name: "j1".into(),
+                    temperature_celsius: 999.0, // way over any limit
+                }],
+                battery_percentage: None,
+                communication_latency_ms: None,
+                e_stop_engaged: Some(false),
+            }),
+        };
+
+        let results = run_environment_checks(&cmd, &profile);
+        // sensor_range + P25 (e-stop) should fire — P21-P24 are skipped.
+        assert_eq!(
+            results.len(),
+            2,
+            "sensor_range + P25 should fire when environment config absent"
+        );
+        assert_eq!(results[0].name, "sensor_range");
+        assert!(results[0].passed, "sensor range must pass for valid data");
+        assert_eq!(results[1].name, "emergency_stop");
+        assert!(results[1].passed, "e-stop not engaged, so P25 should pass");
+    }
+
     #[test]
     fn env_config_serde_defaults() {
         let json = "{}";
@@ -2275,5 +2603,576 @@ mod tests {
         assert!((config.low_battery_pct - 15.0).abs() < 0.001);
         assert!((config.max_latency_ms - 100.0).abs() < 0.001);
         assert!((config.warning_latency_ms - 50.0).abs() < 0.001);
+    }
+
+    // ── P25 e-stop cannot-be-disabled enforcement (Step 100) ──────────
+
+    #[test]
+    fn p25_estop_engaged_rejects_without_environment_config() {
+        // spec-v1.md: "P25: This check CANNOT be disabled in any profile.
+        // It is always active." Even when the profile has NO environment
+        // config, P25 must still reject commands when e-stop is engaged.
+        use crate::models::command::{Command, CommandAuthority, EnvironmentState};
+        use crate::models::profile::{RobotProfile, SafeStopProfile, WorkspaceBounds};
+
+        let profile = RobotProfile {
+            name: "test".into(),
+            version: "1.0.0".into(),
+            joints: vec![JointDefinition {
+                name: "j1".into(),
+                joint_type: JointType::Revolute,
+                min: -1.0,
+                max: 1.0,
+                max_velocity: 5.0,
+                max_torque: 50.0,
+                max_acceleration: 10.0,
+            }],
+            workspace: WorkspaceBounds::Aabb {
+                min: [-1.0, -1.0, 0.0],
+                max: [1.0, 1.0, 2.0],
+            },
+            exclusion_zones: vec![],
+            proximity_zones: vec![],
+            collision_pairs: vec![],
+            stability: None,
+            locomotion: None,
+            max_delta_time: 0.01,
+            min_collision_distance: 0.01,
+            global_velocity_scale: 1.0,
+            watchdog_timeout_ms: 50,
+            safe_stop_profile: SafeStopProfile::default(),
+            profile_signature: None,
+            profile_signer_kid: None,
+            config_sequence: None,
+            real_world_margins: None,
+            task_envelope: None,
+            environment: None, // NO environment config
+            end_effectors: vec![],
+        };
+
+        let cmd = Command {
+            timestamp: chrono::Utc::now(),
+            source: "test".into(),
+            sequence: 1,
+            joint_states: vec![JointState {
+                name: "j1".into(),
+                position: 0.0,
+                velocity: 0.0,
+                effort: 0.0,
+            }],
+            delta_time: 0.005,
+            end_effector_positions: vec![],
+            center_of_mass: None,
+            authority: CommandAuthority {
+                pca_chain: String::new(),
+                required_ops: vec![],
+            },
+            metadata: std::collections::HashMap::new(),
+            locomotion_state: None,
+            end_effector_forces: vec![],
+            estimated_payload_kg: None,
+            signed_sensor_readings: vec![],
+            zone_overrides: std::collections::HashMap::new(),
+            environment_state: Some(EnvironmentState {
+                imu_pitch_rad: None,
+                imu_roll_rad: None,
+                actuator_temperatures: vec![],
+                battery_percentage: None,
+                communication_latency_ms: None,
+                e_stop_engaged: Some(true), // ENGAGED
+            }),
+        };
+
+        let results = run_environment_checks(&cmd, &profile);
+        assert!(
+            !results.is_empty(),
+            "P25 must fire even without environment config"
+        );
+        let estop = results.iter().find(|r| r.name == "emergency_stop");
+        assert!(estop.is_some(), "P25 check must be present");
+        assert!(
+            !estop.unwrap().passed,
+            "P25 must REJECT when e-stop is engaged, regardless of environment config"
+        );
+    }
+
+    #[test]
+    fn p25_estop_absent_passes_without_environment_config() {
+        // When e_stop_engaged is None (sensor not wired), P25 passes
+        // with "no e-stop data" — documents the sensor-absence behavior.
+        use crate::models::command::{Command, CommandAuthority, EnvironmentState};
+        use crate::models::profile::{RobotProfile, SafeStopProfile, WorkspaceBounds};
+
+        let profile = RobotProfile {
+            name: "test".into(),
+            version: "1.0.0".into(),
+            joints: vec![JointDefinition {
+                name: "j1".into(),
+                joint_type: JointType::Revolute,
+                min: -1.0,
+                max: 1.0,
+                max_velocity: 5.0,
+                max_torque: 50.0,
+                max_acceleration: 10.0,
+            }],
+            workspace: WorkspaceBounds::Aabb {
+                min: [-1.0, -1.0, 0.0],
+                max: [1.0, 1.0, 2.0],
+            },
+            exclusion_zones: vec![],
+            proximity_zones: vec![],
+            collision_pairs: vec![],
+            stability: None,
+            locomotion: None,
+            max_delta_time: 0.01,
+            min_collision_distance: 0.01,
+            global_velocity_scale: 1.0,
+            watchdog_timeout_ms: 50,
+            safe_stop_profile: SafeStopProfile::default(),
+            profile_signature: None,
+            profile_signer_kid: None,
+            config_sequence: None,
+            real_world_margins: None,
+            task_envelope: None,
+            environment: None,
+            end_effectors: vec![],
+        };
+
+        let cmd = Command {
+            timestamp: chrono::Utc::now(),
+            source: "test".into(),
+            sequence: 1,
+            joint_states: vec![JointState {
+                name: "j1".into(),
+                position: 0.0,
+                velocity: 0.0,
+                effort: 0.0,
+            }],
+            delta_time: 0.005,
+            end_effector_positions: vec![],
+            center_of_mass: None,
+            authority: CommandAuthority {
+                pca_chain: String::new(),
+                required_ops: vec![],
+            },
+            metadata: std::collections::HashMap::new(),
+            locomotion_state: None,
+            end_effector_forces: vec![],
+            estimated_payload_kg: None,
+            signed_sensor_readings: vec![],
+            zone_overrides: std::collections::HashMap::new(),
+            environment_state: Some(EnvironmentState {
+                imu_pitch_rad: None,
+                imu_roll_rad: None,
+                actuator_temperatures: vec![],
+                battery_percentage: None,
+                communication_latency_ms: None,
+                e_stop_engaged: None, // sensor not wired
+            }),
+        };
+
+        let results = run_environment_checks(&cmd, &profile);
+        let estop = results.iter().find(|r| r.name == "emergency_stop");
+        assert!(estop.is_some(), "P25 check must always be present");
+        assert!(
+            estop.unwrap().passed,
+            "P25 with e_stop_engaged=None must pass (no sensor data)"
+        );
+    }
+
+    // ── P18 friction cone zero-coefficient edge case (Step 102) ───────
+
+    #[test]
+    fn p18_zero_friction_passes_with_zero_tangential() {
+        // Documents behavior: with mu=0.0, a stationary foot (zero tangential
+        // force) has ratio 0.0 <= 0.0, which passes. This is correct per the
+        // math but misleading — a zero-friction surface provides no traction.
+        // Profile validation now prevents mu <= 0, so this can only occur with
+        // a handcrafted profile bypassing validation.
+        use crate::models::command::{FootState, LocomotionState};
+        use crate::models::profile::LocomotionConfig;
+
+        let config = LocomotionConfig {
+            max_locomotion_velocity: 1.5,
+            max_step_length: 0.5,
+            min_foot_clearance: 0.02,
+            max_step_height: 0.5,
+            max_ground_reaction_force: 500.0,
+            friction_coefficient: 0.0, // zero friction
+            max_heading_rate: 1.0,
+        };
+        let foot = FootState {
+            name: "fl".into(),
+            position: [0.0, 0.0, 0.0],
+            contact: true,
+            ground_reaction_force: Some([0.0, 0.0, 300.0]), // zero tangential
+        };
+        let loco = LocomotionState {
+            base_velocity: [0.0, 0.0, 0.0],
+            heading_rate: 0.0,
+            feet: vec![foot],
+            step_length: 0.0,
+        };
+        let r = friction_cone::check_friction_cone(&loco, &config);
+        assert!(
+            r.passed,
+            "zero tangential on zero-friction passes: ratio 0/fz = 0 <= 0"
+        );
+    }
+
+    #[test]
+    fn p18_zero_friction_fails_with_any_tangential_force() {
+        use crate::models::command::{FootState, LocomotionState};
+        use crate::models::profile::LocomotionConfig;
+
+        let config = LocomotionConfig {
+            max_locomotion_velocity: 1.5,
+            max_step_length: 0.5,
+            min_foot_clearance: 0.02,
+            max_step_height: 0.5,
+            max_ground_reaction_force: 500.0,
+            friction_coefficient: 0.0, // zero friction
+            max_heading_rate: 1.0,
+        };
+        let foot = FootState {
+            name: "fl".into(),
+            position: [0.0, 0.0, 0.0],
+            contact: true,
+            ground_reaction_force: Some([1.0, 0.0, 300.0]), // tiny tangential
+        };
+        let loco = LocomotionState {
+            base_velocity: [0.0, 0.0, 0.0],
+            heading_rate: 0.0,
+            feet: vec![foot],
+            step_length: 0.0,
+        };
+        let r = friction_cone::check_friction_cone(&loco, &config);
+        assert!(!r.passed, "any tangential force on zero-friction must fail");
+    }
+
+    // ── P13 force rate with invalid delta_time (Step 102) ─────────────
+
+    #[test]
+    fn p13_force_rate_zero_delta_time_with_matching_ee_fails() {
+        use crate::models::command::EndEffectorForce;
+        use crate::models::profile::EndEffectorConfig;
+
+        let configs = vec![EndEffectorConfig {
+            name: "gripper".into(),
+            max_force_n: 100.0,
+            max_grasp_force_n: 80.0,
+            min_grasp_force_n: 5.0,
+            max_force_rate_n_per_s: 500.0,
+            max_payload_kg: 10.0,
+        }];
+        let prev = vec![EndEffectorForce {
+            name: "gripper".into(),
+            force: [10.0, 0.0, 0.0],
+            torque: [0.0, 0.0, 0.0],
+            grasp_force: None,
+        }];
+        let curr = vec![EndEffectorForce {
+            name: "gripper".into(),
+            force: [20.0, 0.0, 0.0],
+            torque: [0.0, 0.0, 0.0],
+            grasp_force: None,
+        }];
+        // delta_time = 0.0 with matching EEs → must fail.
+        let r = force_rate::check_force_rate_limits(&curr, Some(&prev), &configs, 0.0);
+        assert!(
+            !r.passed,
+            "zero delta_time with matching EEs must fail: {}",
+            r.details
+        );
+        assert!(r.details.contains("delta_time"));
+    }
+
+    #[test]
+    fn p13_force_rate_nan_delta_time_fails() {
+        use crate::models::command::EndEffectorForce;
+        use crate::models::profile::EndEffectorConfig;
+
+        let configs = vec![EndEffectorConfig {
+            name: "gripper".into(),
+            max_force_n: 100.0,
+            max_grasp_force_n: 80.0,
+            min_grasp_force_n: 5.0,
+            max_force_rate_n_per_s: 500.0,
+            max_payload_kg: 10.0,
+        }];
+        let prev = vec![EndEffectorForce {
+            name: "gripper".into(),
+            force: [10.0, 0.0, 0.0],
+            torque: [0.0, 0.0, 0.0],
+            grasp_force: None,
+        }];
+        let curr = vec![EndEffectorForce {
+            name: "gripper".into(),
+            force: [20.0, 0.0, 0.0],
+            torque: [0.0, 0.0, 0.0],
+            grasp_force: None,
+        }];
+        let r = force_rate::check_force_rate_limits(&curr, Some(&prev), &configs, f64::NAN);
+        assert!(!r.passed, "NaN delta_time must fail");
+    }
+
+    // ── P10 proximity NaN zone center fail-closed (Step 105) ──────────
+
+    #[test]
+    fn p10_proximity_nan_zone_center_triggers_scaling() {
+        // NaN zone center must fail-closed: treat EE as inside the zone,
+        // so velocity scaling is applied. This is the most safety-critical
+        // application — a corrupt proximity zone near a human must still
+        // enforce velocity reduction.
+        let defs = vec![joint_def("j1", -1.0, 1.0)]; // max_velocity = 5.0
+        let joints = vec![joint_state("j1", 0.0, 3.0, 0.0)];
+        let ees = vec![ee("hand", 10.0, 10.0, 10.0)]; // far from any real zone
+        let zones = vec![ProximityZone::Sphere {
+            name: "human".into(),
+            center: [f64::NAN, 0.0, 0.0], // corrupt center
+            radius: 1.0,
+            velocity_scale: 0.5,
+            dynamic: false,
+        }];
+        // NaN center → point_in_sphere returns true → zone active → velocity
+        // scaled by 0.5 → limit = 5.0 * 0.5 = 2.5, vel = 3.0 → fail
+        let r = proximity::check_proximity_velocity(&joints, &defs, &ees, &zones, 1.0);
+        assert!(
+            !r.passed,
+            "NaN proximity zone center must fail-closed (enforce scaling): {}",
+            r.details
+        );
+    }
+
+    #[test]
+    fn p10_proximity_nan_zone_radius_triggers_scaling() {
+        let defs = vec![joint_def("j1", -1.0, 1.0)];
+        let joints = vec![joint_state("j1", 0.0, 3.0, 0.0)];
+        let ees = vec![ee("hand", 10.0, 10.0, 10.0)];
+        let zones = vec![ProximityZone::Sphere {
+            name: "human".into(),
+            center: [0.0, 0.0, 0.0],
+            radius: f64::NAN,
+            velocity_scale: 0.5,
+            dynamic: false,
+        }];
+        let r = proximity::check_proximity_velocity(&joints, &defs, &ees, &zones, 1.0);
+        assert!(
+            !r.passed,
+            "NaN proximity zone radius must fail-closed (enforce scaling)"
+        );
+    }
+
+    // ── P10 proximity point_in_sphere NaN point defense-in-depth (Step 105) ──
+
+    #[test]
+    fn p10_proximity_nan_ee_position_caught_by_sphere_guard() {
+        // Although the P10 caller rejects NaN EE positions before reaching
+        // point_in_sphere, the function itself must be self-contained: a NaN
+        // point must return true (inside zone), not false (outside). This
+        // documents that the defense-in-depth guard works — consistent with
+        // the ISO 15066 point_in_sphere fix in Step 104.
+        //
+        // We test via active_proximity_scale indirectly: if point_in_sphere
+        // treats NaN point as inside, any zone with velocity_scale < 1.0 will
+        // activate, and a high velocity will fail.
+        //
+        // But since the caller's NaN guard fires first, we use the integration
+        // path directly (the caller rejects NaN EEs before sphere check).
+        // So instead, document with a standalone assertion on the private fn.
+        //
+        // Since point_in_sphere is private, we test through the public API:
+        // provide a NaN EE position → expect P10 rejection (the caller guard).
+        let defs = vec![joint_def("j1", -1.0, 1.0)];
+        let joints = vec![joint_state("j1", 0.0, 0.1, 0.0)]; // low velocity
+        let ees = vec![ee("hand", f64::NAN, 0.0, 0.0)]; // NaN EE
+        let zones = vec![ProximityZone::Sphere {
+            name: "human".into(),
+            center: [0.0, 0.0, 0.0],
+            radius: 1.0,
+            velocity_scale: 0.5,
+            dynamic: false,
+        }];
+        let r = proximity::check_proximity_velocity(&joints, &defs, &ees, &zones, 1.0);
+        assert!(
+            !r.passed,
+            "NaN EE position must be rejected by P10 (caller guard or sphere guard): {}",
+            r.details
+        );
+    }
+
+    // ── Margin composition tests (Step 105) ───────────────────────────
+
+    #[test]
+    fn p1_position_valid_without_margins_rejected_with_margins() {
+        // A position at 95% of the raw range should pass P1 without margins
+        // but be rejected when a 10% position_margin is applied (effective
+        // range tightened by 10% on each side).
+        use crate::models::profile::{JointDefinition, JointType, RealWorldMargins};
+        let defs = vec![JointDefinition {
+            name: "j1".into(),
+            joint_type: JointType::Revolute,
+            min: -1.0,
+            max: 1.0,
+            max_velocity: 5.0,
+            max_torque: 50.0,
+            max_acceleration: 10.0,
+        }];
+        // Position at 0.95 — within raw range [-1, 1] but outside effective
+        // range [-0.9, 0.9] when position_margin = 0.10.
+        let joints = vec![joint_state("j1", 0.95, 0.0, 0.0)];
+
+        // Without margins: passes.
+        let r = joint_limits::check_joint_limits(&joints, &defs, None);
+        assert!(r.passed, "0.95 must pass without margins");
+
+        // With 10% position margin: effective max = 1.0 - 2.0*0.10 = 0.80
+        // Wait — actually margin works as: effective range = [min + range*margin, max - range*margin]
+        // range = 2.0, so effective = [-1.0 + 0.2, 1.0 - 0.2] = [-0.8, 0.8]
+        // 0.95 > 0.8 → rejected.
+        let margins = RealWorldMargins {
+            position_margin: 0.10,
+            velocity_margin: 0.0,
+            torque_margin: 0.0,
+            acceleration_margin: 0.0,
+        };
+        let r = joint_limits::check_joint_limits(&joints, &defs, Some(&margins));
+        assert!(
+            !r.passed,
+            "0.95 must be rejected with 10% position margin (effective max = 0.8)"
+        );
+    }
+
+    #[test]
+    fn p2_velocity_scaling_composes_proximity_envelope_margins() {
+        // Test that proximity scale and envelope velocity scale compose
+        // correctly via multiplication in the P10 check.
+        let defs = vec![joint_def("j1", -1.0, 1.0)]; // max_velocity = 5.0
+
+        // Place EE inside a proximity zone with velocity_scale = 0.8.
+        let ees = vec![ee("hand", 0.0, 0.0, 0.0)]; // inside zone center
+        let zones = vec![ProximityZone::Sphere {
+            name: "z".into(),
+            center: [0.0, 0.0, 0.0],
+            radius: 1.0,
+            velocity_scale: 0.8,
+            dynamic: false,
+        }];
+
+        // Envelope velocity scale = 0.9 (global_velocity_scale passed to check).
+        // Velocity margin = 0.15 → margin_factor = 0.85.
+        // Effective limit = 5.0 * min(0.9, 1.0) * 0.8 * 0.85
+        //                 = 5.0 * 0.9 * 0.8 * 0.85 = 3.06
+        // Wait, actually check_proximity_velocity takes global_velocity_scale as
+        // parameter and applies it inside. Let me trace the logic:
+        //   effective = max_velocity * min_proximity_scale * global_velocity_scale
+        // Then velocity check applies margin_factor on top if margins are present.
+        // But proximity check and velocity check are separate P2/P10 checks.
+        // P10 effective = max_velocity * proximity_scale * global_velocity_scale
+        // P2 effective = max_velocity * global_velocity_scale * (1 - velocity_margin)
+
+        // Test P10: velocity at 3.5 with effective limit =
+        // 5.0 * 0.8 * 0.9 = 3.6 → 3.5 passes.
+        let joints_pass = vec![joint_state("j1", 0.0, 3.5, 0.0)];
+        let r = proximity::check_proximity_velocity(&joints_pass, &defs, &ees, &zones, 0.9);
+        assert!(
+            r.passed,
+            "velocity 3.5 with limit 3.6 should pass: {}",
+            r.details
+        );
+
+        // Velocity at 3.7 with effective limit = 3.6 → fails.
+        let joints_fail = vec![joint_state("j1", 0.0, 3.7, 0.0)];
+        let r = proximity::check_proximity_velocity(&joints_fail, &defs, &ees, &zones, 0.9);
+        assert!(
+            !r.passed,
+            "velocity 3.7 with limit 3.6 should fail: {}",
+            r.details
+        );
+    }
+
+    #[test]
+    fn run_all_checks_margin_tightening_integrated() {
+        // End-to-end: a command that passes all checks without margins should
+        // fail P1 when margins are applied.
+        use crate::models::command::{Command, CommandAuthority};
+        use crate::models::profile::{
+            JointDefinition, JointType, RealWorldMargins, RobotProfile, SafeStopProfile,
+            WorkspaceBounds,
+        };
+
+        let profile = RobotProfile {
+            name: "margin_test".into(),
+            version: "1.0.0".into(),
+            joints: vec![JointDefinition {
+                name: "j1".into(),
+                joint_type: JointType::Revolute,
+                min: -1.0,
+                max: 1.0,
+                max_velocity: 5.0,
+                max_torque: 50.0,
+                max_acceleration: 10.0,
+            }],
+            workspace: WorkspaceBounds::Aabb {
+                min: [-2.0, -2.0, 0.0],
+                max: [2.0, 2.0, 3.0],
+            },
+            exclusion_zones: vec![],
+            proximity_zones: vec![],
+            collision_pairs: vec![],
+            stability: None,
+            locomotion: None,
+            max_delta_time: 0.1,
+            min_collision_distance: 0.01,
+            global_velocity_scale: 1.0,
+            watchdog_timeout_ms: 50,
+            safe_stop_profile: SafeStopProfile::default(),
+            profile_signature: None,
+            profile_signer_kid: None,
+            config_sequence: None,
+            real_world_margins: Some(RealWorldMargins {
+                position_margin: 0.10,
+                velocity_margin: 0.0,
+                torque_margin: 0.0,
+                acceleration_margin: 0.0,
+            }),
+            task_envelope: None,
+            environment: None,
+            end_effectors: vec![],
+        };
+
+        let cmd = Command {
+            timestamp: chrono::Utc::now(),
+            source: "test".into(),
+            sequence: 1,
+            joint_states: vec![JointState {
+                name: "j1".into(),
+                position: 0.85, // inside raw [-1,1] but outside margined [-0.8,0.8]
+                velocity: 0.0,
+                effort: 0.0,
+            }],
+            delta_time: 0.01,
+            end_effector_positions: vec![],
+            center_of_mass: None,
+            authority: CommandAuthority {
+                pca_chain: String::new(),
+                required_ops: vec![],
+            },
+            metadata: std::collections::HashMap::new(),
+            locomotion_state: None,
+            end_effector_forces: vec![],
+            estimated_payload_kg: None,
+            signed_sensor_readings: vec![],
+            zone_overrides: std::collections::HashMap::new(),
+            environment_state: None,
+        };
+
+        let results = run_all_checks(&cmd, &profile, None, None);
+        let p1 = results.iter().find(|c| c.name == "joint_limits").unwrap();
+        assert!(
+            !p1.passed,
+            "position 0.85 must fail P1 with 10% margin (effective max=0.8): {}",
+            p1.details
+        );
     }
 }

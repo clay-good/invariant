@@ -21,6 +21,28 @@ use sha2::{Digest, Sha256};
 /// duplicated to form a complete pair.
 ///
 /// Returns `None` for an empty leaf set.
+///
+/// # Examples
+///
+/// ```
+/// use invariant_robotics_core::replication::merkle_root;
+///
+/// // Empty set returns None.
+/// assert!(merkle_root(&[]).is_none());
+///
+/// // Single leaf returns a sha256: prefixed root.
+/// let root = merkle_root(&["sha256:abc".to_string()]).unwrap();
+/// assert!(root.starts_with("sha256:"));
+///
+/// // Two leaves produce a deterministic root.
+/// let r1 = merkle_root(&["a".to_string(), "b".to_string()]).unwrap();
+/// let r2 = merkle_root(&["a".to_string(), "b".to_string()]).unwrap();
+/// assert_eq!(r1, r2);
+///
+/// // Order matters.
+/// let r3 = merkle_root(&["b".to_string(), "a".to_string()]).unwrap();
+/// assert_ne!(r1, r3);
+/// ```
 pub fn merkle_root(leaves: &[String]) -> Option<String> {
     if leaves.is_empty() {
         return None;
@@ -53,6 +75,25 @@ pub fn merkle_root(leaves: &[String]) -> Option<String> {
 /// Compute Merkle root from an audit log JSONL file.
 ///
 /// Extracts `entry_hash` from each line and builds the tree.
+///
+/// # Examples
+///
+/// ```
+/// use invariant_robotics_core::replication::merkle_root_from_log;
+///
+/// let log = r#"{"entry_hash":"sha256:aaa","sequence":0}
+/// {"entry_hash":"sha256:bbb","sequence":1}
+/// {"entry_hash":"sha256:ccc","sequence":2}"#;
+///
+/// let root = merkle_root_from_log(log).unwrap();
+/// assert!(root.starts_with("sha256:"));
+///
+/// // Empty log returns None.
+/// assert!(merkle_root_from_log("").is_none());
+///
+/// // Lines without entry_hash are skipped.
+/// assert!(merkle_root_from_log("garbage line\n").is_none());
+/// ```
 pub fn merkle_root_from_log(jsonl: &str) -> Option<String> {
     let hashes: Vec<String> = jsonl
         .lines()
@@ -71,6 +112,26 @@ pub fn merkle_root_from_log(jsonl: &str) -> Option<String> {
 // ---------------------------------------------------------------------------
 
 /// A Merkle root witness record for external publication (RFC 9162 pattern).
+///
+/// # Examples
+///
+/// ```
+/// use invariant_robotics_core::replication::WitnessRecord;
+///
+/// let record = WitnessRecord {
+///     merkle_root: "sha256:abc123".to_string(),
+///     entry_count: 42,
+///     timestamp: "2026-01-01T00:00:00Z".to_string(),
+///     log_source: "audit.jsonl".to_string(),
+///     signature: String::new(),
+///     signer_kid: String::new(),
+/// };
+///
+/// assert_eq!(record.entry_count, 42);
+/// let json = serde_json::to_string(&record).unwrap();
+/// let back: WitnessRecord = serde_json::from_str(&json).unwrap();
+/// assert_eq!(back.merkle_root, "sha256:abc123");
+/// ```
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct WitnessRecord {
     /// Merkle root hash over all audit entry hashes.
@@ -96,11 +157,19 @@ pub struct WitnessRecord {
 /// Errors from replication operations.
 #[derive(Debug, thiserror::Error)]
 pub enum ReplicationError {
+    /// An I/O error occurred while writing to the replica file.
     #[error("I/O error: {reason}")]
-    Io { reason: String },
+    Io {
+        /// Human-readable I/O error description.
+        reason: String,
+    },
 
+    /// The replication backend is not available or not yet implemented.
     #[error("backend unavailable: {reason}")]
-    Unavailable { reason: String },
+    Unavailable {
+        /// Human-readable reason for unavailability.
+        reason: String,
+    },
 }
 
 /// Abstract audit log replication backend.
@@ -177,6 +246,7 @@ pub struct S3Replicator {
 }
 
 impl S3Replicator {
+    /// Create a new S3 replicator stub targeting the given bucket and key prefix.
     pub fn new(bucket: String, prefix: String) -> Self {
         Self { bucket, prefix }
     }
@@ -211,6 +281,7 @@ pub struct WebhookWitness {
 }
 
 impl WebhookWitness {
+    /// Create a new webhook witness stub targeting the given URL.
     pub fn new(url: String) -> Self {
         Self { url }
     }
@@ -387,5 +458,44 @@ mod tests {
         };
         let err = w.publish(&record).unwrap_err();
         assert!(matches!(err, ReplicationError::Unavailable { .. }));
+    }
+
+    // ── Merkle tree corruption documentation tests (Step 101) ─────────
+
+    #[test]
+    fn merkle_root_from_log_with_partial_corruption_produces_different_root() {
+        // Documents that silently dropping a corrupt line changes the Merkle root.
+        // An attacker who corrupts one line causes evidence to be excluded.
+        let valid_log = "{\"entry_hash\":\"sha256:aaa\"}\n{\"entry_hash\":\"sha256:bbb\"}\n";
+        let corrupt_log = "{\"entry_hash\":\"sha256:aaa\"}\ncorrupt garbage\n";
+
+        let root_full = merkle_root_from_log(valid_log);
+        let root_partial = merkle_root_from_log(corrupt_log);
+
+        // Both produce Some, but with different roots (evidence of silent drop).
+        assert!(root_full.is_some());
+        assert!(root_partial.is_some());
+        assert_ne!(
+            root_full, root_partial,
+            "corrupt line changes the Merkle root (evidence dropped)"
+        );
+    }
+
+    #[test]
+    fn merkle_root_from_log_all_corrupt_returns_none() {
+        // If all lines are corrupt, no Merkle root can be computed.
+        let log = "garbage\nnot json\nalso bad\n";
+        assert!(
+            merkle_root_from_log(log).is_none(),
+            "all-corrupt log must return None"
+        );
+    }
+
+    #[test]
+    fn merkle_root_single_entry_deterministic() {
+        let log = "{\"entry_hash\":\"sha256:aaa\"}\n";
+        let r1 = merkle_root_from_log(log).unwrap();
+        let r2 = merkle_root_from_log(log).unwrap();
+        assert_eq!(r1, r2, "Merkle root must be deterministic");
     }
 }

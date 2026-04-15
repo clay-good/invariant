@@ -13,8 +13,10 @@ use thiserror::Error;
 // Error type
 // ---------------------------------------------------------------------------
 
+/// Errors returned by the eval preset dispatcher.
 #[derive(Debug, Error)]
 pub enum EvalError {
+    /// The requested preset name is not one of the built-in presets.
     #[error("unknown preset: {0}")]
     UnknownPreset(String),
 }
@@ -23,12 +25,26 @@ pub enum EvalError {
 // Preset names
 // ---------------------------------------------------------------------------
 
-/// Known preset names.
+/// Preset name for the safety-focused evaluation pass.
 pub const PRESET_SAFETY_CHECK: &str = "safety-check";
+/// Preset name for the completeness-focused evaluation pass.
 pub const PRESET_COMPLETENESS_CHECK: &str = "completeness-check";
+/// Preset name for the regression evaluation pass.
 pub const PRESET_REGRESSION_CHECK: &str = "regression-check";
 
 /// Returns the list of available preset names.
+///
+/// # Examples
+///
+/// ```
+/// use invariant_robotics_eval::presets::list_presets;
+///
+/// let presets = list_presets();
+/// assert!(presets.contains(&"safety-check"));
+/// assert!(presets.contains(&"completeness-check"));
+/// assert!(presets.contains(&"regression-check"));
+/// assert_eq!(presets.len(), 3);
+/// ```
 pub fn list_presets() -> &'static [&'static str] {
     &[
         PRESET_SAFETY_CHECK,
@@ -42,29 +58,107 @@ pub fn list_presets() -> &'static [&'static str] {
 // ---------------------------------------------------------------------------
 
 /// A single finding from an eval preset.
+///
+/// # Examples
+///
+/// ```
+/// use invariant_robotics_eval::presets::{EvalFinding, Severity};
+///
+/// let finding = EvalFinding {
+///     step: 3,
+///     severity: Severity::Error,
+///     message: "check 'joint_limits' failed: j1 at 1.5 rad exceeds max 1.2 rad".into(),
+/// };
+///
+/// assert_eq!(finding.step, 3);
+/// assert_eq!(finding.severity, Severity::Error);
+/// assert!(finding.message.contains("joint_limits"));
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EvalFinding {
+    /// The trace step index at which this finding was produced.
     pub step: u64,
+    /// Severity level of this finding.
     pub severity: Severity,
+    /// Human-readable description of what was found.
     pub message: String,
 }
 
 /// Finding severity.
+///
+/// # Examples
+///
+/// ```
+/// use invariant_robotics_eval::presets::Severity;
+///
+/// // All three variants can be constructed and compared.
+/// assert_ne!(Severity::Error, Severity::Warning);
+/// assert_ne!(Severity::Warning, Severity::Info);
+/// assert_eq!(Severity::Error, Severity::Error);
+///
+/// // Severity is Copy.
+/// let s = Severity::Warning;
+/// let t = s; // copy, not move
+/// assert_eq!(s, t);
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Severity {
+    /// A rule violation that causes the eval report to fail.
     Error,
+    /// A potential issue that does not fail the report.
     Warning,
+    /// Informational note with no impact on the pass/fail result.
     Info,
 }
 
 /// Result of running an eval preset on a trace.
+///
+/// # Examples
+///
+/// ```
+/// use invariant_robotics_eval::presets::{EvalReport, EvalFinding, Severity};
+///
+/// // Construct a passing report directly.
+/// let report = EvalReport {
+///     preset: "safety-check".into(),
+///     trace_id: "episode-001".into(),
+///     passed: true,
+///     findings: vec![],
+///     summary: "10/10 steps approved, 0 rejected".into(),
+/// };
+///
+/// assert!(report.passed);
+/// assert!(report.findings.is_empty());
+/// assert_eq!(report.preset, "safety-check");
+///
+/// // A failing report carries findings.
+/// let failing = EvalReport {
+///     preset: "safety-check".into(),
+///     trace_id: "episode-002".into(),
+///     passed: false,
+///     findings: vec![EvalFinding {
+///         step: 5,
+///         severity: Severity::Error,
+///         message: "check 'joint_limits' (physics) failed: j1 over limit".into(),
+///     }],
+///     summary: "9/10 steps approved, 1 rejected".into(),
+/// };
+///
+/// assert!(!failing.passed);
+/// assert_eq!(failing.findings.len(), 1);
+/// ```
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct EvalReport {
+    /// Name of the preset or rubric that produced this report.
     pub preset: String,
+    /// Identifier of the trace that was evaluated.
     pub trace_id: String,
+    /// Whether the evaluation passed (no Error-severity findings).
     pub passed: bool,
+    /// Individual findings from the evaluation, in step order.
     pub findings: Vec<EvalFinding>,
+    /// Human-readable summary of the overall result.
     pub summary: String,
 }
 
@@ -73,6 +167,87 @@ pub struct EvalReport {
 // ---------------------------------------------------------------------------
 
 /// Run a named preset against a trace. Returns an error for unknown presets.
+///
+/// # Examples
+///
+/// ```
+/// use std::collections::HashMap;
+/// use invariant_robotics_eval::presets::{run_preset, list_presets};
+/// use invariant_core::models::trace::{Trace, TraceStep};
+/// use invariant_core::models::command::{Command, CommandAuthority, JointState};
+/// use invariant_core::models::verdict::{SignedVerdict, Verdict, CheckResult, AuthoritySummary};
+///
+/// // Build a minimal two-step trace where every step is approved.
+/// let ts = chrono::DateTime::parse_from_rfc3339("2024-01-01T00:00:00Z")
+///     .unwrap()
+///     .with_timezone(&chrono::Utc);
+///
+/// let make_step = |seq: u64| -> TraceStep {
+///     let cmd = Command {
+///         timestamp: ts,
+///         source: "test-agent".into(),
+///         sequence: seq,
+///         joint_states: vec![JointState { name: "j1".into(), position: 0.0,
+///                                         velocity: 0.0, effort: 0.0 }],
+///         delta_time: 0.01,
+///         end_effector_positions: vec![],
+///         center_of_mass: None,
+///         authority: CommandAuthority { pca_chain: String::new(), required_ops: vec![] },
+///         metadata: HashMap::new(),
+///         locomotion_state: None,
+///         end_effector_forces: vec![],
+///         estimated_payload_kg: None,
+///         signed_sensor_readings: vec![],
+///         zone_overrides: HashMap::new(),
+///         environment_state: None,
+///     };
+///     let verdict = SignedVerdict {
+///         verdict: Verdict {
+///             approved: true,
+///             command_hash: "hash".into(),
+///             command_sequence: seq,
+///             timestamp: ts,
+///             checks: vec![CheckResult::new("authority", "authority", true, "ok")],
+///             profile_name: "test".into(),
+///             profile_hash: "hash".into(),
+///             threat_analysis: None,
+///             authority_summary: AuthoritySummary {
+///                 origin_principal: "operator".into(),
+///                 hop_count: 1,
+///                 operations_granted: vec!["actuate:*".into()],
+///                 operations_required: vec!["actuate:j1".into()],
+///             },
+///         },
+///         verdict_signature: "sig".into(),
+///         signer_kid: "kid".into(),
+///     };
+///     TraceStep { step: seq, timestamp: ts, command: cmd, verdict, simulation_state: None }
+/// };
+///
+/// let trace = Trace {
+///     id: "episode-001".into(),
+///     episode: 1,
+///     environment_id: 0,
+///     scenario: "pick-and-place".into(),
+///     profile_name: "test-arm".into(),
+///     steps: vec![make_step(0), make_step(1)],
+///     metadata: HashMap::new(),
+/// };
+///
+/// // Running a known preset returns Ok.
+/// let report = run_preset("safety-check", &trace).expect("known preset");
+/// assert!(report.passed, "all steps approved => safety-check passes");
+/// assert_eq!(report.trace_id, "episode-001");
+///
+/// // An unknown preset name returns Err.
+/// let err = run_preset("nonexistent-preset", &trace);
+/// assert!(err.is_err());
+///
+/// // All names returned by list_presets() are valid.
+/// for name in list_presets() {
+///     run_preset(name, &trace).expect("all listed presets must be valid");
+/// }
+/// ```
 pub fn run_preset(name: &str, trace: &Trace) -> Result<EvalReport, EvalError> {
     match name {
         PRESET_SAFETY_CHECK => Ok(safety_check(trace)),
@@ -83,6 +258,74 @@ pub fn run_preset(name: &str, trace: &Trace) -> Result<EvalReport, EvalError> {
 }
 
 /// Run a regression check comparing two traces.
+///
+/// Compares the two traces step-by-step.  Any difference in the `approved`
+/// flag — or in individual check pass/fail results — is reported as an error
+/// finding.  A length mismatch is also flagged.
+///
+/// # Examples
+///
+/// ```
+/// use std::collections::HashMap;
+/// use invariant_robotics_eval::presets::run_regression;
+/// use invariant_core::models::trace::{Trace, TraceStep};
+/// use invariant_core::models::command::{Command, CommandAuthority, JointState};
+/// use invariant_core::models::verdict::{SignedVerdict, Verdict, CheckResult, AuthoritySummary};
+///
+/// let ts = chrono::DateTime::parse_from_rfc3339("2024-01-01T00:00:00Z")
+///     .unwrap()
+///     .with_timezone(&chrono::Utc);
+///
+/// let make_step = |seq: u64, approved: bool| -> TraceStep {
+///     let cmd = Command {
+///         timestamp: ts, source: "agent".into(), sequence: seq,
+///         joint_states: vec![JointState { name: "j1".into(), position: 0.0,
+///                                         velocity: 0.0, effort: 0.0 }],
+///         delta_time: 0.01, end_effector_positions: vec![], center_of_mass: None,
+///         authority: CommandAuthority { pca_chain: String::new(), required_ops: vec![] },
+///         metadata: HashMap::new(), locomotion_state: None,
+///         end_effector_forces: vec![], estimated_payload_kg: None,
+///         signed_sensor_readings: vec![], zone_overrides: HashMap::new(),
+///         environment_state: None,
+///     };
+///     let verdict = SignedVerdict {
+///         verdict: Verdict {
+///             approved,
+///             command_hash: "hash".into(), command_sequence: seq, timestamp: ts,
+///             checks: vec![CheckResult::new("authority", "authority", approved, "ok")],
+///             profile_name: "test".into(), profile_hash: "hash".into(),
+///             threat_analysis: None,
+///             authority_summary: AuthoritySummary {
+///                 origin_principal: "op".into(), hop_count: 1,
+///                 operations_granted: vec![], operations_required: vec![],
+///             },
+///         },
+///         verdict_signature: "sig".into(), signer_kid: "kid".into(),
+///     };
+///     TraceStep { step: seq, timestamp: ts, command: cmd, verdict, simulation_state: None }
+/// };
+///
+/// let make_trace = |steps: Vec<TraceStep>| Trace {
+///     id: "t".into(), episode: 0, environment_id: 0, scenario: "test".into(),
+///     profile_name: "arm".into(), steps, metadata: HashMap::new(),
+/// };
+///
+/// // Identical traces pass regression.
+/// let baseline  = make_trace(vec![make_step(0, true), make_step(1, true)]);
+/// let candidate = make_trace(vec![make_step(0, true), make_step(1, true)]);
+/// let report = run_regression(&baseline, &candidate);
+/// assert!(report.passed);
+/// assert!(report.findings.iter().all(|f| {
+///     use invariant_robotics_eval::presets::Severity;
+///     f.severity != Severity::Error
+/// }));
+///
+/// // A verdict divergence in step 1 fails regression.
+/// let divergent = make_trace(vec![make_step(0, true), make_step(1, false)]);
+/// let failing = run_regression(&baseline, &divergent);
+/// assert!(!failing.passed);
+/// assert!(failing.findings.iter().any(|f| f.step == 1));
+/// ```
 pub fn run_regression(baseline: &Trace, candidate: &Trace) -> EvalReport {
     regression_check(baseline, candidate)
 }
@@ -597,6 +840,7 @@ mod tests {
             } else {
                 format!("{} failed", name)
             },
+            derating: None,
         }
     }
 

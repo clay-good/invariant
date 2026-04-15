@@ -33,13 +33,19 @@ use invariant_core::validator::ValidatorConfig;
 // Error type
 // ---------------------------------------------------------------------------
 
+/// Errors that can occur when running the Isaac Lab bridge server.
 #[derive(Debug, Error)]
 pub enum BridgeError {
+    /// Wraps an underlying I/O error from the Unix socket or stream.
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
 
+    /// The given socket path already exists and is not a Unix socket.
     #[error("socket path already exists and is not a socket: {path}")]
-    PathExists { path: String },
+    PathExists {
+        /// The conflicting filesystem path.
+        path: String,
+    },
 }
 
 // ---------------------------------------------------------------------------
@@ -118,6 +124,7 @@ pub struct BridgeConfig {
 }
 
 impl BridgeConfig {
+    /// Create a new `BridgeConfig` with default message size limit (64 KiB).
     pub fn new(
         socket_path: impl Into<String>,
         validator: Arc<ValidatorConfig>,
@@ -139,10 +146,15 @@ impl BridgeConfig {
 /// Counters for bridge activity.
 #[derive(Debug, Default, Clone, Serialize)]
 pub struct BridgeStats {
+    /// Total number of command messages received.
     pub commands_received: u64,
+    /// Number of commands that were approved by the validator.
     pub commands_approved: u64,
+    /// Number of commands that were rejected by the validator.
     pub commands_rejected: u64,
+    /// Number of heartbeat messages received.
     pub heartbeats_received: u64,
+    /// Number of protocol or I/O errors encountered.
     pub errors: u64,
 }
 
@@ -565,5 +577,426 @@ mod tests {
         let json = serde_json::to_string(&resp).unwrap();
         assert!(json.contains("error"));
         assert!(json.contains("test error"));
+    }
+
+    /// Build a command JSON with customizable fields for targeted bridge tests.
+    fn make_custom_command_json(
+        chain_b64: &str,
+        j1_pos: f64,
+        j1_vel: f64,
+        j1_effort: f64,
+        delta_time: f64,
+        ee_pos: [f64; 3],
+        sequence: u64,
+    ) -> String {
+        let cmd = Command {
+            timestamp: Utc::now(),
+            source: "isaac".into(),
+            sequence,
+            joint_states: vec![JointState {
+                name: "j1".into(),
+                position: j1_pos,
+                velocity: j1_vel,
+                effort: j1_effort,
+            }],
+            delta_time,
+            end_effector_positions: vec![EndEffectorPosition {
+                name: "ee".into(),
+                position: ee_pos,
+            }],
+            center_of_mass: None,
+            authority: CommandAuthority {
+                pca_chain: chain_b64.to_string(),
+                required_ops: vec![op("actuate:j1")],
+            },
+            metadata: HashMap::new(),
+            locomotion_state: None,
+            end_effector_forces: vec![],
+            estimated_payload_kg: None,
+            signed_sensor_readings: vec![],
+            zone_overrides: HashMap::new(),
+            environment_state: None,
+        };
+        serde_json::to_string(&cmd).unwrap()
+    }
+
+    #[tokio::test]
+    async fn bridge_rejects_authority_stripped_command() {
+        let (validator, _chain_b64) = make_validator();
+        let socket_path = unique_socket_path();
+        let config = BridgeConfig::new(socket_path.clone(), validator, 0);
+        let handle = tokio::spawn(async move {
+            let _ = run_bridge(config).await;
+        });
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        let stream = UnixStream::connect(&socket_path).await.unwrap();
+        let (reader, mut writer) = stream.into_split();
+        let mut buf_reader = BufReader::new(reader);
+
+        let msg = make_custom_command_json("", 0.0, 0.0, 0.0, 0.01, [0.0, 0.0, 1.0], 1) + "\n";
+        writer.write_all(msg.as_bytes()).await.unwrap();
+
+        let mut response_line = String::new();
+        buf_reader.read_line(&mut response_line).await.unwrap();
+
+        let resp: BridgeResponse = serde_json::from_str(&response_line).unwrap();
+        assert_eq!(resp.approved, Some(false));
+
+        handle.abort();
+        let _ = std::fs::remove_file(&socket_path);
+    }
+
+    #[tokio::test]
+    async fn bridge_rejects_velocity_overshoot() {
+        let (validator, chain_b64) = make_validator();
+        let socket_path = unique_socket_path();
+        let config = BridgeConfig::new(socket_path.clone(), validator, 0);
+        let handle = tokio::spawn(async move {
+            let _ = run_bridge(config).await;
+        });
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        let stream = UnixStream::connect(&socket_path).await.unwrap();
+        let (reader, mut writer) = stream.into_split();
+        let mut buf_reader = BufReader::new(reader);
+
+        // j1_vel = 100.0, profile max_velocity = 5.0
+        let msg =
+            make_custom_command_json(&chain_b64, 0.0, 100.0, 0.0, 0.01, [0.0, 0.0, 1.0], 1) + "\n";
+        writer.write_all(msg.as_bytes()).await.unwrap();
+
+        let mut response_line = String::new();
+        buf_reader.read_line(&mut response_line).await.unwrap();
+
+        let resp: BridgeResponse = serde_json::from_str(&response_line).unwrap();
+        assert_eq!(resp.approved, Some(false));
+
+        handle.abort();
+        let _ = std::fs::remove_file(&socket_path);
+    }
+
+    #[tokio::test]
+    async fn bridge_rejects_torque_spike() {
+        let (validator, chain_b64) = make_validator();
+        let socket_path = unique_socket_path();
+        let config = BridgeConfig::new(socket_path.clone(), validator, 0);
+        let handle = tokio::spawn(async move {
+            let _ = run_bridge(config).await;
+        });
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        let stream = UnixStream::connect(&socket_path).await.unwrap();
+        let (reader, mut writer) = stream.into_split();
+        let mut buf_reader = BufReader::new(reader);
+
+        // j1_effort = 1000.0, profile max_torque = 100.0
+        let msg =
+            make_custom_command_json(&chain_b64, 0.0, 0.0, 1000.0, 0.01, [0.0, 0.0, 1.0], 1) + "\n";
+        writer.write_all(msg.as_bytes()).await.unwrap();
+
+        let mut response_line = String::new();
+        buf_reader.read_line(&mut response_line).await.unwrap();
+
+        let resp: BridgeResponse = serde_json::from_str(&response_line).unwrap();
+        assert_eq!(resp.approved, Some(false));
+
+        handle.abort();
+        let _ = std::fs::remove_file(&socket_path);
+    }
+
+    #[tokio::test]
+    async fn bridge_rejects_workspace_escape() {
+        let (validator, chain_b64) = make_validator();
+        let socket_path = unique_socket_path();
+        let config = BridgeConfig::new(socket_path.clone(), validator, 0);
+        let handle = tokio::spawn(async move {
+            let _ = run_bridge(config).await;
+        });
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        let stream = UnixStream::connect(&socket_path).await.unwrap();
+        let (reader, mut writer) = stream.into_split();
+        let mut buf_reader = BufReader::new(reader);
+
+        // ee_pos x=999.0 is outside workspace max [2.0, 2.0, 3.0]
+        let msg =
+            make_custom_command_json(&chain_b64, 0.0, 0.0, 0.0, 0.01, [999.0, 0.0, 1.0], 1) + "\n";
+        writer.write_all(msg.as_bytes()).await.unwrap();
+
+        let mut response_line = String::new();
+        buf_reader.read_line(&mut response_line).await.unwrap();
+
+        let resp: BridgeResponse = serde_json::from_str(&response_line).unwrap();
+        assert_eq!(resp.approved, Some(false));
+
+        handle.abort();
+        let _ = std::fs::remove_file(&socket_path);
+    }
+
+    #[tokio::test]
+    async fn bridge_rejects_delta_time_violation() {
+        let (validator, chain_b64) = make_validator();
+        let socket_path = unique_socket_path();
+        let config = BridgeConfig::new(socket_path.clone(), validator, 0);
+        let handle = tokio::spawn(async move {
+            let _ = run_bridge(config).await;
+        });
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        let stream = UnixStream::connect(&socket_path).await.unwrap();
+        let (reader, mut writer) = stream.into_split();
+        let mut buf_reader = BufReader::new(reader);
+
+        // delta_time = 1.0, profile max_delta_time = 0.1
+        let msg =
+            make_custom_command_json(&chain_b64, 0.0, 0.0, 0.0, 1.0, [0.0, 0.0, 1.0], 1) + "\n";
+        writer.write_all(msg.as_bytes()).await.unwrap();
+
+        let mut response_line = String::new();
+        buf_reader.read_line(&mut response_line).await.unwrap();
+
+        let resp: BridgeResponse = serde_json::from_str(&response_line).unwrap();
+        assert_eq!(resp.approved, Some(false));
+
+        handle.abort();
+        let _ = std::fs::remove_file(&socket_path);
+    }
+
+    #[tokio::test]
+    async fn bridge_rejects_negative_delta_time() {
+        let (validator, chain_b64) = make_validator();
+        let socket_path = unique_socket_path();
+        let config = BridgeConfig::new(socket_path.clone(), validator, 0);
+        let handle = tokio::spawn(async move {
+            let _ = run_bridge(config).await;
+        });
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        let stream = UnixStream::connect(&socket_path).await.unwrap();
+        let (reader, mut writer) = stream.into_split();
+        let mut buf_reader = BufReader::new(reader);
+
+        // delta_time = -0.01 is non-positive and physically invalid
+        let msg =
+            make_custom_command_json(&chain_b64, 0.0, 0.0, 0.0, -0.01, [0.0, 0.0, 1.0], 1) + "\n";
+        writer.write_all(msg.as_bytes()).await.unwrap();
+
+        let mut response_line = String::new();
+        buf_reader.read_line(&mut response_line).await.unwrap();
+
+        let resp: BridgeResponse = serde_json::from_str(&response_line).unwrap();
+        assert_eq!(resp.approved, Some(false));
+
+        handle.abort();
+        let _ = std::fs::remove_file(&socket_path);
+    }
+
+    #[tokio::test]
+    async fn bridge_rejects_heartbeat_false() {
+        let (validator, _) = make_validator();
+        let socket_path = unique_socket_path();
+        let config = BridgeConfig::new(socket_path.clone(), validator, 0);
+        let handle = tokio::spawn(async move {
+            let _ = run_bridge(config).await;
+        });
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        let stream = UnixStream::connect(&socket_path).await.unwrap();
+        let (reader, mut writer) = stream.into_split();
+        let mut buf_reader = BufReader::new(reader);
+
+        writer.write_all(b"{\"heartbeat\": false}\n").await.unwrap();
+
+        let mut response_line = String::new();
+        buf_reader.read_line(&mut response_line).await.unwrap();
+
+        let resp: BridgeResponse = serde_json::from_str(&response_line).unwrap();
+        assert_eq!(resp.response_type, "error");
+        assert!(resp.error.unwrap().contains("heartbeat field must be true"));
+
+        handle.abort();
+        let _ = std::fs::remove_file(&socket_path);
+    }
+
+    #[tokio::test]
+    async fn bridge_rejects_empty_json_object() {
+        let (validator, _) = make_validator();
+        let socket_path = unique_socket_path();
+        let config = BridgeConfig::new(socket_path.clone(), validator, 0);
+        let handle = tokio::spawn(async move {
+            let _ = run_bridge(config).await;
+        });
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        let stream = UnixStream::connect(&socket_path).await.unwrap();
+        let (reader, mut writer) = stream.into_split();
+        let mut buf_reader = BufReader::new(reader);
+
+        // An empty JSON object matches neither a heartbeat nor a Command.
+        writer.write_all(b"{}\n").await.unwrap();
+
+        let mut response_line = String::new();
+        buf_reader.read_line(&mut response_line).await.unwrap();
+
+        let resp: BridgeResponse = serde_json::from_str(&response_line).unwrap();
+        assert_eq!(resp.response_type, "error");
+
+        handle.abort();
+        let _ = std::fs::remove_file(&socket_path);
+    }
+
+    #[tokio::test]
+    async fn bridge_mixed_commands_and_heartbeats() {
+        let (validator, chain_b64) = make_validator();
+        let socket_path = unique_socket_path();
+        let config = BridgeConfig::new(socket_path.clone(), validator, 0);
+        let handle = tokio::spawn(async move {
+            let _ = run_bridge(config).await;
+        });
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        let stream = UnixStream::connect(&socket_path).await.unwrap();
+        let (reader, mut writer) = stream.into_split();
+        let mut buf_reader = BufReader::new(reader);
+
+        // 1. Heartbeat -> expect heartbeat_ack
+        writer.write_all(b"{\"heartbeat\": true}\n").await.unwrap();
+        let mut line = String::new();
+        buf_reader.read_line(&mut line).await.unwrap();
+        let resp1: BridgeResponse = serde_json::from_str(&line).unwrap();
+        assert_eq!(resp1.response_type, "heartbeat_ack");
+
+        // 2. Valid command -> expect approved verdict
+        line.clear();
+        let msg =
+            make_custom_command_json(&chain_b64, 0.0, 0.0, 0.0, 0.01, [0.0, 0.0, 1.0], 1) + "\n";
+        writer.write_all(msg.as_bytes()).await.unwrap();
+        buf_reader.read_line(&mut line).await.unwrap();
+        let resp2: BridgeResponse = serde_json::from_str(&line).unwrap();
+        assert_eq!(resp2.response_type, "verdict");
+        assert_eq!(resp2.approved, Some(true));
+
+        // 3. Heartbeat -> expect heartbeat_ack
+        line.clear();
+        writer.write_all(b"{\"heartbeat\": true}\n").await.unwrap();
+        buf_reader.read_line(&mut line).await.unwrap();
+        let resp3: BridgeResponse = serde_json::from_str(&line).unwrap();
+        assert_eq!(resp3.response_type, "heartbeat_ack");
+
+        // 4. Invalid command (position out of range) -> expect rejected verdict
+        line.clear();
+        let bad_msg =
+            make_custom_command_json(&chain_b64, 999.0, 0.0, 0.0, 0.01, [0.0, 0.0, 1.0], 2) + "\n";
+        writer.write_all(bad_msg.as_bytes()).await.unwrap();
+        buf_reader.read_line(&mut line).await.unwrap();
+        let resp4: BridgeResponse = serde_json::from_str(&line).unwrap();
+        assert_eq!(resp4.response_type, "verdict");
+        assert_eq!(resp4.approved, Some(false));
+
+        handle.abort();
+        let _ = std::fs::remove_file(&socket_path);
+    }
+
+    #[tokio::test]
+    async fn bridge_approved_verdict_contains_check_results() {
+        let (validator, chain_b64) = make_validator();
+        let socket_path = unique_socket_path();
+        let config = BridgeConfig::new(socket_path.clone(), validator, 0);
+        let handle = tokio::spawn(async move {
+            let _ = run_bridge(config).await;
+        });
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        let stream = UnixStream::connect(&socket_path).await.unwrap();
+        let (reader, mut writer) = stream.into_split();
+        let mut buf_reader = BufReader::new(reader);
+
+        let msg =
+            make_custom_command_json(&chain_b64, 0.0, 0.0, 0.0, 0.01, [0.0, 0.0, 1.0], 1) + "\n";
+        writer.write_all(msg.as_bytes()).await.unwrap();
+
+        let mut response_line = String::new();
+        buf_reader.read_line(&mut response_line).await.unwrap();
+
+        let resp: BridgeResponse = serde_json::from_str(&response_line).unwrap();
+        assert_eq!(resp.approved, Some(true));
+        let sv = resp.signed_verdict.unwrap();
+        assert!(
+            !sv.verdict.checks.is_empty(),
+            "approved verdict must contain check results"
+        );
+        assert!(
+            sv.verdict.checks.iter().all(|c| c.passed),
+            "all checks must have passed for an approved command"
+        );
+
+        handle.abort();
+        let _ = std::fs::remove_file(&socket_path);
+    }
+
+    #[tokio::test]
+    async fn bridge_rejected_verdict_identifies_failing_check() {
+        let (validator, chain_b64) = make_validator();
+        let socket_path = unique_socket_path();
+        let config = BridgeConfig::new(socket_path.clone(), validator, 0);
+        let handle = tokio::spawn(async move {
+            let _ = run_bridge(config).await;
+        });
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        let stream = UnixStream::connect(&socket_path).await.unwrap();
+        let (reader, mut writer) = stream.into_split();
+        let mut buf_reader = BufReader::new(reader);
+
+        // Position 999 is well outside ±3.14; must fail the joint_limits check.
+        let msg = make_command_json(&chain_b64, 999.0) + "\n";
+        writer.write_all(msg.as_bytes()).await.unwrap();
+
+        let mut response_line = String::new();
+        buf_reader.read_line(&mut response_line).await.unwrap();
+
+        let resp: BridgeResponse = serde_json::from_str(&response_line).unwrap();
+        assert_eq!(resp.approved, Some(false));
+        let sv = resp.signed_verdict.unwrap();
+        let joint_limits_check = sv
+            .verdict
+            .checks
+            .iter()
+            .find(|c| c.name == "joint_limits")
+            .expect("verdict must contain a joint_limits check");
+        assert!(
+            !joint_limits_check.passed,
+            "joint_limits check must have failed"
+        );
+
+        handle.abort();
+        let _ = std::fs::remove_file(&socket_path);
+    }
+
+    #[tokio::test]
+    async fn bridge_rejects_oversized_message() {
+        let (validator, _) = make_validator();
+        let socket_path = unique_socket_path();
+
+        // Use a small max_message_bytes to avoid allocating 64KB in tests
+        let mut config = BridgeConfig::new(socket_path.clone(), validator, 0);
+        config.max_message_bytes = 100; // 100 bytes max
+
+        let handle = tokio::spawn(async move {
+            let _ = run_bridge(config).await;
+        });
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        let stream = UnixStream::connect(&socket_path).await.unwrap();
+        let (reader, mut writer) = stream.into_split();
+        let mut buf_reader = BufReader::new(reader);
+
+        // Send a message larger than 100 bytes
+        let oversized = "x".repeat(200) + "\n";
+        writer.write_all(oversized.as_bytes()).await.unwrap();
+
+        let mut response_line = String::new();
+        buf_reader.read_line(&mut response_line).await.unwrap();
+
+        let resp: BridgeResponse = serde_json::from_str(&response_line).unwrap();
+        assert_eq!(resp.response_type, "error");
+        assert!(
+            resp.error.as_ref().unwrap().contains("message too large"),
+            "DoS guard must reject oversized messages, got: {:?}",
+            resp.error
+        );
+
+        handle.abort();
+        let _ = std::fs::remove_file(&socket_path);
     }
 }

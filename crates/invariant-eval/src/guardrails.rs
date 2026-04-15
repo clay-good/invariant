@@ -1,17 +1,55 @@
 // Policy-based guardrail engine
 
 /// A guardrail policy action.
+///
+/// # Examples
+///
+/// ```
+/// use invariant_robotics_eval::guardrails::GuardrailAction;
+///
+/// // The two variants are distinct and implement PartialEq.
+/// assert_ne!(GuardrailAction::Allow, GuardrailAction::Block);
+/// assert_eq!(GuardrailAction::Allow, GuardrailAction::Allow);
+/// ```
 #[derive(Debug, Clone, PartialEq)]
 pub enum GuardrailAction {
+    /// Permit the check to proceed.
     Allow,
+    /// Prevent the check from being evaluated.
     Block,
 }
 
 /// A single guardrail policy rule.
+///
+/// # Examples
+///
+/// ```
+/// use invariant_robotics_eval::guardrails::{GuardrailRule, GuardrailAction};
+///
+/// // Allow a specific check through.
+/// let allow_rule = GuardrailRule {
+///     name: "permit-joint-limits".into(),
+///     pattern: "joint_limits".into(),
+///     action: GuardrailAction::Allow,
+/// };
+/// assert_eq!(allow_rule.pattern, "joint_limits");
+/// assert_eq!(allow_rule.action, GuardrailAction::Allow);
+///
+/// // Block a specific check.
+/// let block_rule = GuardrailRule {
+///     name: "block-experimental-check".into(),
+///     pattern: "experimental_torque".into(),
+///     action: GuardrailAction::Block,
+/// };
+/// assert_eq!(block_rule.action, GuardrailAction::Block);
+/// ```
 #[derive(Debug, Clone)]
 pub struct GuardrailRule {
+    /// Human-readable name for this rule (used in diagnostics).
     pub name: String,
+    /// Exact check name this rule matches against (no glob or regex).
     pub pattern: String,
+    /// Action to take when the pattern matches.
     pub action: GuardrailAction,
 }
 
@@ -29,6 +67,47 @@ pub struct GuardrailRule {
 /// glob or regex semantics.  The strings `"*"`, `"joint_*"`, and `".*"` are
 /// treated as literal check names, not wildcards.  A pattern of `"*"` will
 /// only match a check whose name is literally `"*"`.
+///
+/// # Examples
+///
+/// ```
+/// use invariant_robotics_eval::guardrails::{GuardrailRule, GuardrailAction, evaluate_guardrails};
+///
+/// // No rules: every check is allowed (no policy in effect).
+/// assert_eq!(evaluate_guardrails("joint_limits", &[]), GuardrailAction::Allow);
+///
+/// // Explicit allow rule for a named check.
+/// let rules = vec![
+///     GuardrailRule {
+///         name: "allow-joint-limits".into(),
+///         pattern: "joint_limits".into(),
+///         action: GuardrailAction::Allow,
+///     },
+/// ];
+/// assert_eq!(evaluate_guardrails("joint_limits", &rules), GuardrailAction::Allow);
+///
+/// // Fail-closed: a non-empty policy with no matching rule blocks by default.
+/// // (The policy does not explicitly allow "velocity_limits", so it is blocked.)
+/// assert_eq!(evaluate_guardrails("velocity_limits", &rules), GuardrailAction::Block);
+///
+/// // Block an experimental check that is not yet certified.
+/// let policy = vec![
+///     GuardrailRule {
+///         name: "block-experimental".into(),
+///         pattern: "experimental_torque".into(),
+///         action: GuardrailAction::Block,
+///     },
+///     GuardrailRule {
+///         name: "allow-authority".into(),
+///         pattern: "authority".into(),
+///         action: GuardrailAction::Allow,
+///     },
+/// ];
+/// assert_eq!(evaluate_guardrails("experimental_torque", &policy), GuardrailAction::Block);
+/// assert_eq!(evaluate_guardrails("authority", &policy), GuardrailAction::Allow);
+/// // "joint_limits" has no rule in this policy — blocked fail-closed.
+/// assert_eq!(evaluate_guardrails("joint_limits", &policy), GuardrailAction::Block);
+/// ```
 pub fn evaluate_guardrails(check_name: &str, rules: &[GuardrailRule]) -> GuardrailAction {
     for rule in rules {
         if check_name == rule.pattern {

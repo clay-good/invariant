@@ -5,6 +5,39 @@ use sha2::{Digest, Sha256};
 use std::fmt::Write as FmtWrite;
 use std::path::Path;
 
+/// An Ed25519 key file holding a key-identifier, a base64-encoded public key,
+/// and an optional base64-encoded secret (signing) key.
+///
+/// The `secret_key` field is omitted from JSON when it is `None`, making the
+/// same type suitable for both full key pairs and public-key-only files.
+///
+/// # Examples
+///
+/// ```
+/// use base64::{engine::general_purpose::STANDARD, Engine};
+/// use ed25519_dalek::SigningKey;
+/// use invariant_robotics::key_file::KeyFile;
+///
+/// // Build a key file from raw Ed25519 key material.
+/// let sk_bytes = [0x42u8; 32];
+/// let sk = SigningKey::from_bytes(&sk_bytes);
+/// let vk = sk.verifying_key();
+///
+/// let kf = KeyFile {
+///     kid: "robot-validator-1".to_string(),
+///     public_key: STANDARD.encode(vk.as_bytes()),
+///     secret_key: Some(STANDARD.encode(&sk_bytes)),
+/// };
+///
+/// assert_eq!(kf.kid, "robot-validator-1");
+/// assert!(kf.secret_key.is_some());
+///
+/// // Round-trip through JSON serialization.
+/// let json = serde_json::to_string(&kf).unwrap();
+/// let kf2: KeyFile = serde_json::from_str(&json).unwrap();
+/// assert_eq!(kf2.kid, kf.kid);
+/// assert_eq!(kf2.public_key, kf.public_key);
+/// ```
 #[derive(Debug, Serialize, Deserialize)]
 pub struct KeyFile {
     pub kid: String,
@@ -20,6 +53,30 @@ pub struct KeyFile {
 /// - At most 128 bytes
 /// - Contains only ASCII alphanumeric characters, hyphens (`-`), underscores (`_`),
 ///   dots (`.`), and colons (`:`)
+///
+/// # Examples
+///
+/// ```
+/// use invariant_robotics::key_file::validate_kid;
+///
+/// // Valid KIDs.
+/// assert!(validate_kid("my-key-1").is_ok());
+/// assert!(validate_kid("ns:service_key.v2").is_ok());
+/// assert!(validate_kid("UPPER_LOWER-123").is_ok());
+///
+/// // Empty string is rejected.
+/// assert!(validate_kid("").is_err());
+///
+/// // Spaces are rejected.
+/// assert!(validate_kid("bad kid").is_err());
+///
+/// // Slashes are rejected (would allow path traversal).
+/// assert!(validate_kid("path/key").is_err());
+///
+/// // KIDs longer than 128 bytes are rejected.
+/// let too_long = "a".repeat(129);
+/// assert!(validate_kid(&too_long).is_err());
+/// ```
 pub fn validate_kid(kid: &str) -> Result<(), String> {
     if kid.is_empty() {
         return Err("KID must not be empty".to_string());
@@ -44,6 +101,43 @@ pub fn validate_kid(kid: &str) -> Result<(), String> {
 /// digest, prefixed with `"SHA256:"`.
 ///
 /// Example: `"SHA256:abcdef0123456789abcdef0123456789"`
+///
+/// # Examples
+///
+/// ```
+/// use base64::{engine::general_purpose::STANDARD, Engine};
+/// use ed25519_dalek::SigningKey;
+/// use invariant_robotics::key_file::{fingerprint, KeyFile};
+///
+/// let sk = SigningKey::from_bytes(&[0x42u8; 32]);
+/// let vk = sk.verifying_key();
+///
+/// let kf = KeyFile {
+///     kid: "fp-test".to_string(),
+///     public_key: STANDARD.encode(vk.as_bytes()),
+///     secret_key: None,
+/// };
+///
+/// let fp = fingerprint(&kf).expect("valid key produces a fingerprint");
+///
+/// // Fingerprint always starts with "SHA256:" followed by 32 lowercase hex chars.
+/// assert!(fp.starts_with("SHA256:"));
+/// assert_eq!(fp.len(), 39);
+/// let hex_part = &fp[7..];
+/// assert!(hex_part.chars().all(|c| c.is_ascii_hexdigit() && !c.is_uppercase()));
+///
+/// // Fingerprint is deterministic: same key → same fingerprint.
+/// assert_eq!(fingerprint(&kf).unwrap(), fp);
+///
+/// // Different keys produce different fingerprints.
+/// let sk2 = SigningKey::from_bytes(&[0x99u8; 32]);
+/// let kf2 = KeyFile {
+///     kid: "fp-test-2".to_string(),
+///     public_key: STANDARD.encode(sk2.verifying_key().as_bytes()),
+///     secret_key: None,
+/// };
+/// assert_ne!(fingerprint(&kf2).unwrap(), fp);
+/// ```
 pub fn fingerprint(kf: &KeyFile) -> Result<String, String> {
     let pk_bytes = STANDARD
         .decode(&kf.public_key)
@@ -58,6 +152,42 @@ pub fn fingerprint(kf: &KeyFile) -> Result<String, String> {
 }
 
 /// Create a new KeyFile containing only the public key (secret_key set to None).
+///
+/// This is the safe way to share a key file with a third party: all signing
+/// key material is removed while the public key and KID are preserved.
+///
+/// # Examples
+///
+/// ```
+/// use base64::{engine::general_purpose::STANDARD, Engine};
+/// use ed25519_dalek::SigningKey;
+/// use invariant_robotics::key_file::{export_public_key, KeyFile};
+///
+/// let sk_bytes = [0x7Fu8; 32];
+/// let sk = SigningKey::from_bytes(&sk_bytes);
+/// let vk = sk.verifying_key();
+///
+/// let full_kf = KeyFile {
+///     kid: "signing-key".to_string(),
+///     public_key: STANDARD.encode(vk.as_bytes()),
+///     secret_key: Some(STANDARD.encode(&sk_bytes)),
+/// };
+///
+/// assert!(full_kf.secret_key.is_some());
+///
+/// let pub_kf = export_public_key(&full_kf);
+///
+/// // The secret key is removed.
+/// assert!(pub_kf.secret_key.is_none());
+/// // The KID and public key are preserved exactly.
+/// assert_eq!(pub_kf.kid, full_kf.kid);
+/// assert_eq!(pub_kf.public_key, full_kf.public_key);
+///
+/// // Calling export_public_key on a public-key-only file is a no-op.
+/// let already_pub = export_public_key(&pub_kf);
+/// assert!(already_pub.secret_key.is_none());
+/// assert_eq!(already_pub.kid, full_kf.kid);
+/// ```
 pub fn export_public_key(kf: &KeyFile) -> KeyFile {
     KeyFile {
         kid: kf.kid.clone(),

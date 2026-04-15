@@ -57,6 +57,7 @@ pub fn check_friction_cone(loco: &LocomotionState, config: &LocomotionConfig) ->
             category: "physics".to_string(),
             passed: true,
             details: "all feet satisfy friction cone constraint".to_string(),
+            derating: None,
         }
     } else {
         CheckResult {
@@ -64,6 +65,7 @@ pub fn check_friction_cone(loco: &LocomotionState, config: &LocomotionConfig) ->
             category: "physics".to_string(),
             passed: false,
             details: violations.join("; "),
+            derating: None,
         }
     }
 }
@@ -79,6 +81,7 @@ mod tests {
             max_locomotion_velocity: 1.5,
             max_step_length: 0.5,
             min_foot_clearance: 0.02,
+            max_step_height: 0.5,
             max_ground_reaction_force: 500.0,
             friction_coefficient: mu,
             max_heading_rate: 1.0,

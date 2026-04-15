@@ -1,0 +1,24 @@
+{
+  "name": "adversarial_single_joint",
+  "version": "1.0.0",
+  "joints": [
+    {"name": "only_joint", "type": "revolute", "min": -0.5, "max": 0.5, "max_velocity": 1.0, "max_torque": 10.0, "max_acceleration": 5.0}
+  ],
+  "workspace": {
+    "type": "aabb",
+    "min": [-0.5, -0.5, 0.0],
+    "max": [0.5, 0.5, 1.0]
+  },
+  "exclusion_zones": [],
+  "proximity_zones": [],
+  "collision_pairs": [],
+  "max_delta_time": 0.01,
+  "min_collision_distance": 0.01,
+  "global_velocity_scale": 1.0,
+  "watchdog_timeout_ms": 50,
+  "safe_stop_profile": {
+    "strategy": "immediate_stop",
+    "max_deceleration": 10.0,
+    "target_joint_positions": {}
+  }
+}

@@ -557,7 +557,10 @@ mod tests {
                     position: [0.0, 0.0, 1.0],
                 },
             ],
-            center_of_mass: None,
+            // P9 requires center_of_mass when stability config is present and
+            // enabled (fail-closed). Supply a COM inside the humanoid's support
+            // polygon to pass the stability check.
+            center_of_mass: Some([0.0, 0.0, 0.9]),
             authority: CommandAuthority {
                 pca_chain: String::new(),
                 required_ops: vec![op],

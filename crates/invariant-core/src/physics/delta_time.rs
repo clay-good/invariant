@@ -17,6 +17,7 @@ pub fn check_delta_time(delta_time: f64, max_delta_time: f64) -> CheckResult {
                 "delta_time {} is not finite and positive (must be > 0)",
                 delta_time
             ),
+            derating: None,
         };
     }
 
@@ -32,6 +33,7 @@ pub fn check_delta_time(delta_time: f64, max_delta_time: f64) -> CheckResult {
                 "max_delta_time {} is not finite; profile configuration is invalid",
                 max_delta_time
             ),
+            derating: None,
         };
     }
 
@@ -44,6 +46,7 @@ pub fn check_delta_time(delta_time: f64, max_delta_time: f64) -> CheckResult {
                 "delta_time {:.9} s exceeds max_delta_time {:.9} s",
                 delta_time, max_delta_time
             ),
+            derating: None,
         };
     }
 
@@ -52,5 +55,6 @@ pub fn check_delta_time(delta_time: f64, max_delta_time: f64) -> CheckResult {
         category: "physics".to_string(),
         passed: true,
         details: format!("delta_time {:.9} s within bounds", delta_time),
+        derating: None,
     }
 }

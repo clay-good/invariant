@@ -37,6 +37,7 @@ pub fn check_acceleration_limits(
             category: "physics".to_string(),
             passed: true,
             details: "skipped on first command (no previous joint states)".to_string(),
+            derating: None,
         };
     };
 
@@ -50,6 +51,7 @@ pub fn check_acceleration_limits(
                 "delta_time {:.6} is non-positive; acceleration is undefined",
                 delta_time
             ),
+            derating: None,
         };
     }
 
@@ -117,6 +119,7 @@ pub fn check_acceleration_limits(
             category: "physics".to_string(),
             passed: true,
             details: "all joints within acceleration limits".to_string(),
+            derating: None,
         }
     } else {
         CheckResult {
@@ -124,6 +127,7 @@ pub fn check_acceleration_limits(
             category: "physics".to_string(),
             passed: false,
             details: violations.join("; "),
+            derating: None,
         }
     }
 }

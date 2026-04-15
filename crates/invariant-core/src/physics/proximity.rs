@@ -47,6 +47,7 @@ pub fn check_proximity_velocity(
             category: "physics".to_string(),
             passed: false,
             details: ee_violations.join("; "),
+            derating: None,
         };
     }
 
@@ -63,6 +64,7 @@ pub fn check_proximity_velocity(
                 category: "physics".to_string(),
                 passed: true,
                 details: "no end-effectors inside proximity zones".to_string(),
+                derating: None,
             };
         }
     };
@@ -116,6 +118,7 @@ pub fn check_proximity_velocity(
                  (proximity_scale={:.4}, global_scale={:.4})",
                 min_scale, global_velocity_scale
             ),
+            derating: None,
         }
     } else {
         CheckResult {
@@ -123,6 +126,7 @@ pub fn check_proximity_velocity(
             category: "physics".to_string(),
             passed: false,
             details: violations.join("; "),
+            derating: None,
         }
     }
 }
@@ -160,11 +164,5 @@ fn active_proximity_scale(
     min_scale
 }
 
-/// Returns `true` if `point` is inside or on the surface of the sphere.
-#[inline]
-fn point_in_sphere(point: &[f64; 3], center: &[f64; 3], radius: f64) -> bool {
-    let dx = point[0] - center[0];
-    let dy = point[1] - center[1];
-    let dz = point[2] - center[2];
-    dx * dx + dy * dy + dz * dz <= radius * radius
-}
+// point_in_sphere delegated to shared geometry module.
+use super::geometry::point_in_sphere;

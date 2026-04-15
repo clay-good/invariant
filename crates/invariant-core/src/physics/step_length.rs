@@ -15,6 +15,7 @@ pub fn check_step_length(loco: &LocomotionState, config: &LocomotionConfig) -> C
             category: "physics".to_string(),
             passed: false,
             details: "step_length is NaN or infinite".to_string(),
+            derating: None,
         };
     }
 
@@ -27,6 +28,7 @@ pub fn check_step_length(loco: &LocomotionState, config: &LocomotionConfig) -> C
                 "step_length {:.6} m is within max_step_length {:.6} m",
                 loco.step_length, config.max_step_length
             ),
+            derating: None,
         }
     } else {
         CheckResult {
@@ -37,6 +39,7 @@ pub fn check_step_length(loco: &LocomotionState, config: &LocomotionConfig) -> C
                 "step_length {:.6} m exceeds max_step_length {:.6} m",
                 loco.step_length, config.max_step_length
             ),
+            derating: None,
         }
     }
 }
@@ -52,6 +55,7 @@ mod tests {
             max_locomotion_velocity: 1.5,
             max_step_length: max_step,
             min_foot_clearance: 0.02,
+            max_step_height: 0.5,
             max_ground_reaction_force: 500.0,
             friction_coefficient: 0.7,
             max_heading_rate: 1.0,

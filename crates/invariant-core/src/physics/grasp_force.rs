@@ -24,6 +24,7 @@ pub fn check_grasp_force_limits(
             category: "physics".to_string(),
             passed: true,
             details: "no end-effector force data or profile configs to check".to_string(),
+            derating: None,
         };
     }
 
@@ -79,6 +80,7 @@ pub fn check_grasp_force_limits(
         category: "physics".to_string(),
         passed: violations.is_empty(),
         details,
+        derating: None,
     }
 }
 

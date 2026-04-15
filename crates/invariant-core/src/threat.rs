@@ -28,6 +28,32 @@ use crate::models::verdict::ThreatAnalysis;
 // ---------------------------------------------------------------------------
 
 /// Configuration for the threat scoring engine.
+///
+/// # Examples
+///
+/// ```
+/// use invariant_robotics_core::threat::{ThreatScorerConfig, ThreatWeights};
+///
+/// // Default configuration.
+/// let config = ThreatScorerConfig::default();
+/// assert_eq!(config.window_size, 100);
+/// assert_eq!(config.alert_threshold, 0.7);
+///
+/// // Custom configuration with a lower alert threshold.
+/// let custom = ThreatScorerConfig {
+///     window_size: 50,
+///     alert_threshold: 0.5,
+///     boundary_band_fraction: 0.1,
+///     weights: ThreatWeights {
+///         boundary_clustering: 0.25,
+///         authority_probing: 0.25,
+///         replay_similarity: 0.20,
+///         drift: 0.15,
+///         anomaly: 0.15,
+///     },
+/// };
+/// assert_eq!(custom.window_size, 50);
+/// ```
 #[derive(Debug, Clone)]
 pub struct ThreatScorerConfig {
     /// Maximum number of recent commands to retain for analysis.
@@ -42,12 +68,38 @@ pub struct ThreatScorerConfig {
 }
 
 /// Weights for combining individual threat scores.
+///
+/// # Examples
+///
+/// ```
+/// use invariant_robotics_core::threat::ThreatWeights;
+///
+/// let weights = ThreatWeights {
+///     boundary_clustering: 0.2,
+///     authority_probing: 0.25,
+///     replay_similarity: 0.2,
+///     drift: 0.2,
+///     anomaly: 0.15,
+/// };
+/// // Weights sum to roughly 1.0.
+/// let sum = weights.boundary_clustering
+///     + weights.authority_probing
+///     + weights.replay_similarity
+///     + weights.drift
+///     + weights.anomaly;
+/// assert!((sum - 1.0).abs() < 1e-9);
+/// ```
 #[derive(Debug, Clone)]
 pub struct ThreatWeights {
+    /// Weight for the boundary-clustering detector.
     pub boundary_clustering: f64,
+    /// Weight for the authority-probing detector.
     pub authority_probing: f64,
+    /// Weight for the replay-similarity detector.
     pub replay_similarity: f64,
+    /// Weight for the drift detector.
     pub drift: f64,
+    /// Weight for the anomaly-scoring detector.
     pub anomaly: f64,
 }
 
@@ -78,6 +130,7 @@ struct CommandFingerprint {
     /// Normalized joint positions (0.0-1.0 within joint range).
     positions: Vec<f64>,
     /// Whether this command was rejected.
+    #[allow(dead_code)] // Stored for future reject-pattern analysis.
     rejected: bool,
 }
 
@@ -101,7 +154,7 @@ impl DriftTracker {
     /// Update running means with new joint states. Returns the maximum
     /// absolute shift from the previous mean (0.0 if first sample).
     fn update(&mut self, joints: &[JointState]) -> f64 {
-        self.count += 1;
+        self.count = self.count.saturating_add(1);
         let mut max_shift = 0.0f64;
 
         for js in joints {
@@ -128,6 +181,43 @@ impl DriftTracker {
 /// Feed commands via `score()` and receive `ThreatAnalysis` values to
 /// attach to verdicts. The scorer is stateful — it tracks a sliding
 /// window of recent commands.
+///
+/// # Examples
+///
+/// ```
+/// use invariant_robotics_core::threat::{ThreatScorer, ThreatScorerConfig};
+/// use invariant_robotics_core::profiles::load_builtin;
+/// use invariant_robotics_core::models::command::{Command, CommandAuthority, JointState};
+/// use chrono::Utc;
+/// use std::collections::HashMap;
+///
+/// let profile = load_builtin("ur10").unwrap();
+/// let mut scorer = ThreatScorer::with_defaults();
+///
+/// let command = Command {
+///     timestamp: Utc::now(),
+///     source: "operator".to_string(),
+///     sequence: 0,
+///     joint_states: vec![
+///         JointState { name: "shoulder_pan_joint".to_string(), position: 0.0, velocity: 0.0, effort: 0.0 },
+///     ],
+///     delta_time: 0.01,
+///     end_effector_positions: vec![],
+///     center_of_mass: None,
+///     authority: CommandAuthority { pca_chain: String::new(), required_ops: vec![] },
+///     metadata: HashMap::new(),
+///     locomotion_state: None,
+///     end_effector_forces: vec![],
+///     estimated_payload_kg: None,
+///     signed_sensor_readings: vec![],
+///     zone_overrides: HashMap::new(),
+///     environment_state: None,
+/// };
+///
+/// let analysis = scorer.score(&command, &profile, true, "alice", true);
+/// assert_eq!(analysis.composite_threat_score, 0.0);
+/// assert!(!analysis.alert);
+/// ```
 pub struct ThreatScorer {
     config: ThreatScorerConfig,
     /// Recent command fingerprints (newest at back).
@@ -135,9 +225,9 @@ pub struct ThreatScorer {
     /// Rejected command fingerprints for replay detection.
     rejected_window: VecDeque<Vec<f64>>,
     /// Authority rejection counts per principal.
-    authority_rejections: HashMap<String, u32>,
+    authority_rejections: HashMap<String, u64>,
     /// Total authority checks.
-    authority_checks: u32,
+    authority_checks: u64,
     /// Drift tracker for gradual position shifts.
     drift: DriftTracker,
 }
@@ -284,13 +374,14 @@ impl ThreatScorer {
     // -- Detector 2: Authority probing ------------------------------------
 
     fn score_authority_probing(&mut self, authority_passed: bool, principal: &str) -> f64 {
-        self.authority_checks += 1;
+        self.authority_checks = self.authority_checks.saturating_add(1);
 
         if !authority_passed && !principal.is_empty() {
-            *self
+            let entry = self
                 .authority_rejections
                 .entry(principal.to_string())
-                .or_insert(0) += 1;
+                .or_insert(0);
+            *entry = entry.saturating_add(1);
         }
 
         if self.authority_checks < 5 {
@@ -438,6 +529,7 @@ fn euclidean_distance(a: &[f64], b: &[f64]) -> f64 {
 }
 
 /// Cosine similarity between two vectors. Returns 0.0 for empty/zero vectors.
+#[allow(dead_code)] // Used by replay-similarity scorer when window is large enough.
 fn cosine_similarity(a: &[f64], b: &[f64]) -> f64 {
     let len = a.len().min(b.len());
     if len == 0 {
@@ -842,5 +934,110 @@ mod tests {
         }
 
         assert!(scorer.window.len() <= 10);
+    }
+
+    // ── u64 counter overflow safety (Step 101) ────────────────────────
+
+    #[test]
+    fn authority_probing_score_remains_bounded_after_many_checks() {
+        // After many authority checks (simulating long-running deployment),
+        // the score must remain in [0.0, 1.0] without panic or overflow.
+        let mut scorer = ThreatScorer::with_defaults();
+        let profile = test_profile();
+
+        // Simulate 100K checks — all passing (no rejections).
+        for _ in 0..100_000 {
+            let cmd = make_command(0.0, 0.0);
+            let analysis = scorer.score(&cmd, &profile, true, "alice", true);
+            assert!(
+                analysis.authority_probing_score >= 0.0 && analysis.authority_probing_score <= 1.0,
+                "score must be bounded: {}",
+                analysis.authority_probing_score
+            );
+        }
+        // Counter must not have wrapped.
+        assert!(scorer.authority_checks >= 100_000);
+    }
+
+    #[test]
+    fn authority_probing_with_mixed_rejections_stays_bounded() {
+        let mut scorer = ThreatScorer::with_defaults();
+        let profile = test_profile();
+
+        // Alternate pass/fail — ensures rejection rate calculation stays sane.
+        for i in 0..1000 {
+            let cmd = make_command(0.0, 0.0);
+            let passed = i % 2 == 0;
+            let analysis = scorer.score(&cmd, &profile, passed, "alice", true);
+            assert!(
+                analysis.composite_threat_score >= 0.0 && analysis.composite_threat_score <= 1.0,
+                "composite score out of bounds: {}",
+                analysis.composite_threat_score
+            );
+        }
+    }
+
+    #[test]
+    fn authority_checks_saturate_at_u64_max() {
+        // Prove that counters saturate instead of wrapping to zero.
+        // Before the saturating_add fix, `authority_checks` would wrap from
+        // u64::MAX to 0, causing: (1) authority_checks < 5 → return 0.0
+        // (threat scoring disabled), (2) division by zero in rejection rate.
+        let mut scorer = ThreatScorer::with_defaults();
+        scorer.authority_checks = u64::MAX - 1;
+        *scorer
+            .authority_rejections
+            .entry("attacker".into())
+            .or_insert(0) = u64::MAX - 1;
+
+        let profile = test_profile();
+        let cmd = make_command(0.0, 0.0);
+
+        // Two more scores: first brings counters to MAX, second must saturate.
+        let a1 = scorer.score(&cmd, &profile, false, "attacker", true);
+        assert_eq!(scorer.authority_checks, u64::MAX);
+
+        let a2 = scorer.score(&cmd, &profile, false, "attacker", true);
+        assert_eq!(
+            scorer.authority_checks,
+            u64::MAX,
+            "authority_checks must saturate at u64::MAX, not wrap to 0"
+        );
+        assert_eq!(
+            scorer.authority_rejections["attacker"],
+            u64::MAX,
+            "rejection counter must saturate at u64::MAX"
+        );
+
+        // Score must still be bounded and valid.
+        assert!(
+            a1.authority_probing_score >= 0.0 && a1.authority_probing_score <= 1.0,
+            "score at MAX must be bounded: {}",
+            a1.authority_probing_score
+        );
+        assert!(
+            a2.authority_probing_score >= 0.0 && a2.authority_probing_score <= 1.0,
+            "score after saturation must be bounded: {}",
+            a2.authority_probing_score
+        );
+    }
+
+    #[test]
+    fn drift_tracker_count_saturates_at_u64_max() {
+        // The DriftTracker's running-mean counter must also saturate.
+        let mut tracker = DriftTracker::new();
+        tracker.count = u64::MAX;
+        let joints = vec![JointState {
+            name: "j1".into(),
+            position: 0.5,
+            velocity: 0.0,
+            effort: 0.0,
+        }];
+        tracker.update(&joints);
+        assert_eq!(
+            tracker.count,
+            u64::MAX,
+            "drift tracker count must saturate at u64::MAX"
+        );
     }
 }

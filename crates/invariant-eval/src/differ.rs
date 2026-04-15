@@ -3,14 +3,36 @@
 use invariant_core::models::trace::Trace;
 
 /// A single divergence between two traces.
+///
+/// # Examples
+///
+/// ```
+/// use invariant_robotics_eval::differ::TraceDiff;
+///
+/// // TraceDiff can be constructed directly for testing or reporting.
+/// let diff = TraceDiff {
+///     step: 5,
+///     field: "approved",
+///     baseline: "true".into(),
+///     candidate: "false".into(),
+/// };
+///
+/// assert_eq!(diff.step, 5);
+/// assert_eq!(diff.field, "approved");
+/// assert_eq!(diff.baseline, "true");
+/// assert_eq!(diff.candidate, "false");
+/// ```
 #[derive(Debug, Clone, PartialEq)]
 pub struct TraceDiff {
+    /// The step index at which the divergence was detected.
     pub step: u64,
     /// The name of the diverging field. Always a static string literal —
     /// `diff_traces` only ever produces a fixed set of field names
     /// (`"approved"`, `"trace_length"`).
     pub field: &'static str,
+    /// The value of the diverging field in the baseline trace.
     pub baseline: String,
+    /// The value of the diverging field in the candidate trace.
     pub candidate: String,
 }
 
@@ -28,6 +50,72 @@ pub struct TraceDiff {
 /// that both have `approved = true` on every step will produce zero diffs even
 /// if their individual check results diverge.  Use `run_regression` from
 /// `presets` for a deeper, per-check comparison.
+///
+/// # Examples
+///
+/// ```
+/// use std::collections::HashMap;
+/// use invariant_robotics_eval::differ::diff_traces;
+/// use invariant_core::models::trace::{Trace, TraceStep};
+/// use invariant_core::models::command::{Command, CommandAuthority, JointState};
+/// use invariant_core::models::verdict::{SignedVerdict, Verdict, CheckResult, AuthoritySummary};
+///
+/// let ts = chrono::DateTime::parse_from_rfc3339("2024-06-01T12:00:00Z")
+///     .unwrap()
+///     .with_timezone(&chrono::Utc);
+///
+/// let make_step = |seq: u64, approved: bool| -> TraceStep {
+///     let cmd = Command {
+///         timestamp: ts, source: "robot-arm".into(), sequence: seq,
+///         joint_states: vec![JointState { name: "shoulder".into(), position: 0.5,
+///                                         velocity: 0.1, effort: 2.0 }],
+///         delta_time: 0.02, end_effector_positions: vec![], center_of_mass: None,
+///         authority: CommandAuthority { pca_chain: String::new(), required_ops: vec![] },
+///         metadata: HashMap::new(), locomotion_state: None,
+///         end_effector_forces: vec![], estimated_payload_kg: None,
+///         signed_sensor_readings: vec![], zone_overrides: HashMap::new(),
+///         environment_state: None,
+///     };
+///     let verdict = SignedVerdict {
+///         verdict: Verdict {
+///             approved,
+///             command_hash: "hash".into(), command_sequence: seq, timestamp: ts,
+///             checks: vec![CheckResult::new("authority", "authority", true, "ok")],
+///             profile_name: "ur10e".into(), profile_hash: "phash".into(),
+///             threat_analysis: None,
+///             authority_summary: AuthoritySummary {
+///                 origin_principal: "operator".into(), hop_count: 1,
+///                 operations_granted: vec![], operations_required: vec![],
+///             },
+///         },
+///         verdict_signature: "sig".into(), signer_kid: "kid".into(),
+///     };
+///     TraceStep { step: seq, timestamp: ts, command: cmd, verdict, simulation_state: None }
+/// };
+///
+/// let make_trace = |steps: Vec<TraceStep>| Trace {
+///     id: "trace-A".into(), episode: 0, environment_id: 0,
+///     scenario: "welding-cycle".into(), profile_name: "ur10e".into(),
+///     steps, metadata: HashMap::new(),
+/// };
+///
+/// // Identical approval decisions produce no diffs.
+/// let baseline  = make_trace(vec![make_step(0, true), make_step(1, true)]);
+/// let candidate = make_trace(vec![make_step(0, true), make_step(1, true)]);
+/// assert!(diff_traces(&baseline, &candidate).is_empty());
+///
+/// // A single approval flip is detected.
+/// let divergent = make_trace(vec![make_step(0, true), make_step(1, false)]);
+/// let diffs = diff_traces(&baseline, &divergent);
+/// assert_eq!(diffs.len(), 1);
+/// assert_eq!(diffs[0].step, 1);
+/// assert_eq!(diffs[0].field, "approved");
+///
+/// // Different trace lengths produce a trace_length diff.
+/// let shorter = make_trace(vec![make_step(0, true)]);
+/// let len_diffs = diff_traces(&baseline, &shorter);
+/// assert!(len_diffs.iter().any(|d| d.field == "trace_length"));
+/// ```
 pub fn diff_traces(baseline: &Trace, candidate: &Trace) -> Vec<TraceDiff> {
     let mut diffs = Vec::new();
     let min_len = baseline.steps.len().min(candidate.steps.len());
@@ -92,6 +180,7 @@ mod tests {
                     category: "authority".into(),
                     passed: approved,
                     details: "ok".into(),
+                    derating: None,
                 }],
                 profile_name: "test".into(),
                 profile_hash: "hash".into(),

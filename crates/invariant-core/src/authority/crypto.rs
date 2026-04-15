@@ -59,8 +59,8 @@ pub(crate) fn parse_cose(raw: &[u8], hop: usize) -> Result<CoseSign1, AuthorityE
 /// Returns `Ok(())` if the signature is valid, or an `AuthorityError` describing
 /// the failure.  `hop` is the zero-based index into the chain for error messages.
 ///
-/// Prefer [`verify_signed_pca_parsed`] when you have already parsed the COSE
-/// struct via [`parse_cose`].
+/// Prefer `verify_signed_pca_parsed` when you have already parsed the COSE
+/// struct via `parse_cose`.
 pub fn verify_signed_pca(
     signed: &SignedPca,
     verifying_key: &VerifyingKey,
@@ -134,6 +134,7 @@ pub(crate) fn decode_pca_payload_from_parsed(
 ///
 /// Prefer [`decode_pca_payload_from_parsed`] when you have already parsed the
 /// COSE struct via [`parse_cose`].
+#[allow(dead_code)] // Convenience wrapper kept for future callers; prefer decode_pca_payload_from_parsed.
 pub(crate) fn decode_pca_payload(raw: &[u8], hop: usize) -> Result<Pca, AuthorityError> {
     let cose = parse_cose(raw, hop)?;
     decode_pca_payload_from_parsed(&cose, hop)

@@ -1,5 +1,8 @@
+/// PIC authority chain verification (verify_chain, check_required_ops).
 pub mod chain;
+/// Ed25519 key generation, PCA signing, and chain verification.
 pub mod crypto;
+/// Operation string validation and PCA operations logic.
 pub mod operations;
 
 // Re-export data types so `use invariant_core::authority::Pca` resolves

@@ -15,6 +15,7 @@ pub fn check_heading_rate(loco: &LocomotionState, config: &LocomotionConfig) -> 
             category: "physics".to_string(),
             passed: false,
             details: "heading_rate is NaN or infinite".to_string(),
+            derating: None,
         };
     }
 
@@ -29,6 +30,7 @@ pub fn check_heading_rate(loco: &LocomotionState, config: &LocomotionConfig) -> 
                 "|heading_rate| {:.6} rad/s is within max_heading_rate {:.6} rad/s",
                 abs_rate, config.max_heading_rate
             ),
+            derating: None,
         }
     } else {
         CheckResult {
@@ -39,6 +41,7 @@ pub fn check_heading_rate(loco: &LocomotionState, config: &LocomotionConfig) -> 
                 "|heading_rate| {:.6} rad/s exceeds max_heading_rate {:.6} rad/s",
                 abs_rate, config.max_heading_rate
             ),
+            derating: None,
         }
     }
 }
@@ -54,6 +57,7 @@ mod tests {
             max_locomotion_velocity: 1.5,
             max_step_length: 0.5,
             min_foot_clearance: 0.02,
+            max_step_height: 0.5,
             max_ground_reaction_force: 500.0,
             friction_coefficient: 0.7,
             max_heading_rate: max_rate,

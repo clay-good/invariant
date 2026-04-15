@@ -38,18 +38,27 @@ def CommandIsApproved
     (cmd : Command)
     (profile : RobotProfile)
     (prevJoints : List JointState)
+    (commands : List Command)
+    (log : Audit.AuditLog)
+    (act : Actuation.ActuationCommand)
+    (lastHeartbeatMs nowMs timeoutMs : Nat)
     : Prop :=
   Physics.AllPhysicsInvariantsHold cmd profile prevJoints ∧
-  Authority.AllAuthorityInvariantsHold cmd
+  Authority.AllAuthorityInvariantsHold cmd ∧
+  Audit.AllAuditInvariantsHold commands log ∧
+  Actuation.M1_SignedActuation act ∧
+  Liveness.W1_WatchdogHeartbeat lastHeartbeatMs nowMs timeoutMs
 
 /-- The fundamental safety guarantee: if a command is NOT approved,
     no actuation signature is produced and the motor does not move. -/
 theorem safety_guarantee
-    (cmd : Command) (profile : RobotProfile)
-    (prevJoints : List JointState)
-    (h_reject : ¬ CommandIsApproved cmd profile prevJoints)
+    (cmd : Command) (profile : RobotProfile) (prevJoints : List JointState)
+    (commands : List Command) (log : Audit.AuditLog)
+    (act : Actuation.ActuationCommand)
+    (lastHb nowMs timeoutMs : Nat)
+    (h_reject : ¬ CommandIsApproved cmd profile prevJoints commands log act lastHb nowMs timeoutMs)
     (actuation : Option Actuation.ActuationCommand)
-    (h_no_act : ¬ CommandIsApproved cmd profile prevJoints → actuation = none) :
+    (h_no_act : ¬ CommandIsApproved cmd profile prevJoints commands log act lastHb nowMs timeoutMs → actuation = none) :
     actuation = none := by
   exact h_no_act h_reject
 
@@ -57,10 +66,11 @@ theorem safety_guarantee
     authority chain (no hops) always fails A1 (provenance requires
     at least one hop). -/
 theorem fail_closed_empty_chain (cmd : Command) (profile : RobotProfile)
-    (prevJoints : List JointState)
+    (prevJoints : List JointState) (commands : List Command) (log : Audit.AuditLog)
+    (act : Actuation.ActuationCommand) (lastHb nowMs timeoutMs : Nat)
     (h_empty : cmd.authority.hops = []) :
-    ¬ CommandIsApproved cmd profile prevJoints := by
-  intro ⟨_, h_auth⟩
+    ¬ CommandIsApproved cmd profile prevJoints commands log act lastHb nowMs timeoutMs := by
+  intro ⟨_, h_auth, _⟩
   obtain ⟨h_a1, _⟩ := h_auth
   simp [Authority.A1_Provenance, h_empty] at h_a1
 

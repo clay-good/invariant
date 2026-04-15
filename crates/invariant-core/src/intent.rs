@@ -26,22 +26,42 @@ use crate::models::authority::{Operation, Pca};
 // Errors
 // ---------------------------------------------------------------------------
 
+/// Errors from the intent-to-operations pipeline.
 #[derive(Debug, Error)]
 pub enum IntentError {
+    /// The named template does not exist in the built-in template set.
     #[error("unknown template: {name}")]
-    UnknownTemplate { name: String },
+    UnknownTemplate {
+        /// The unknown template name.
+        name: String,
+    },
 
+    /// A required template parameter was not supplied in the `params` map.
     #[error("missing parameter: {param} (required by template {template})")]
-    MissingParameter { template: String, param: String },
+    MissingParameter {
+        /// Template that required the missing parameter.
+        template: String,
+        /// Name of the missing parameter.
+        param: String,
+    },
 
+    /// An operation string produced by template substitution or direct spec is invalid.
     #[error("invalid operation: {reason}")]
-    InvalidOperation { reason: String },
+    InvalidOperation {
+        /// Description of why the operation string is invalid.
+        reason: String,
+    },
 
+    /// No operations were specified (empty list).
     #[error("empty operations: at least one operation must be specified")]
     EmptyOperations,
 
+    /// The provided duration is not positive and finite.
     #[error("invalid duration: {seconds}s (must be positive and finite)")]
-    InvalidDuration { seconds: f64 },
+    InvalidDuration {
+        /// The invalid duration value in seconds.
+        seconds: f64,
+    },
 }
 
 // ---------------------------------------------------------------------------
@@ -150,7 +170,10 @@ pub struct ResolvedIntent {
 #[serde(rename_all = "snake_case")]
 pub enum IntentSource {
     /// Template-based (Option B).
-    Template { template_name: String },
+    Template {
+        /// Name of the task template that was instantiated.
+        template_name: String,
+    },
     /// Direct specification (Option C).
     Direct,
 }

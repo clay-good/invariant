@@ -12,8 +12,13 @@ resolver = "2"
 [workspace.package]
 version = "0.0.2"
 edition = "2021"
+rust-version = "1.75"
 license = "MIT"
 repository = "https://github.com/clay-good/invariant"
+homepage = "https://github.com/clay-good/invariant"
+documentation = "https://docs.rs/invariant-robotics-core"
+keywords = ["robotics", "safety", "cryptography", "ed25519", "real-time"]
+categories = ["aerospace", "cryptography", "embedded", "science", "simulation"]
 
 [workspace.dependencies]
 # Core crypto + serialization

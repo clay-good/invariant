@@ -31,6 +31,7 @@ pub fn check_payload_limits(
             category: "physics".to_string(),
             passed: true,
             details: "no payload estimate present; check skipped".to_string(),
+            derating: None,
         };
     };
 
@@ -40,6 +41,7 @@ pub fn check_payload_limits(
             category: "physics".to_string(),
             passed: true,
             details: "no end-effector configs in profile; check skipped".to_string(),
+            derating: None,
         };
     }
 
@@ -50,6 +52,7 @@ pub fn check_payload_limits(
             category: "physics".to_string(),
             passed: false,
             details: format!("estimated_payload_kg {payload_kg} is NaN or infinite"),
+            derating: None,
         };
     }
 
@@ -59,6 +62,7 @@ pub fn check_payload_limits(
             category: "physics".to_string(),
             passed: false,
             details: format!("estimated_payload_kg {payload_kg:.6} is negative"),
+            derating: None,
         };
     }
 
@@ -100,6 +104,7 @@ pub fn check_payload_limits(
         category: "physics".to_string(),
         passed: violations.is_empty(),
         details,
+        derating: None,
     }
 }
 

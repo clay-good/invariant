@@ -27,6 +27,25 @@ use crate::validator::{ValidatorConfig, ValidatorError};
 // ---------------------------------------------------------------------------
 
 /// A single check-level disagreement between the two validator instances.
+///
+/// # Examples
+///
+/// ```
+/// use invariant_robotics_core::differential::CheckDisagreement;
+///
+/// let d = CheckDisagreement {
+///     check_name: "joint_limits".to_string(),
+///     category: "physics".to_string(),
+///     instance_a_passed: true,
+///     instance_b_passed: false,
+///     instance_a_details: "within bounds".to_string(),
+///     instance_b_details: "j1 exceeds max".to_string(),
+/// };
+///
+/// assert_eq!(d.check_name, "joint_limits");
+/// assert!(d.instance_a_passed);
+/// assert!(!d.instance_b_passed);
+/// ```
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CheckDisagreement {
     /// Name of the check that disagreed.
@@ -44,6 +63,27 @@ pub struct CheckDisagreement {
 }
 
 /// The result of a differential validation run.
+///
+/// # Examples
+///
+/// ```
+/// use invariant_robotics_core::differential::DifferentialResult;
+///
+/// // A result where both instances fully agree.
+/// let result = DifferentialResult {
+///     approval_agrees: true,
+///     instance_a_approved: true,
+///     instance_b_approved: true,
+///     check_disagreements: vec![],
+///     total_checks: 10,
+///     agreeing_checks: 10,
+///     command_hash: "sha256:abc".to_string(),
+///     command_sequence: 1,
+/// };
+///
+/// assert!(result.fully_agrees());
+/// assert_eq!(result.total_checks, 10);
+/// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DifferentialResult {
     /// Whether the two instances agree on the approval decision.
@@ -426,12 +466,14 @@ mod tests {
                 category: "authority".into(),
                 passed: true,
                 details: "ok".into(),
+                derating: None,
             },
             CheckResult {
                 name: "joint_limits".into(),
                 category: "physics".into(),
                 passed: true,
                 details: "ok".into(),
+                derating: None,
             },
         ];
 
@@ -480,12 +522,14 @@ mod tests {
                     category: "authority".into(),
                     passed: true,
                     details: "ok".into(),
+                    derating: None,
                 },
                 CheckResult {
                     name: "joint_limits".into(),
                     category: "physics".into(),
                     passed: true,
                     details: "within bounds".into(),
+                    derating: None,
                 },
             ],
             profile_name: "test".into(),
@@ -506,12 +550,14 @@ mod tests {
                     category: "authority".into(),
                     passed: true,
                     details: "ok".into(),
+                    derating: None,
                 },
                 CheckResult {
                     name: "joint_limits".into(),
                     category: "physics".into(),
                     passed: false,
                     details: "j1 position 5.0 exceeds max 3.15".into(),
+                    derating: None,
                 },
             ],
             profile_name: "test".into(),
@@ -551,12 +597,14 @@ mod tests {
                     category: "authority".into(),
                     passed: false,
                     details: "failed".into(),
+                    derating: None,
                 },
                 CheckResult {
                     name: "extra_check".into(),
                     category: "physics".into(),
                     passed: true,
                     details: "ok".into(),
+                    derating: None,
                 },
             ],
             profile_name: "test".into(),
@@ -575,6 +623,7 @@ mod tests {
                 category: "authority".into(),
                 passed: false,
                 details: "failed".into(),
+                derating: None,
             }],
             profile_name: "test".into(),
             profile_hash: "sha256:xyz".into(),

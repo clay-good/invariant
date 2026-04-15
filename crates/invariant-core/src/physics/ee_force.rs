@@ -26,6 +26,7 @@ pub fn check_ee_force_limits(
             category: "physics".to_string(),
             passed: true,
             details: "no end-effector force data or profile configs to check".to_string(),
+            derating: None,
         };
     }
 
@@ -64,6 +65,7 @@ pub fn check_ee_force_limits(
             category: "physics".to_string(),
             passed: true,
             details: "all end-effector forces within limits".to_string(),
+            derating: None,
         }
     } else {
         CheckResult {
@@ -71,6 +73,7 @@ pub fn check_ee_force_limits(
             category: "physics".to_string(),
             passed: false,
             details: violations.join("; "),
+            derating: None,
         }
     }
 }

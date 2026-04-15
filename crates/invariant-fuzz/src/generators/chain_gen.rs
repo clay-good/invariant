@@ -32,6 +32,9 @@ impl ChainGenerator {
 
         // Ensure at least one op.
         let ops = if ops.is_empty() {
+            if available_ops.is_empty() {
+                return vec![];
+            }
             BTreeSet::from([Operation::new(available_ops[0]).unwrap()])
         } else {
             ops

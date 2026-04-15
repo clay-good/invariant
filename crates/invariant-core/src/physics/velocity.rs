@@ -58,6 +58,7 @@ pub fn check_velocity_limits(
             category: "physics".to_string(),
             passed: true,
             details: "all joints within velocity limits".to_string(),
+            derating: None,
         }
     } else {
         CheckResult {
@@ -65,6 +66,7 @@ pub fn check_velocity_limits(
             category: "physics".to_string(),
             passed: false,
             details: violations.join("; "),
+            derating: None,
         }
     }
 }

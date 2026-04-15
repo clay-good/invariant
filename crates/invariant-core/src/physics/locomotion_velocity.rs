@@ -19,6 +19,7 @@ pub fn check_locomotion_velocity(loco: &LocomotionState, config: &LocomotionConf
             category: "physics".to_string(),
             passed: false,
             details: "base_velocity contains NaN or infinite value".to_string(),
+            derating: None,
         };
     }
 
@@ -33,6 +34,7 @@ pub fn check_locomotion_velocity(loco: &LocomotionState, config: &LocomotionConf
                 "base speed {:.6} m/s is within limit {:.6} m/s",
                 speed, config.max_locomotion_velocity
             ),
+            derating: None,
         }
     } else {
         CheckResult {
@@ -43,6 +45,7 @@ pub fn check_locomotion_velocity(loco: &LocomotionState, config: &LocomotionConf
                 "base speed {:.6} m/s exceeds max_locomotion_velocity {:.6} m/s",
                 speed, config.max_locomotion_velocity
             ),
+            derating: None,
         }
     }
 }
@@ -58,6 +61,7 @@ mod tests {
             max_locomotion_velocity: max_vel,
             max_step_length: 0.5,
             min_foot_clearance: 0.02,
+            max_step_height: 0.5,
             max_ground_reaction_force: 500.0,
             friction_coefficient: 0.7,
             max_heading_rate: 1.0,

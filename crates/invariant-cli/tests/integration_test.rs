@@ -81,6 +81,18 @@ fn safe_command(profile: &RobotProfile, chain_b64: &str, ops: Vec<Operation>) ->
         position: [0.0, 0.0, 1.0],
     });
 
+    // P9 requires center_of_mass when stability config is present and enabled.
+    let center_of_mass = profile
+        .stability
+        .as_ref()
+        .filter(|s| s.enabled && s.support_polygon.len() >= 3)
+        .map(|s| {
+            let n = s.support_polygon.len() as f64;
+            let cx = s.support_polygon.iter().map(|v| v[0]).sum::<f64>() / n;
+            let cy = s.support_polygon.iter().map(|v| v[1]).sum::<f64>() / n;
+            [cx, cy, s.com_height_estimate]
+        });
+
     Command {
         timestamp: Utc::now(),
         source: "integration-test".to_string(),
@@ -88,7 +100,7 @@ fn safe_command(profile: &RobotProfile, chain_b64: &str, ops: Vec<Operation>) ->
         joint_states,
         delta_time: profile.max_delta_time * 0.5,
         end_effector_positions: ee_positions,
-        center_of_mass: None,
+        center_of_mass,
         authority: CommandAuthority {
             pca_chain: chain_b64.to_string(),
             required_ops: ops,
@@ -374,4 +386,47 @@ fn verdict_signature_independently_verifiable() {
     sign_vk
         .verify(&verdict_json, &signature)
         .expect("verdict signature must verify with signer's public key");
+}
+
+// ── Profile sync: workspace root profiles/ must match crate-embedded copy ──
+
+/// Verify that the workspace-root `profiles/` directory is identical to
+/// `crates/invariant-core/profiles/`. The embedded copy is what gets published
+/// to crates.io; the root copy is the user-facing convenience directory.
+/// If they drift, users get different behaviour depending on which they load.
+#[test]
+fn workspace_profiles_match_embedded_profiles() {
+    let manifest_dir = env!("CARGO_MANIFEST_DIR"); // crates/invariant-cli
+    let workspace_root = std::path::Path::new(manifest_dir)
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap();
+    let root_profiles = workspace_root.join("profiles");
+    let embedded_profiles = workspace_root.join("crates/invariant-core/profiles");
+
+    assert!(
+        root_profiles.exists(),
+        "workspace root profiles/ directory is missing"
+    );
+    assert!(
+        embedded_profiles.exists(),
+        "crates/invariant-core/profiles/ directory is missing"
+    );
+
+    for entry in std::fs::read_dir(&root_profiles).expect("read profiles/") {
+        let entry = entry.expect("read dir entry");
+        let name = entry.file_name();
+        let root_content = std::fs::read(entry.path()).expect("read root profile");
+        let embedded_path = embedded_profiles.join(&name);
+        assert!(
+            embedded_path.exists(),
+            "embedded profiles/ missing file: {name:?}"
+        );
+        let embedded_content = std::fs::read(&embedded_path).expect("read embedded profile");
+        assert_eq!(
+            root_content, embedded_content,
+            "profile {name:?} differs between profiles/ and crates/invariant-core/profiles/"
+        );
+    }
 }

@@ -1,12 +1,28 @@
-//! Adversarial testing framework for Invariant.
+//! Adversarial testing framework for the Invariant safety system.
 //!
-//! Provides structured fuzzing and attack simulation for the Invariant
-//! robotics safety system. Attack classes are organised by the layer they
-//! target:
+//! Provides structured fuzzing and attack simulation across four layers:
 //!
-//! - `protocol` — command-level attacks (boundary probing, numeric injection)
-//! - `generators` — random but valid test-data generators used by attacks and
-//!   benchmarks
+//! - [`protocol`] — command-level attacks (boundary probing, numeric injection,
+//!   authority forgery, schema manipulation, temporal replay)
+//! - [`cognitive`] — cognitive escape strategies (CE1–CE10) that mimic an
+//!   adversarial AI trying to subvert safety checks
+//! - [`system`] — system-level attacks (resource exhaustion, filesystem,
+//!   network, process, side-channel, timing)
+//! - [`generators`] — random but valid test-data generators used by attacks
+//!   and benchmarks
+//!
+//! # Quick Start
+//!
+//! ```rust
+//! use invariant_robotics_fuzz::report::AdversarialReport;
+//!
+//! let mut report = AdversarialReport::new("boundary_probing");
+//! report.record("BP-1", "joint at max + epsilon", "rejected", false);
+//! assert!(report.all_detected());
+//! ```
+
+#![forbid(unsafe_code)]
+#![warn(missing_docs)]
 
 pub mod cognitive;
 pub mod generators;

@@ -22,6 +22,7 @@ use crate::models::verdict::CheckResult;
 /// A body region with its ISO/TS 15066 force limits.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct BodyRegionLimit {
+    /// Name of the body region (e.g., `"face"`, `"chest"`).
     pub region: &'static str,
     /// Maximum quasi-static contact force (N).
     pub max_quasi_static_n: f64,
@@ -132,6 +133,7 @@ pub fn check_iso15066_force_limits(
             category: "physics".to_string(),
             passed: true,
             details: "no human-critical proximity zones active or no force data".to_string(),
+            derating: None,
         };
     }
 
@@ -198,6 +200,7 @@ pub fn check_iso15066_force_limits(
             details: format!(
                 "all forces within ISO/TS 15066 limits ({force_limit:.1} N, region: {region_label})"
             ),
+            derating: None,
         }
     } else {
         CheckResult {
@@ -205,6 +208,7 @@ pub fn check_iso15066_force_limits(
             category: "physics".to_string(),
             passed: false,
             details: violations.join("; "),
+            derating: None,
         }
     }
 }
@@ -215,14 +219,8 @@ fn vector_norm(v: &[f64; 3]) -> f64 {
     (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt()
 }
 
-/// Returns `true` if `point` is inside or on the surface of the sphere.
-#[inline]
-fn point_in_sphere(point: &[f64; 3], center: &[f64; 3], radius: f64) -> bool {
-    let dx = point[0] - center[0];
-    let dy = point[1] - center[1];
-    let dz = point[2] - center[2];
-    dx * dx + dy * dy + dz * dz <= radius * radius
-}
+// point_in_sphere delegated to shared geometry module.
+use super::geometry::point_in_sphere;
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -480,5 +478,88 @@ mod tests {
             velocity_scale: 0.5,
             dynamic: true,
         }));
+    }
+
+    // ── Step 104: ISO 15066 NaN zone center fail-closed tests ─────────
+
+    #[test]
+    fn point_in_sphere_nan_center_returns_true() {
+        // Fail-closed: NaN center must treat point as inside.
+        assert!(point_in_sphere(
+            &[5.0, 5.0, 5.0],
+            &[f64::NAN, 0.0, 0.0],
+            1.0
+        ));
+    }
+
+    #[test]
+    fn point_in_sphere_nan_radius_returns_true() {
+        assert!(point_in_sphere(
+            &[5.0, 5.0, 5.0],
+            &[0.0, 0.0, 0.0],
+            f64::NAN
+        ));
+    }
+
+    #[test]
+    fn point_in_sphere_inf_center_returns_true() {
+        assert!(point_in_sphere(
+            &[0.0, 0.0, 0.0],
+            &[f64::INFINITY, 0.0, 0.0],
+            1.0
+        ));
+    }
+
+    #[test]
+    fn point_in_sphere_nan_point_returns_true() {
+        // Fail-closed: NaN in the EE position must treat the point as inside
+        // the zone. Before this fix, NaN point produced NaN distance which
+        // compared as false (<=), silently bypassing the zone — fail-open.
+        assert!(point_in_sphere(
+            &[f64::NAN, 0.0, 0.0],
+            &[0.0, 0.0, 0.0],
+            1.0
+        ));
+    }
+
+    #[test]
+    fn point_in_sphere_inf_point_returns_true() {
+        assert!(point_in_sphere(
+            &[f64::INFINITY, 0.0, 0.0],
+            &[0.0, 0.0, 0.0],
+            1.0
+        ));
+    }
+
+    #[test]
+    fn iso15066_nan_zone_center_fails_closed_for_force_check() {
+        // A proximity zone with NaN center should be treated as containing
+        // any EE (fail-closed), so force limits should be enforced.
+        let ee_pos = vec![EndEffectorPosition {
+            name: "gripper".into(),
+            position: [5.0, 5.0, 5.0], // far from any real zone
+        }];
+        let forces = vec![EndEffectorForce {
+            name: "gripper".into(),
+            force: [200.0, 0.0, 0.0], // large force
+            torque: [0.0, 0.0, 0.0],
+            grasp_force: None,
+        }];
+        let zones = vec![ProximityZone::Sphere {
+            name: "human_critical".into(),
+            center: [f64::NAN, 0.0, 0.0], // corrupt center
+            radius: 0.5,
+            velocity_scale: 0.1, // critical zone
+            dynamic: true,
+        }];
+
+        let result = check_iso15066_force_limits(&ee_pos, &forces, &zones, None);
+        // With NaN center → point_in_sphere returns true → zone is active →
+        // ISO 15066 limits enforced → large force should be flagged.
+        assert!(
+            !result.passed,
+            "NaN zone center must fail-closed: {}",
+            result.details
+        );
     }
 }

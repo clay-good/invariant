@@ -16,10 +16,32 @@ use invariant_core::models::command::{Command, CommandAuthority, JointState};
 use invariant_core::models::profile::RobotProfile;
 
 /// Result of running a single cognitive escape strategy.
+///
+/// # Examples
+///
+/// ```
+/// use invariant_robotics_fuzz::cognitive::escape::EscapeResult;
+///
+/// let result = EscapeResult {
+///     strategy: "CE1-gradual-drift".into(),
+///     total_commands: 100,
+///     escapes: 0,
+///     details: vec!["All 100 drift commands rejected by authority check".into()],
+/// };
+///
+/// assert_eq!(result.strategy, "CE1-gradual-drift");
+/// assert_eq!(result.total_commands, 100);
+/// assert_eq!(result.escapes, 0);
+/// assert!(!result.details.is_empty());
+/// ```
 pub struct EscapeResult {
+    /// Short identifier for the cognitive escape strategy (e.g. "CE1-gradual-drift").
     pub strategy: String,
+    /// Total number of commands generated and evaluated by this strategy.
     pub total_commands: usize,
+    /// Number of commands that were incorrectly approved (violation escapes).
     pub escapes: usize,
+    /// Per-command detail strings describing each rejection or escape.
     pub details: Vec<String>,
 }
 
@@ -68,6 +90,49 @@ fn make_command(
 /// CE1: Gradual drift — send N commands, each shifting position by epsilon
 /// toward an unauthorized joint's region.  Each command is independently
 /// checked, so the drift is irrelevant.
+///
+/// # Examples
+///
+/// ```
+/// use invariant_robotics_fuzz::cognitive::escape::ce1_gradual_drift;
+/// use invariant_core::models::profile::{RobotProfile, JointDefinition, JointType,
+///                                        WorkspaceBounds, SafeStopProfile};
+/// use invariant_core::authority::crypto::generate_keypair;
+/// use rand::rngs::OsRng;
+///
+/// let profile = RobotProfile {
+///     name: "dual-arm".into(), version: "1.0.0".into(),
+///     joints: vec![
+///         JointDefinition { name: "left_shoulder".into(), joint_type: JointType::Revolute,
+///                           min: -1.5, max: 1.5, max_velocity: 1.0,
+///                           max_torque: 40.0, max_acceleration: 5.0 },
+///         JointDefinition { name: "right_shoulder".into(), joint_type: JointType::Revolute,
+///                           min: -1.5, max: 1.5, max_velocity: 1.0,
+///                           max_torque: 40.0, max_acceleration: 5.0 },
+///     ],
+///     workspace: WorkspaceBounds::Aabb { min: [-2.0,-2.0,0.0], max: [2.0,2.0,3.0] },
+///     exclusion_zones: vec![], proximity_zones: vec![], collision_pairs: vec![],
+///     stability: None, locomotion: None, max_delta_time: 0.1,
+///     min_collision_distance: 0.01, global_velocity_scale: 1.0,
+///     watchdog_timeout_ms: 50, safe_stop_profile: SafeStopProfile::default(),
+///     profile_signature: None, profile_signer_kid: None, config_sequence: None,
+///     real_world_margins: None, task_envelope: None, environment: None,
+///     end_effectors: vec![],
+/// };
+///
+/// let sk = generate_keypair(&mut OsRng);
+/// let kid = "test-key";
+/// let steps = 10;
+///
+/// // Generate a drift sequence — should produce `steps` commands.
+/// let cmds = ce1_gradual_drift(&profile, &sk, kid, steps);
+/// assert_eq!(cmds.len(), steps);
+///
+/// // All commands originate from the cognitive escape source.
+/// for cmd in &cmds {
+///     assert_eq!(cmd.source, "cognitive-escape");
+/// }
+/// ```
 pub fn ce1_gradual_drift(
     profile: &RobotProfile,
     signing_key: &ed25519_dalek::SigningKey,

@@ -1,0 +1,65 @@
+<?xml version="1.0"?>
+<!-- UR10e URDF — derived from Universal Robots ROS-Industrial package (BSD license).
+     DH parameters from urcontrol.conf. This is a simplified URDF for Invariant FK
+     computation — no meshes, no Gazebo plugins, just kinematics. -->
+<robot name="ur10e">
+
+  <link name="base_link"/>
+
+  <link name="shoulder_link"/>
+  <joint name="shoulder_pan_joint" type="revolute">
+    <parent link="base_link"/>
+    <child link="shoulder_link"/>
+    <origin xyz="0.0 0.0 0.181" rpy="0.0 0.0 0.0"/>
+    <axis xyz="0 0 1"/>
+  </joint>
+
+  <link name="upper_arm_link"/>
+  <joint name="shoulder_lift_joint" type="revolute">
+    <parent link="shoulder_link"/>
+    <child link="upper_arm_link"/>
+    <origin xyz="0.0 0.176 0.0" rpy="0.0 1.5708 0.0"/>
+    <axis xyz="0 1 0"/>
+  </joint>
+
+  <link name="forearm_link"/>
+  <joint name="elbow_joint" type="revolute">
+    <parent link="upper_arm_link"/>
+    <child link="forearm_link"/>
+    <origin xyz="-0.613 0.0 0.0" rpy="0.0 0.0 0.0"/>
+    <axis xyz="0 1 0"/>
+  </joint>
+
+  <link name="wrist_1_link"/>
+  <joint name="wrist_1_joint" type="revolute">
+    <parent link="forearm_link"/>
+    <child link="wrist_1_link"/>
+    <origin xyz="-0.571 0.0 0.135" rpy="0.0 1.5708 0.0"/>
+    <axis xyz="0 1 0"/>
+  </joint>
+
+  <link name="wrist_2_link"/>
+  <joint name="wrist_2_joint" type="revolute">
+    <parent link="wrist_1_link"/>
+    <child link="wrist_2_link"/>
+    <origin xyz="0.0 0.120 0.0" rpy="0.0 0.0 0.0"/>
+    <axis xyz="0 0 1"/>
+  </joint>
+
+  <link name="wrist_3_link"/>
+  <joint name="wrist_3_joint" type="revolute">
+    <parent link="wrist_2_link"/>
+    <child link="wrist_3_link"/>
+    <origin xyz="0.0 0.0 0.117" rpy="0.0 0.0 0.0"/>
+    <axis xyz="0 1 0"/>
+  </joint>
+
+  <!-- Tool flange (where the Schunk gripper mounts) -->
+  <link name="tool0"/>
+  <joint name="wrist_3_link-tool0" type="fixed">
+    <parent link="wrist_3_link"/>
+    <child link="tool0"/>
+    <origin xyz="0.0 0.0 0.0" rpy="0.0 0.0 0.0"/>
+  </joint>
+
+</robot>

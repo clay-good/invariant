@@ -1,0 +1,66 @@
+{
+  "name": "kinova_gen3",
+  "version": "1.0.0",
+  "joints": [
+    {"name": "joint_1", "type": "revolute", "min": -6.28, "max": 6.28, "max_velocity": 1.39, "max_torque": 39.0, "max_acceleration": 10.0},
+    {"name": "joint_2", "type": "revolute", "min": -2.41, "max": 2.41, "max_velocity": 1.39, "max_torque": 39.0, "max_acceleration": 10.0},
+    {"name": "joint_3", "type": "revolute", "min": -6.28, "max": 6.28, "max_velocity": 1.39, "max_torque": 39.0, "max_acceleration": 10.0},
+    {"name": "joint_4", "type": "revolute", "min": -2.66, "max": 2.66, "max_velocity": 1.39, "max_torque": 39.0, "max_acceleration": 10.0},
+    {"name": "joint_5", "type": "revolute", "min": -6.28, "max": 6.28, "max_velocity": 1.22, "max_torque": 13.0, "max_acceleration": 15.0},
+    {"name": "joint_6", "type": "revolute", "min": -2.23, "max": 2.23, "max_velocity": 1.22, "max_torque": 13.0, "max_acceleration": 15.0},
+    {"name": "joint_7", "type": "revolute", "min": -6.28, "max": 6.28, "max_velocity": 1.22, "max_torque": 13.0, "max_acceleration": 15.0}
+  ],
+  "workspace": {
+    "type": "aabb",
+    "min": [-1.0, -1.0, 0.0],
+    "max": [1.0, 1.0, 1.5]
+  },
+  "exclusion_zones": [],
+  "proximity_zones": [
+    {
+      "name": "human_warning",
+      "type": "sphere",
+      "center": [0.6, 0.0, 0.8],
+      "radius": 0.8,
+      "velocity_scale": 0.5,
+      "dynamic": true
+    }
+  ],
+  "collision_pairs": [
+    ["end_effector", "base"]
+  ],
+  "max_delta_time": 0.02,
+  "min_collision_distance": 0.01,
+  "global_velocity_scale": 1.0,
+  "watchdog_timeout_ms": 50,
+  "end_effectors": [
+    {
+      "name": "end_effector",
+      "max_force_n": 40.0,
+      "max_grasp_force_n": 30.0,
+      "min_grasp_force_n": 2.0,
+      "max_force_rate_n_per_s": 200.0,
+      "max_payload_kg": 4.0
+    }
+  ],
+  "environment": {
+    "max_safe_pitch_rad": 0.2618,
+    "max_safe_roll_rad": 0.1745,
+    "max_operating_temperature_c": 40.0,
+    "critical_battery_pct": 5.0,
+    "low_battery_pct": 15.0,
+    "max_latency_ms": 100.0,
+    "warning_latency_ms": 50.0
+  },
+  "real_world_margins": {
+    "position_margin": 0.05,
+    "velocity_margin": 0.10,
+    "torque_margin": 0.10,
+    "acceleration_margin": 0.10
+  },
+  "safe_stop_profile": {
+    "strategy": "immediate_stop",
+    "max_deceleration": 15.0,
+    "target_joint_positions": {}
+  }
+}

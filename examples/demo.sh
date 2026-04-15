@@ -163,7 +163,13 @@ echo -e "${BLUE}[Step 7]${NC} Running dry-run campaign (1000 commands with fault
 CAMPAIGN_RESULT=$("$INVARIANT" campaign \
     --config "$SCRIPT_DIR/demo-campaign.yaml" \
     --key "$DEMO_DIR/keys.json" \
-    --dry-run 2>&1 || true)
+    --dry-run 2>&1)
+CAMPAIGN_EXIT=$?
+if [ $CAMPAIGN_EXIT -ne 0 ]; then
+    echo -e "  ${RED}✗ Campaign failed (exit code $CAMPAIGN_EXIT)${NC}"
+    echo "$CAMPAIGN_RESULT"
+    exit 1
+fi
 
 # Extract key metrics from the JSON output.
 echo "$CAMPAIGN_RESULT" | python3 -c "
@@ -214,7 +220,6 @@ echo ""
 echo "Next steps:"
 echo "  - Install globally:           cargo install --path crates/invariant-cli"
 echo "  - Or use directly:            ./target/release/invariant --help"
-echo "  - Run adversarial suite:      ./target/release/invariant adversarial --profile profiles/humanoid_28dof.json --key keys.json --suite all"
-echo "  - Create your own profile:    ./target/release/invariant profile init --name my_robot --joints 7 --output my_robot.json"
-echo "  - Run 1M proof campaign:      See docs/runpod-simulation-guide.md"
-echo "  - Read the spec:              docs/spec.md"
+echo "  - Run adversarial suite:      $INVARIANT adversarial --profile $PROJECT_DIR/profiles/humanoid_28dof.json --key \$KEYS --suite all"
+echo "  - Create your own profile:    $INVARIANT profile init --name my_robot --joints 7 --output my_robot.json"
+echo "  - Read the spec:              $PROJECT_DIR/docs/spec.md"

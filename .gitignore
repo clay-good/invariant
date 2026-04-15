@@ -10,13 +10,16 @@ Thumbs.db
 .vscode/
 *.swp
 *.swo
+*~
 
 # Python
 __pycache__/
 *.pyc
+*.pyo
 .pytest_cache/
 venv/
 .venv/
+*.egg-info/
 
 # Lean 4 build
 formal/build/
@@ -27,6 +30,13 @@ formal/.lake/
 .claude/
 .codelicious/
 
-# Test artifacts (generated at runtime)
+# Sensitive files (never commit)
+.env
+.env.*
 keys.json
+*.pem
+*.key
+
+# Test/runtime artifacts (generated at runtime)
 *.jsonl
+safe-stop.json

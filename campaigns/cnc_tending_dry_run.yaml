@@ -27,9 +27,9 @@ scenarios:
   - scenario_type: baseline
     weight: 0.0005
 
-  # Adversarial joint commands (~47%)
+  # Adversarial joint commands (~44%)
   - scenario_type: aggressive
-    weight: 0.47
+    weight: 0.44
     injections:
       - position_violation
       - velocity_overshoot

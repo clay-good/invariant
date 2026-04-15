@@ -17,24 +17,41 @@ use thiserror::Error;
 // Error type
 // ---------------------------------------------------------------------------
 
+/// Errors returned by partition validation.
 #[derive(Debug, Error)]
 pub enum PartitionError {
+    /// Two named partitions have overlapping bounding boxes.
     #[error("partition {name:?} overlaps with {other:?}")]
-    Overlap { name: String, other: String },
+    Overlap {
+        /// Name of the first overlapping partition.
+        name: String,
+        /// Name of the second overlapping partition.
+        other: String,
+    },
 
+    /// A robot's end-effector position is outside its assigned partition.
     #[error(
         "point [{x:.3}, {y:.3}, {z:.3}] is outside partition {partition:?} for robot {robot_id:?}"
     )]
     OutsidePartition {
+        /// ID of the robot that violated its partition boundary.
         robot_id: String,
+        /// Name of the partition the robot is assigned to.
         partition: String,
+        /// X coordinate of the out-of-bounds point.
         x: f64,
+        /// Y coordinate of the out-of-bounds point.
         y: f64,
+        /// Z coordinate of the out-of-bounds point.
         z: f64,
     },
 
+    /// No partition is assigned to the specified robot.
     #[error("robot {robot_id:?} has no assigned partition")]
-    NoPartition { robot_id: String },
+    NoPartition {
+        /// ID of the robot that has no assigned partition.
+        robot_id: String,
+    },
 }
 
 // ---------------------------------------------------------------------------
@@ -42,6 +59,33 @@ pub enum PartitionError {
 // ---------------------------------------------------------------------------
 
 /// An axis-aligned bounding box partition of the workspace.
+///
+/// # Examples
+///
+/// ```
+/// use invariant_robotics_coordinator::partition::WorkspacePartition;
+///
+/// let partition = WorkspacePartition {
+///     name: "cell-1-zone".into(),
+///     robot_id: "ur10e-cell-1".into(),
+///     min: [0.0, 0.0, 0.0],
+///     max: [2.0, 2.0, 2.0],
+/// };
+///
+/// assert_eq!(partition.name, "cell-1-zone");
+/// assert_eq!(partition.robot_id, "ur10e-cell-1");
+///
+/// // A point inside the partition.
+/// assert!(partition.contains(&[1.0, 1.0, 1.0]));
+///
+/// // Corner points are inside (inclusive bounds).
+/// assert!(partition.contains(&[0.0, 0.0, 0.0]));
+/// assert!(partition.contains(&[2.0, 2.0, 2.0]));
+///
+/// // A point outside.
+/// assert!(!partition.contains(&[3.0, 1.0, 1.0]));
+/// assert!(!partition.contains(&[-0.1, 1.0, 1.0]));
+/// ```
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct WorkspacePartition {
     /// Human-readable name for this partition (e.g. "cell-1-zone").
@@ -82,6 +126,27 @@ impl WorkspacePartition {
 // ---------------------------------------------------------------------------
 
 /// A set of workspace partitions for a multi-robot cell.
+///
+/// # Examples
+///
+/// ```
+/// use invariant_robotics_coordinator::partition::{WorkspacePartition, WorkspacePartitionConfig};
+///
+/// // Two non-overlapping partitions — one per robot.
+/// let config = WorkspacePartitionConfig::new(vec![
+///     WorkspacePartition { name: "cell-1".into(), robot_id: "r1".into(),
+///                          min: [0.0, 0.0, 0.0], max: [2.0, 4.0, 3.0] },
+///     WorkspacePartition { name: "cell-2".into(), robot_id: "r2".into(),
+///                          min: [3.0, 0.0, 0.0], max: [5.0, 4.0, 3.0] },
+/// ]).expect("non-overlapping partitions should be accepted");
+///
+/// assert_eq!(config.len(), 2);
+/// assert!(!config.is_empty());
+///
+/// // Look up the partition assigned to robot r1.
+/// let p = config.get_partition("r1").unwrap();
+/// assert_eq!(p.name, "cell-1");
+/// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkspacePartitionConfig {
     partitions: Vec<WorkspacePartition>,

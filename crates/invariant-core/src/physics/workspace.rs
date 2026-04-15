@@ -20,6 +20,7 @@ pub fn check_workspace_bounds(
             category: "physics".to_string(),
             passed: false,
             details: "end_effector_positions required for workspace bounds check".to_string(),
+            derating: None,
         };
     }
 
@@ -39,6 +40,7 @@ pub fn check_workspace_bounds(
                     details: format!(
                         "invalid AABB configuration: min {min:?} is not <= max {max:?} on all axes"
                     ),
+                    derating: None,
                 };
             }
             for ee in end_effectors {
@@ -71,6 +73,7 @@ pub fn check_workspace_bounds(
             category: "physics".to_string(),
             passed: true,
             details: "all end-effectors within workspace bounds".to_string(),
+            derating: None,
         }
     } else {
         CheckResult {
@@ -78,6 +81,7 @@ pub fn check_workspace_bounds(
             category: "physics".to_string(),
             passed: false,
             details: violations.join("; "),
+            derating: None,
         }
     }
 }

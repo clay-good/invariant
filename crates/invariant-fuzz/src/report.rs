@@ -6,6 +6,34 @@
 use serde::{Deserialize, Serialize};
 
 /// A single finding where an attack was not detected (an "escape").
+///
+/// # Examples
+///
+/// ```
+/// use invariant_robotics_fuzz::report::AdversarialFinding;
+///
+/// // Construct a finding for an attack that was correctly detected (not escaped).
+/// let detected = AdversarialFinding {
+///     attack_id: "PA1-j1-min".into(),
+///     description: "Boundary probe at joint j1 minimum limit".into(),
+///     validator_outcome: "rejected".into(),
+///     escaped: false,
+/// };
+///
+/// assert_eq!(detected.attack_id, "PA1-j1-min");
+/// assert!(!detected.escaped, "attack was detected, not escaped");
+///
+/// // Construct a finding for an attack that slipped through (escaped).
+/// let escaped = AdversarialFinding {
+///     attack_id: "CE1-drift-step-42".into(),
+///     description: "Gradual drift — unauthorized joint moved to midpoint".into(),
+///     validator_outcome: "approved".into(),
+///     escaped: true,
+/// };
+///
+/// assert!(escaped.escaped, "this attack bypassed the validator");
+/// assert_eq!(escaped.validator_outcome, "approved");
+/// ```
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AdversarialFinding {
     /// Short identifier for the specific attack variant.
@@ -19,6 +47,19 @@ pub struct AdversarialFinding {
 }
 
 /// Aggregated results for one attack class.
+///
+/// # Examples
+///
+/// ```
+/// use invariant_robotics_fuzz::report::AdversarialReport;
+///
+/// // Create an empty report for a new attack campaign.
+/// let report = AdversarialReport::new("protocol");
+/// assert_eq!(report.attack_class, "protocol");
+/// assert_eq!(report.total_attacks, 0);
+/// assert_eq!(report.escapes, 0);
+/// assert!(report.findings.is_empty());
+/// ```
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AdversarialReport {
     /// Attack class name, e.g. `"protocol"`, `"authority"`, `"all"`.
@@ -34,6 +75,17 @@ pub struct AdversarialReport {
 
 impl AdversarialReport {
     /// Create a new empty report for the given attack class.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use invariant_robotics_fuzz::report::AdversarialReport;
+    ///
+    /// let report = AdversarialReport::new("authority");
+    /// assert_eq!(report.attack_class, "authority");
+    /// assert_eq!(report.total_attacks, 0);
+    /// assert!(report.all_detected(), "empty report has nothing that escaped");
+    /// ```
     pub fn new(attack_class: impl Into<String>) -> Self {
         Self {
             attack_class: attack_class.into(),
@@ -48,6 +100,32 @@ impl AdversarialReport {
     /// `escaped` should be `true` when the validator failed to detect the
     /// attack (i.e., approved a command it should have rejected, or vice
     /// versa).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use invariant_robotics_fuzz::report::AdversarialReport;
+    ///
+    /// let mut report = AdversarialReport::new("protocol");
+    ///
+    /// // Record an attack that the validator correctly rejected.
+    /// report.record("PA1-j1-min", "Probe j1 at exact minimum limit", "rejected", false);
+    /// assert_eq!(report.total_attacks, 1);
+    /// assert_eq!(report.escapes, 0);
+    /// assert!(report.all_detected());
+    ///
+    /// // Record an attack that slipped through (escaped detection).
+    /// report.record("PA2-j2-overflow", "Probe j2 just above max limit", "approved", true);
+    /// assert_eq!(report.total_attacks, 2);
+    /// assert_eq!(report.escapes, 1);
+    /// assert!(!report.all_detected(), "one attack escaped");
+    ///
+    /// // Findings are accumulated in order.
+    /// assert_eq!(report.findings[0].attack_id, "PA1-j1-min");
+    /// assert!(!report.findings[0].escaped);
+    /// assert_eq!(report.findings[1].attack_id, "PA2-j2-overflow");
+    /// assert!(report.findings[1].escaped);
+    /// ```
     pub fn record(
         &mut self,
         attack_id: impl Into<String>,
@@ -68,6 +146,26 @@ impl AdversarialReport {
     }
 
     /// Return `true` if no attacks escaped detection.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use invariant_robotics_fuzz::report::AdversarialReport;
+    ///
+    /// let mut report = AdversarialReport::new("cognitive");
+    ///
+    /// // A fresh report with no attacks trivially has all detected.
+    /// assert!(report.all_detected());
+    ///
+    /// // After recording only detected attacks, still all detected.
+    /// report.record("CE1", "Gradual drift attempt", "rejected", false);
+    /// report.record("CE3", "Semantic confusion attempt", "rejected", false);
+    /// assert!(report.all_detected());
+    ///
+    /// // One escaped attack flips the result.
+    /// report.record("CE7", "Watchdog manipulation", "approved", true);
+    /// assert!(!report.all_detected());
+    /// ```
     pub fn all_detected(&self) -> bool {
         self.escapes == 0
     }

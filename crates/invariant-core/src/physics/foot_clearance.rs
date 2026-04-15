@@ -1,14 +1,18 @@
-// P16: Foot clearance minimum check
+// P16: Foot clearance validation (min and max bounds)
 
 use crate::models::command::LocomotionState;
 use crate::models::profile::LocomotionConfig;
 use crate::models::verdict::CheckResult;
 
-/// Check that every swing foot (not in contact) has a z-position at or above
-/// `min_foot_clearance`.
+/// Check that every swing foot (not in contact) has a z-position within
+/// `[min_foot_clearance, max_step_height]`.
 ///
-/// Feet that are in contact with the ground are not required to meet the
-/// clearance threshold — they are expected to be at or near ground level.
+/// The lower bound prevents dragging/tripping (foot too low).
+/// The upper bound prevents stomping (foot raised excessively high, which
+/// slams down with dangerous force).
+///
+/// Feet that are in contact with the ground are not required to meet either
+/// threshold — they are expected to be at or near ground level.
 /// Non-finite z-values in swing feet are treated as violations.
 pub fn check_foot_clearance(loco: &LocomotionState, config: &LocomotionConfig) -> CheckResult {
     let mut violations: Vec<String> = Vec::new();
@@ -31,6 +35,11 @@ pub fn check_foot_clearance(loco: &LocomotionState, config: &LocomotionConfig) -
                 "'{}': foot z-position {:.6} m is below min_foot_clearance {:.6} m",
                 foot.name, z, config.min_foot_clearance
             ));
+        } else if z > config.max_step_height {
+            violations.push(format!(
+                "'{}': foot z-position {:.6} m exceeds max_step_height {:.6} m",
+                foot.name, z, config.max_step_height
+            ));
         }
     }
 
@@ -39,7 +48,8 @@ pub fn check_foot_clearance(loco: &LocomotionState, config: &LocomotionConfig) -
             name: "foot_clearance".to_string(),
             category: "physics".to_string(),
             passed: true,
-            details: "all swing feet meet minimum clearance".to_string(),
+            details: "all swing feet within clearance bounds".to_string(),
+            derating: None,
         }
     } else {
         CheckResult {
@@ -47,6 +57,7 @@ pub fn check_foot_clearance(loco: &LocomotionState, config: &LocomotionConfig) -
             category: "physics".to_string(),
             passed: false,
             details: violations.join("; "),
+            derating: None,
         }
     }
 }
@@ -62,6 +73,19 @@ mod tests {
             max_locomotion_velocity: 1.5,
             max_step_length: 0.5,
             min_foot_clearance: min_clearance,
+            max_step_height: 0.3,
+            max_ground_reaction_force: 500.0,
+            friction_coefficient: 0.7,
+            max_heading_rate: 1.0,
+        }
+    }
+
+    fn config_with_max_height(min_clearance: f64, max_height: f64) -> LocomotionConfig {
+        LocomotionConfig {
+            max_locomotion_velocity: 1.5,
+            max_step_length: 0.5,
+            min_foot_clearance: min_clearance,
+            max_step_height: max_height,
             max_ground_reaction_force: 500.0,
             friction_coefficient: 0.7,
             max_heading_rate: 1.0,
@@ -162,6 +186,89 @@ mod tests {
     fn p16_nan_z_on_swing_foot_fails() {
         let state = loco(vec![swing_foot("fl", f64::NAN)]);
         let result = check_foot_clearance(&state, &config(0.02));
+        assert!(!result.passed);
+        assert!(result.details.contains("NaN or infinite"));
+    }
+
+    // ── P16 max_step_height upper-bound tests (Step 97) ───────────────
+
+    #[test]
+    fn p16_swing_foot_below_max_step_height_passes() {
+        let state = loco(vec![swing_foot("fl", 0.20)]);
+        let result = check_foot_clearance(&state, &config_with_max_height(0.02, 0.30));
+        assert!(
+            result.passed,
+            "foot below max should pass: {}",
+            result.details
+        );
+    }
+
+    #[test]
+    fn p16_swing_foot_at_exact_max_step_height_passes() {
+        let state = loco(vec![swing_foot("fl", 0.30)]);
+        let result = check_foot_clearance(&state, &config_with_max_height(0.02, 0.30));
+        assert!(
+            result.passed,
+            "foot at exact max should pass: {}",
+            result.details
+        );
+    }
+
+    #[test]
+    fn p16_swing_foot_above_max_step_height_fails() {
+        let state = loco(vec![swing_foot("fl", 0.35)]);
+        let result = check_foot_clearance(&state, &config_with_max_height(0.02, 0.30));
+        assert!(!result.passed);
+        assert!(result.details.contains("fl"));
+        assert!(result.details.contains("exceeds max_step_height"));
+    }
+
+    #[test]
+    fn p16_contact_foot_above_max_step_height_passes() {
+        // Contact feet are exempt from both bounds.
+        let state = loco(vec![contact_foot("fl", 0.50)]);
+        let result = check_foot_clearance(&state, &config_with_max_height(0.02, 0.30));
+        assert!(
+            result.passed,
+            "contact foot should be exempt: {}",
+            result.details
+        );
+    }
+
+    #[test]
+    fn p16_mixed_feet_one_stomp_violation_fails() {
+        let state = loco(vec![
+            swing_foot("fl", 0.05),  // OK (within bounds)
+            swing_foot("fr", 0.50),  // violation (exceeds max 0.30)
+            contact_foot("rl", 0.0), // contact — skip
+            swing_foot("rr", 0.10),  // OK
+        ]);
+        let result = check_foot_clearance(&state, &config_with_max_height(0.02, 0.30));
+        assert!(!result.passed);
+        assert!(result.details.contains("fr"));
+        assert!(result.details.contains("exceeds max_step_height"));
+        assert!(!result.details.contains("fl"));
+        assert!(!result.details.contains("rr"));
+    }
+
+    #[test]
+    fn p16_both_bounds_violated_reports_both() {
+        let state = loco(vec![
+            swing_foot("fl", 0.001), // below min (0.02)
+            swing_foot("fr", 0.50),  // above max (0.30)
+        ]);
+        let result = check_foot_clearance(&state, &config_with_max_height(0.02, 0.30));
+        assert!(!result.passed);
+        assert!(result.details.contains("fl"));
+        assert!(result.details.contains("below min_foot_clearance"));
+        assert!(result.details.contains("fr"));
+        assert!(result.details.contains("exceeds max_step_height"));
+    }
+
+    #[test]
+    fn p16_infinity_z_on_swing_foot_fails() {
+        let state = loco(vec![swing_foot("fl", f64::INFINITY)]);
+        let result = check_foot_clearance(&state, &config_with_max_height(0.02, 0.30));
         assert!(!result.passed);
         assert!(result.details.contains("NaN or infinite"));
     }

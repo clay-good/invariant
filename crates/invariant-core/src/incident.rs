@@ -23,6 +23,16 @@ use crate::monitors::{MonitorAction, MonitorResult};
 // ---------------------------------------------------------------------------
 
 /// Operational state of the incident responder.
+///
+/// # Examples
+///
+/// ```
+/// use invariant_robotics_core::incident::IncidentState;
+///
+/// let state = IncidentState::Normal;
+/// assert_eq!(state, IncidentState::Normal);
+/// assert_ne!(state, IncidentState::Lockdown);
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IncidentState {
     /// Normal operation — no incident active.
@@ -32,6 +42,23 @@ pub enum IncidentState {
 }
 
 /// What triggered the incident.
+///
+/// # Examples
+///
+/// ```
+/// use invariant_robotics_core::incident::IncidentTrigger;
+/// use chrono::Utc;
+///
+/// let trigger = IncidentTrigger {
+///     source: "binary_hash_monitor".to_string(),
+///     description: "Binary hash mismatch detected".to_string(),
+///     action: "Shutdown".to_string(),
+///     timestamp: Utc::now(),
+/// };
+///
+/// assert_eq!(trigger.source, "binary_hash_monitor");
+/// assert!(serde_json::to_string(&trigger).is_ok());
+/// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IncidentTrigger {
     /// Name of the monitor or source that detected the attack.
@@ -45,10 +72,34 @@ pub struct IncidentTrigger {
 }
 
 /// Record of a completed incident response for audit/reporting.
+///
+/// # Examples
+///
+/// ```
+/// use invariant_robotics_core::incident::{IncidentRecord, IncidentTrigger};
+/// use chrono::Utc;
+///
+/// let record = IncidentRecord {
+///     trigger: IncidentTrigger {
+///         source: "threat_scorer".to_string(),
+///         description: "Composite threat score exceeded threshold".to_string(),
+///         action: "RejectAll".to_string(),
+///         timestamp: Utc::now(),
+///     },
+///     steps_completed: vec!["reject_all_commands".to_string(), "safe_stop_issued".to_string()],
+///     state: "lockdown".to_string(),
+/// };
+///
+/// assert_eq!(record.state, "lockdown");
+/// assert_eq!(record.steps_completed.len(), 2);
+/// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IncidentRecord {
+    /// The trigger that initiated this incident.
     pub trigger: IncidentTrigger,
+    /// Names of the response steps that completed successfully.
     pub steps_completed: Vec<String>,
+    /// Final state after the response pipeline completed.
     pub state: String,
 }
 
@@ -59,11 +110,19 @@ pub struct IncidentRecord {
 /// Errors from alert delivery.
 #[derive(Debug, thiserror::Error)]
 pub enum AlertError {
+    /// Alert delivery was attempted but failed.
     #[error("alert delivery failed: {reason}")]
-    DeliveryFailed { reason: String },
+    DeliveryFailed {
+        /// Human-readable reason for the failure.
+        reason: String,
+    },
 
+    /// The alert backend is not available or not yet implemented.
     #[error("alert sink unavailable: {reason}")]
-    Unavailable { reason: String },
+    Unavailable {
+        /// Human-readable reason for unavailability.
+        reason: String,
+    },
 }
 
 /// Abstract alert delivery backend.
@@ -90,7 +149,7 @@ pub struct LogAlertSink;
 
 impl AlertSink for LogAlertSink {
     fn send_alert(&self, message: &str) -> Result<(), AlertError> {
-        eprintln!("[INVARIANT ALERT] {message}");
+        tracing::warn!("[INVARIANT ALERT] {message}");
         Ok(())
     }
 
@@ -106,6 +165,7 @@ pub struct WebhookAlertSink {
 }
 
 impl WebhookAlertSink {
+    /// Create a new webhook alert sink targeting the given URL.
     pub fn new(url: String) -> Self {
         Self { url }
     }
@@ -149,19 +209,26 @@ pub struct MemoryAlertSink {
 }
 
 impl MemoryAlertSink {
+    /// Create a new empty in-memory alert sink.
     pub fn new() -> Self {
         Self::default()
     }
 
     /// Return all collected alerts.
     pub fn alerts(&self) -> Vec<String> {
-        self.alerts.lock().unwrap().clone()
+        self.alerts
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone()
     }
 }
 
 impl AlertSink for MemoryAlertSink {
     fn send_alert(&self, message: &str) -> Result<(), AlertError> {
-        self.alerts.lock().unwrap().push(message.to_string());
+        self.alerts
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .push(message.to_string());
         Ok(())
     }
 
@@ -186,6 +253,34 @@ pub struct IncidentResponder {
 
 impl IncidentResponder {
     /// Create a new responder in Normal state.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use invariant_robotics_core::incident::{
+    ///     IncidentResponder, IncidentState, IncidentTrigger, LogAlertSink,
+    /// };
+    /// use chrono::Utc;
+    ///
+    /// let mut responder = IncidentResponder::new(Box::new(LogAlertSink));
+    /// assert_eq!(responder.state(), IncidentState::Normal);
+    /// assert!(!responder.is_locked_down());
+    ///
+    /// // Trigger an incident.
+    /// let record = responder.respond(IncidentTrigger {
+    ///     source: "doc-test".to_string(),
+    ///     description: "test incident".to_string(),
+    ///     action: "Shutdown".to_string(),
+    ///     timestamp: Utc::now(),
+    /// });
+    /// assert_eq!(responder.state(), IncidentState::Lockdown);
+    /// assert!(responder.is_locked_down());
+    /// assert_eq!(record.steps_completed.len(), 6);
+    ///
+    /// // Operator clears the incident.
+    /// responder.clear();
+    /// assert_eq!(responder.state(), IncidentState::Normal);
+    /// ```
     pub fn new(alert_sink: Box<dyn AlertSink>) -> Self {
         Self {
             state: IncidentState::Normal,

@@ -63,6 +63,7 @@ mod tests {
                     category: "test".into(),
                     passed: true,
                     details: "ok".into(),
+                    derating: None,
                 }],
                 profile_name: "test".into(),
                 profile_hash: "sha256:profile".into(),

@@ -1,7 +1,7 @@
 use sha2::{Digest, Sha256};
 use std::fmt::Write;
 
-/// Compute SHA-256 hash and return as "sha256:<hex>" string.
+/// Compute SHA-256 hash and return as `"sha256:<hex>"` string.
 /// Uses a single pre-allocated String instead of per-byte format! calls.
 pub fn sha256_hex(data: &[u8]) -> String {
     let hash = Sha256::digest(data);

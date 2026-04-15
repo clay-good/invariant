@@ -124,6 +124,7 @@ mod tests {
                 category: "authority".into(),
                 passed: true,
                 details: "ok".into(),
+                derating: None,
             }],
             profile_name: "test_robot".into(),
             profile_hash: "sha256:def".into(),

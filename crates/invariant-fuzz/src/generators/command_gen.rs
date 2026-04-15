@@ -13,6 +13,54 @@ use invariant_core::models::command::{Command, CommandAuthority, JointState};
 use invariant_core::models::profile::RobotProfile;
 
 /// Generates random valid commands for a robot profile.
+///
+/// # Examples
+///
+/// ```
+/// use invariant_robotics_fuzz::generators::command_gen::CommandGenerator;
+/// use invariant_core::models::profile::{RobotProfile, JointDefinition, JointType,
+///                                        WorkspaceBounds, SafeStopProfile};
+/// use rand::SeedableRng;
+/// use rand::rngs::StdRng;
+///
+/// // Build a minimal two-joint profile.
+/// let profile = RobotProfile {
+///     name: "test-arm".into(),
+///     version: "1.0.0".into(),
+///     joints: vec![
+///         JointDefinition { name: "shoulder".into(), joint_type: JointType::Revolute,
+///                           min: -1.57, max: 1.57, max_velocity: 1.0,
+///                           max_torque: 50.0, max_acceleration: 5.0 },
+///         JointDefinition { name: "elbow".into(), joint_type: JointType::Revolute,
+///                           min: -2.0, max: 2.0, max_velocity: 1.5,
+///                           max_torque: 30.0, max_acceleration: 8.0 },
+///     ],
+///     workspace: WorkspaceBounds::Aabb { min: [-2.0,-2.0,0.0], max: [2.0,2.0,3.0] },
+///     exclusion_zones: vec![], proximity_zones: vec![], collision_pairs: vec![],
+///     stability: None, locomotion: None, max_delta_time: 0.1,
+///     min_collision_distance: 0.01, global_velocity_scale: 1.0,
+///     watchdog_timeout_ms: 50, safe_stop_profile: SafeStopProfile::default(),
+///     profile_signature: None, profile_signer_kid: None, config_sequence: None,
+///     real_world_margins: None, task_envelope: None, environment: None,
+///     end_effectors: vec![],
+/// };
+///
+/// let mut rng = StdRng::seed_from_u64(42);
+///
+/// // Generate ten random commands and verify they stay within joint limits.
+/// for _ in 0..10 {
+///     let cmd = CommandGenerator::generate(&profile, &mut rng);
+///     assert_eq!(cmd.joint_states.len(), 2);
+///     assert_eq!(cmd.source, "command-gen");
+///
+///     for (js, jd) in cmd.joint_states.iter().zip(profile.joints.iter()) {
+///         assert!(js.position >= jd.min && js.position <= jd.max,
+///             "position {} out of [{}, {}] for {}", js.position, jd.min, jd.max, js.name);
+///         assert!(js.velocity >= 0.0 && js.velocity <= jd.max_velocity,
+///             "velocity {} out of [0, {}] for {}", js.velocity, jd.max_velocity, js.name);
+///     }
+/// }
+/// ```
 pub struct CommandGenerator;
 
 impl CommandGenerator {

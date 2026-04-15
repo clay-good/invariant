@@ -4,6 +4,11 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 description = "Command-line interface for Invariant."
+readme = "../../README.md"
+
+[lib]
+name = "invariant_robotics"
+path = "src/lib.rs"
 
 [[bin]]
 name = "invariant"
@@ -15,6 +20,7 @@ invariant-eval = { package = "invariant-robotics-eval", path = "../invariant-eva
 invariant-fuzz = { package = "invariant-robotics-fuzz", path = "../invariant-fuzz", version = "0.0.2" }
 invariant-sim = { package = "invariant-robotics-sim", path = "../invariant-sim", version = "0.0.2" }
 clap.workspace = true
+clap_complete = "4.5"
 tracing.workspace = true
 tracing-subscriber.workspace = true
 # Minimal tokio feature set: rt-multi-thread + macros for serve mode (P2-14).

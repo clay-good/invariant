@@ -27,6 +27,7 @@ pub fn check_self_collision(
             category: "physics".to_string(),
             passed: true,
             details: "no self-collision violations".to_string(),
+            derating: None,
         };
     }
 
@@ -37,6 +38,7 @@ pub fn check_self_collision(
             category: "physics".to_string(),
             passed: false,
             details: "end_effector_positions required for self-collision check".to_string(),
+            derating: None,
         };
     }
 
@@ -93,6 +95,7 @@ pub fn check_self_collision(
             category: "physics".to_string(),
             passed: true,
             details: "no self-collision violations".to_string(),
+            derating: None,
         }
     } else {
         CheckResult {
@@ -100,6 +103,7 @@ pub fn check_self_collision(
             category: "physics".to_string(),
             passed: false,
             details: violations.join("; "),
+            derating: None,
         }
     }
 }

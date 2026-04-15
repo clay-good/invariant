@@ -1,0 +1,113 @@
+{
+  "name": "ur10e_haas_cell",
+  "version": "1.0.0",
+
+  "joints": [
+    {"name": "shoulder_pan_joint",  "type": "revolute", "min": -6.2832, "max": 6.2832, "max_velocity": 2.0944, "max_torque": 330.0, "max_acceleration": 10.0},
+    {"name": "shoulder_lift_joint", "type": "revolute", "min": -6.2832, "max": 6.2832, "max_velocity": 2.0944, "max_torque": 330.0, "max_acceleration": 10.0},
+    {"name": "elbow_joint",         "type": "revolute", "min": -3.1416, "max": 3.1416, "max_velocity": 3.1416, "max_torque": 150.0, "max_acceleration": 10.0},
+    {"name": "wrist_1_joint",       "type": "revolute", "min": -6.2832, "max": 6.2832, "max_velocity": 3.1416, "max_torque":  56.0, "max_acceleration": 20.0},
+    {"name": "wrist_2_joint",       "type": "revolute", "min": -6.2832, "max": 6.2832, "max_velocity": 3.1416, "max_torque":  56.0, "max_acceleration": 20.0},
+    {"name": "wrist_3_joint",       "type": "revolute", "min": -6.2832, "max": 6.2832, "max_velocity": 3.1416, "max_torque":  56.0, "max_acceleration": 20.0}
+  ],
+
+  "workspace": {
+    "type": "aabb",
+    "min": [-1.5, -1.5, -0.1],
+    "max": [1.5, 1.5, 2.0]
+  },
+
+  "exclusion_zones": [
+    {
+      "type": "aabb",
+      "name": "haas_spindle_zone",
+      "min": [-1.2, 0.5, 0.3],
+      "max": [-0.3, 1.2, 1.2],
+      "conditional": true
+    },
+    {
+      "type": "aabb",
+      "name": "haas_enclosure_interior",
+      "min": [-1.5, 0.3, 0.0],
+      "max": [0.0, 1.5, 1.8]
+    },
+    {
+      "type": "aabb",
+      "name": "operator_standing_area",
+      "min": [0.8, -1.0, 0.0],
+      "max": [2.0, 1.0, 2.0]
+    },
+    {
+      "type": "sphere",
+      "name": "edge_pc_enclosure",
+      "center": [0.6, -0.8, 0.5],
+      "radius": 0.15
+    }
+  ],
+
+  "proximity_zones": [
+    {
+      "name": "human_warning",
+      "type": "sphere",
+      "center": [1.0, 0.0, 1.0],
+      "radius": 1.2,
+      "velocity_scale": 0.5,
+      "dynamic": true
+    },
+    {
+      "name": "human_critical",
+      "type": "sphere",
+      "center": [1.0, 0.0, 1.0],
+      "radius": 0.6,
+      "velocity_scale": 0.1,
+      "dynamic": true
+    },
+    {
+      "name": "haas_door_zone",
+      "type": "sphere",
+      "center": [-0.5, 0.3, 0.8],
+      "radius": 0.4,
+      "velocity_scale": 0.3,
+      "dynamic": false
+    }
+  ],
+
+  "collision_pairs": [],
+
+  "end_effectors": [
+    {
+      "name": "gripper",
+      "max_force_n": 140.0,
+      "max_grasp_force_n": 100.0,
+      "min_grasp_force_n": 5.0,
+      "max_force_rate_n_per_s": 500.0,
+      "max_payload_kg": 10.0
+    }
+  ],
+
+  "stability": null,
+
+  "max_delta_time": 0.008,
+  "global_velocity_scale": 1.0,
+  "watchdog_timeout_ms": 100,
+
+  "real_world_margins": {
+    "position_margin": 0.05,
+    "velocity_margin": 0.15,
+    "torque_margin": 0.10,
+    "acceleration_margin": 0.10
+  },
+
+  "safe_stop_profile": {
+    "strategy": "park_position",
+    "max_deceleration": 8.0,
+    "target_joint_positions": {
+      "shoulder_pan_joint": 0.0,
+      "shoulder_lift_joint": -1.571,
+      "elbow_joint": 1.571,
+      "wrist_1_joint": -1.571,
+      "wrist_2_joint": 0.0,
+      "wrist_3_joint": 0.0
+    }
+  }
+}

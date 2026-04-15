@@ -1,26 +1,27 @@
-// Multi-robot coordination safety monitor (Step 39).
-//
-// When multiple robots share a workspace (e.g., two UR10e cobots tending
-// adjacent CNC machines, or a humanoid fleet in a warehouse), individual
-// Invariant instances validate each robot's commands against its own profile.
-// But they cannot detect cross-robot hazards:
-//
-// - Robot A's gripper is about to collide with Robot B's arm
-// - Robot A and B both enter the same exclusion zone simultaneously
-// - Robot A's workspace overlaps with Robot B's during a task change
-//
-// The CoordinationMonitor sits above individual Invariant instances and adds
-// cross-robot safety checks. It receives periodic state updates from each
-// robot and produces CoordinationVerdicts.
-//
-// Design principles:
-// - Stateful: tracks each robot's last-known position + velocity.
-// - Deterministic: no I/O, no randomness. Pure geometry.
-// - Fail-closed: if a robot's state is stale (no update within timeout),
-//   it is treated as unsafe and all commands near it are rejected.
-// - Does NOT replace individual Invariant instances — it augments them.
+//! Multi-robot coordination safety monitor.
+//!
+//! When multiple robots share a workspace, individual Invariant instances
+//! validate each robot's commands against its own profile but cannot detect
+//! cross-robot hazards (collisions, overlapping exclusion zones, workspace
+//! conflicts).
+//!
+//! The [`CoordinationMonitor`] sits above individual Invariant instances and
+//! adds cross-robot safety checks. It receives periodic state updates from
+//! each robot and produces [`CoordinationVerdict`]s.
+//!
+//! # Design
+//!
+//! - **Stateful**: tracks each robot's last-known position and velocity.
+//! - **Deterministic**: no I/O, no randomness — pure geometry.
+//! - **Fail-closed**: stale robot state is treated as unsafe.
+//! - **Additive**: does not replace individual Invariant instances.
 
+#![forbid(unsafe_code)]
+#![warn(missing_docs)]
+
+/// Cross-robot coordination monitor with separation and stale-state checks.
 pub mod monitor;
+/// Workspace partitioning for static non-overlapping robot zones.
 pub mod partition;
 
 pub use monitor::{

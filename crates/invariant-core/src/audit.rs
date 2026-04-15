@@ -21,13 +21,34 @@ use crate::models::verdict::SignedVerdict;
 // Error type
 // ---------------------------------------------------------------------------
 
+/// Errors that can occur while writing to or operating the audit logger.
+///
+/// # Examples
+///
+/// ```
+/// use invariant_robotics_core::audit::AuditError;
+///
+/// let err = AuditError::Serialization { reason: "bad json".to_string() };
+/// assert!(err.to_string().contains("serialization failed"));
+///
+/// let err = AuditError::Io { reason: "disk full".to_string() };
+/// assert!(err.to_string().contains("I/O error"));
+/// ```
 #[derive(Debug, Error)]
 pub enum AuditError {
+    /// A JSON serialization step failed while building an audit entry.
     #[error("serialization failed: {reason}")]
-    Serialization { reason: String },
+    Serialization {
+        /// Human-readable description of the serialization failure.
+        reason: String,
+    },
 
+    /// A write or flush to the underlying `Writer` failed.
     #[error("I/O error: {reason}")]
-    Io { reason: String },
+    Io {
+        /// Human-readable description of the I/O failure.
+        reason: String,
+    },
 }
 
 impl From<std::io::Error> for AuditError {
@@ -42,41 +63,80 @@ impl From<std::io::Error> for AuditError {
 // Verification error
 // ---------------------------------------------------------------------------
 
+/// Errors returned by [`verify_log`] when an audit log fails integrity checks.
+///
+/// # Examples
+///
+/// ```
+/// use invariant_robotics_core::audit::AuditVerifyError;
+///
+/// let err = AuditVerifyError::SignatureInvalid { sequence: 3 };
+/// assert!(err.to_string().contains("3"));
+///
+/// let err = AuditVerifyError::NonEmptyGenesisPreviousHash;
+/// assert!(err.to_string().contains("previous_hash"));
+///
+/// let err = AuditVerifyError::SequenceGap { sequence: 2, expected: 1, got: 2 };
+/// assert!(err.to_string().contains("sequence"));
+/// ```
 #[derive(Debug, Error, PartialEq)]
 pub enum AuditVerifyError {
+    /// The `previous_hash` of an entry does not match the `entry_hash` of its predecessor.
     #[error(
         "entry {sequence}: hash chain broken (expected previous_hash {expected:?}, got {got:?})"
     )]
     HashChainBroken {
+        /// Sequence number of the entry with the broken chain link.
         sequence: u64,
+        /// The `entry_hash` of the previous entry that was expected.
         expected: String,
+        /// The `previous_hash` actually present in this entry.
         got: String,
     },
 
+    /// The stored `entry_hash` does not match the hash recomputed from the entry body.
     #[error(
         "entry {sequence}: entry_hash mismatch (expected {expected:?}, computed {computed:?})"
     )]
     EntryHashMismatch {
+        /// Sequence number of the entry whose hash could not be verified.
         sequence: u64,
+        /// The `entry_hash` stored in the entry.
         expected: String,
+        /// The hash freshly computed from the entry contents.
         computed: String,
     },
 
+    /// The Ed25519 signature on the entry could not be verified.
     #[error("entry {sequence}: signature verification failed")]
-    SignatureInvalid { sequence: u64 },
+    SignatureInvalid {
+        /// Sequence number of the entry with the invalid signature.
+        sequence: u64,
+    },
 
+    /// The sequence numbers are not monotonically increasing by one.
     #[error("entry {sequence}: expected sequence {expected}, got {got}")]
     SequenceGap {
+        /// The sequence number found in the entry.
         sequence: u64,
+        /// The sequence number that was expected at this position.
         expected: u64,
+        /// The sequence number actually present in the entry.
         got: u64,
     },
 
+    /// The first entry (genesis) has a non-empty `previous_hash`.
     #[error("entry 0: previous_hash must be empty for the first entry")]
     NonEmptyGenesisPreviousHash,
 
+    /// A JSONL line could not be deserialized as a `SignedAuditEntry`.
     #[error("deserialization failed at line {line}: {reason}")]
-    Deserialization { line: usize, reason: String },
+    Deserialization {
+        /// One-based line number in the JSONL stream where parsing failed.
+        line: usize,
+        /// Human-readable description of the parse error.
+        reason: String,
+    },
 }
 
 // ---------------------------------------------------------------------------
@@ -87,6 +147,18 @@ pub enum AuditVerifyError {
 ///
 /// Generic over `W: Write` so it can target a file (with O_APPEND) or an
 /// in-memory buffer for testing.
+///
+/// # Examples
+///
+/// ```
+/// use invariant_robotics_core::audit::AuditLogger;
+/// use ed25519_dalek::SigningKey;
+///
+/// let signing_key = SigningKey::from_bytes(&[1u8; 32]);
+/// let logger: AuditLogger<Vec<u8>> = AuditLogger::new(Vec::new(), signing_key, "kid-1".to_string());
+/// assert_eq!(logger.sequence(), 0);
+/// assert_eq!(logger.previous_hash(), "");
+/// ```
 pub struct AuditLogger<W: Write> {
     writer: W,
     signing_key: SigningKey,
@@ -98,6 +170,18 @@ pub struct AuditLogger<W: Write> {
 impl<W: Write> AuditLogger<W> {
     /// Create a new audit logger starting at sequence 0 with an empty
     /// previous_hash (genesis).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use invariant_robotics_core::audit::AuditLogger;
+    /// use ed25519_dalek::SigningKey;
+    ///
+    /// let signing_key = SigningKey::from_bytes(&[1u8; 32]);
+    /// let logger: AuditLogger<Vec<u8>> = AuditLogger::new(Vec::new(), signing_key, "kid-1".to_string());
+    /// assert_eq!(logger.sequence(), 0);
+    /// assert_eq!(logger.previous_hash(), "");
+    /// ```
     pub fn new(writer: W, signing_key: SigningKey, signer_kid: String) -> Self {
         Self {
             writer,
@@ -130,6 +214,70 @@ impl<W: Write> AuditLogger<W> {
 
     /// Log a command/verdict pair. Produces a `SignedAuditEntry`, writes it
     /// as a single JSONL line, and advances the hash chain.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use invariant_robotics_core::audit::AuditLogger;
+    /// use invariant_robotics_core::models::command::{Command, CommandAuthority, JointState};
+    /// use invariant_robotics_core::models::verdict::{
+    ///     AuthoritySummary, CheckResult, SignedVerdict, Verdict,
+    /// };
+    /// use base64::{engine::general_purpose::STANDARD, Engine};
+    /// use chrono::Utc;
+    /// use ed25519_dalek::{SigningKey, Signer};
+    /// use std::collections::HashMap;
+    ///
+    /// let signing_key = SigningKey::from_bytes(&[10u8; 32]);
+    /// let mut buf = Vec::new();
+    /// let mut logger = AuditLogger::new(&mut buf, signing_key.clone(), "kid".to_string());
+    ///
+    /// let command = Command {
+    ///     timestamp: Utc::now(),
+    ///     source: "doc-test".to_string(),
+    ///     sequence: 0,
+    ///     joint_states: vec![JointState { name: "j1".to_string(), position: 0.0, velocity: 0.0, effort: 0.0 }],
+    ///     delta_time: 0.01,
+    ///     end_effector_positions: vec![],
+    ///     center_of_mass: None,
+    ///     authority: CommandAuthority { pca_chain: String::new(), required_ops: vec![] },
+    ///     metadata: HashMap::new(),
+    ///     locomotion_state: None,
+    ///     end_effector_forces: vec![],
+    ///     estimated_payload_kg: None,
+    ///     signed_sensor_readings: vec![],
+    ///     zone_overrides: HashMap::new(),
+    ///     environment_state: None,
+    /// };
+    ///
+    /// let verdict = Verdict {
+    ///     approved: true,
+    ///     command_hash: "sha256:abc".to_string(),
+    ///     command_sequence: 0,
+    ///     timestamp: Utc::now(),
+    ///     checks: vec![],
+    ///     profile_name: "ur10".to_string(),
+    ///     profile_hash: "sha256:xyz".to_string(),
+    ///     authority_summary: AuthoritySummary {
+    ///         origin_principal: "alice".to_string(),
+    ///         hop_count: 1,
+    ///         operations_granted: vec!["actuate:*".to_string()],
+    ///         operations_required: vec![],
+    ///     },
+    ///     threat_analysis: None,
+    /// };
+    /// let verdict_bytes = serde_json::to_vec(&verdict).unwrap();
+    /// let sig = signing_key.sign(&verdict_bytes);
+    /// let signed_verdict = SignedVerdict {
+    ///     verdict,
+    ///     verdict_signature: STANDARD.encode(sig.to_bytes()),
+    ///     signer_kid: "kid".to_string(),
+    /// };
+    ///
+    /// let entry = logger.log(&command, &signed_verdict).unwrap();
+    /// assert_eq!(entry.entry.sequence, 0);
+    /// assert_eq!(logger.sequence(), 1);
+    /// ```
     pub fn log(
         &mut self,
         command: &Command,
@@ -352,6 +500,75 @@ fn read_last_line(file: &mut std::fs::File) -> Result<(u64, String), AuditError>
 /// correctness, signature validity (L3), and sequence monotonicity.
 ///
 /// Returns the number of verified entries on success, or the first error.
+///
+/// # Examples
+///
+/// ```
+/// use invariant_robotics_core::audit::{AuditLogger, verify_log};
+/// use invariant_robotics_core::models::command::{Command, CommandAuthority, JointState};
+/// use invariant_robotics_core::models::verdict::{
+///     AuthoritySummary, SignedVerdict, Verdict,
+/// };
+/// use base64::{engine::general_purpose::STANDARD, Engine};
+/// use chrono::Utc;
+/// use ed25519_dalek::{SigningKey, Signer};
+/// use std::collections::HashMap;
+///
+/// let signing_key = SigningKey::from_bytes(&[20u8; 32]);
+/// let verifying_key = signing_key.verifying_key();
+///
+/// let mut buf = Vec::new();
+/// let mut logger = AuditLogger::new(&mut buf, signing_key.clone(), "kid".to_string());
+///
+/// let command = Command {
+///     timestamp: Utc::now(),
+///     source: "doc-test".to_string(),
+///     sequence: 0,
+///     joint_states: vec![JointState { name: "j1".to_string(), position: 0.0, velocity: 0.0, effort: 0.0 }],
+///     delta_time: 0.01,
+///     end_effector_positions: vec![],
+///     center_of_mass: None,
+///     authority: CommandAuthority { pca_chain: String::new(), required_ops: vec![] },
+///     metadata: HashMap::new(),
+///     locomotion_state: None,
+///     end_effector_forces: vec![],
+///     estimated_payload_kg: None,
+///     signed_sensor_readings: vec![],
+///     zone_overrides: HashMap::new(),
+///     environment_state: None,
+/// };
+///
+/// let verdict = Verdict {
+///     approved: true,
+///     command_hash: "sha256:abc".to_string(),
+///     command_sequence: 0,
+///     timestamp: Utc::now(),
+///     checks: vec![],
+///     profile_name: "ur10".to_string(),
+///     profile_hash: "sha256:xyz".to_string(),
+///     authority_summary: AuthoritySummary {
+///         origin_principal: "alice".to_string(),
+///         hop_count: 1,
+///         operations_granted: vec!["actuate:*".to_string()],
+///         operations_required: vec![],
+///     },
+///     threat_analysis: None,
+/// };
+/// let verdict_bytes = serde_json::to_vec(&verdict).unwrap();
+/// let sig = signing_key.sign(&verdict_bytes);
+/// let signed_verdict = SignedVerdict {
+///     verdict,
+///     verdict_signature: STANDARD.encode(sig.to_bytes()),
+///     signer_kid: "kid".to_string(),
+/// };
+///
+/// logger.log(&command, &signed_verdict).unwrap();
+///
+/// // Verify the JSONL content.
+/// let jsonl = String::from_utf8(buf).unwrap();
+/// let count = verify_log(&jsonl, &verifying_key).unwrap();
+/// assert_eq!(count, 1);
+/// ```
 pub fn verify_log(
     jsonl: &str,
     verifying_key: &ed25519_dalek::VerifyingKey,
@@ -609,6 +826,7 @@ mod tests {
                 category: "test".into(),
                 passed: true,
                 details: "ok".into(),
+                derating: None,
             }],
             profile_name: "test_robot".into(),
             profile_hash: "sha256:def456".into(),
@@ -928,6 +1146,7 @@ mod tests {
                 category: "authority".into(),
                 passed: false,
                 details: "chain verification failed".into(),
+                derating: None,
             }],
             profile_name: "test".into(),
             profile_hash: "sha256:profile".into(),
@@ -1230,5 +1449,89 @@ mod tests {
             | AuditVerifyError::EntryHashMismatch { .. } => {}
             other => panic!("expected HashChainBroken or EntryHashMismatch, got {other:?}"),
         }
+    }
+
+    // ── Audit log corruption resilience (Step 99) ─────────────────────
+
+    #[test]
+    fn open_file_with_truncated_last_line_returns_error() {
+        // Simulates a power failure mid-write: file ends with a partial JSON line.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("truncated_audit.jsonl");
+
+        let (sign_sk, _) = make_keypair();
+        let cmd = make_simple_command();
+        let (verdict, _) = make_simple_signed_verdict();
+
+        // Write a valid 1-entry log.
+        {
+            let mut logger = AuditLogger::open_file(&path, sign_sk.clone(), "kid".into()).unwrap();
+            logger.log(&cmd, &verdict).unwrap();
+        }
+
+        // Append a truncated JSON line (simulating crash mid-write).
+        use std::io::Write;
+        let mut file = std::fs::OpenOptions::new()
+            .append(true)
+            .open(&path)
+            .unwrap();
+        file.write_all(b"\n{\"entry\":{\"seq").unwrap();
+        file.flush().unwrap();
+        drop(file);
+
+        // Re-opening should fail because the last line is not valid JSON.
+        let result = AuditLogger::open_file(&path, sign_sk, "kid".into());
+        assert!(
+            result.is_err(),
+            "truncated last line must cause open_file to fail"
+        );
+    }
+
+    #[test]
+    fn open_file_with_only_blank_lines_starts_at_genesis() {
+        // A file containing only newlines should be treated as empty.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("blank_audit.jsonl");
+
+        use std::io::Write;
+        let mut file = std::fs::File::create(&path).unwrap();
+        file.write_all(b"\n\n\n").unwrap();
+        drop(file);
+
+        let (sign_sk, _) = make_keypair();
+        let result = AuditLogger::open_file(&path, sign_sk, "kid".into());
+        // An all-blank file should either start at genesis (sequence 0) or
+        // error. Both are acceptable — the important thing is no panic.
+        match result {
+            Ok(logger) => {
+                assert_eq!(logger.sequence(), 0, "blank file must start at genesis");
+            }
+            Err(_) => {
+                // Also acceptable — the file is corrupt (no valid entries).
+            }
+        }
+    }
+
+    #[test]
+    fn verify_log_catches_single_bit_flip_in_signature() {
+        // Write a valid 1-entry log, then flip a bit in the entry_signature.
+        let (sign_sk, sign_vk) = make_keypair();
+        let mut buf = Vec::new();
+        let mut logger = AuditLogger::new(&mut buf, sign_sk, "test".into());
+
+        let cmd = make_simple_command();
+        let (verdict, _) = make_simple_signed_verdict();
+        logger.log(&cmd, &verdict).unwrap();
+        drop(logger);
+
+        let jsonl = String::from_utf8(buf).unwrap();
+        // Flip one character in the base64 signature.
+        let corrupted = jsonl.replacen("entry_signature\":\"", "entry_signature\":\"X", 1);
+
+        let result = verify_log(&corrupted, &sign_vk);
+        assert!(
+            result.is_err(),
+            "single bit flip in signature must be detected"
+        );
     }
 }

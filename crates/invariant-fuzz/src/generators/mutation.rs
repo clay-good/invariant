@@ -11,8 +11,11 @@ pub struct MutationEngine;
 /// A mutation result: the attack ID, the mutated command, and which check
 /// category is expected to catch it.
 pub struct Mutation {
+    /// Short identifier for this mutation (e.g. "MUT-position-flip").
     pub id: String,
+    /// The mutated command, derived from a valid base command.
     pub command: Command,
+    /// Name of the physics or authority check expected to catch this mutation.
     pub target_check: &'static str,
 }
 

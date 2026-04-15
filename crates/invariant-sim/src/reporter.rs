@@ -16,18 +16,56 @@ use crate::campaign::SuccessCriteria;
 // ---------------------------------------------------------------------------
 
 /// Aggregated counts for a single robot profile.
+///
+/// # Examples
+///
+/// ```
+/// use invariant_robotics_sim::reporter::ProfileStats;
+///
+/// let stats = ProfileStats {
+///     total: 1000,
+///     approved: 982,
+///     rejected: 18,
+/// };
+/// assert_eq!(stats.total, 1000);
+/// assert_eq!(stats.approved + stats.rejected, stats.total);
+/// ```
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ProfileStats {
+    /// Total number of commands evaluated for this profile.
     pub total: u64,
+    /// Number of commands approved by the validator.
     pub approved: u64,
+    /// Number of commands rejected by the validator.
     pub rejected: u64,
 }
 
 /// Aggregated counts for a single scenario type.
+///
+/// # Examples
+///
+/// ```
+/// use invariant_robotics_sim::reporter::ScenarioStats;
+///
+/// // A perfect adversarial scenario: all violations caught, no escapes.
+/// let stats = ScenarioStats {
+///     total: 200,
+///     approved: 0,
+///     rejected: 200,
+///     expected_reject: 200,
+///     escaped: 0,
+///     false_rejections: 0,
+/// };
+/// assert_eq!(stats.escaped, 0);
+/// assert_eq!(stats.total, 200);
+/// ```
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ScenarioStats {
+    /// Total number of commands evaluated for this scenario type.
     pub total: u64,
+    /// Number of commands approved by the validator.
     pub approved: u64,
+    /// Number of commands rejected by the validator.
     pub rejected: u64,
     /// Commands where rejection was expected (scenario generates violations).
     pub expected_reject: u64,
@@ -38,6 +76,19 @@ pub struct ScenarioStats {
 }
 
 /// Aggregated pass/fail counts for a single named check.
+///
+/// # Examples
+///
+/// ```
+/// use invariant_robotics_sim::reporter::CheckStats;
+///
+/// let stats = CheckStats {
+///     total: 500,
+///     passed: 498,
+///     failed: 2,
+/// };
+/// assert_eq!(stats.passed + stats.failed, stats.total);
+/// ```
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct CheckStats {
     /// Number of times this check was evaluated.
@@ -58,6 +109,30 @@ pub struct CheckStats {
 ///
 /// The MTBF is then computed assuming a 100 Hz control-loop rate:
 ///   mtbf_hours = (1 / upper_bound_rate) / (100 × 3600)
+///
+/// # Examples
+///
+/// ```
+/// use invariant_robotics_sim::reporter::ConfidenceStats;
+///
+/// // A SIL-3 result: zero escapes in 10 000 violation trials.
+/// let stats = ConfidenceStats {
+///     n_trials: 10_000,
+///     n_escapes: 0,
+///     upper_bound_95: 2.996e-4,
+///     upper_bound_99: 4.604e-4,
+///     mtbf_hours_95: 9.26,
+///     mtbf_hours_99: 6.03,
+///     sil_rating: 3,
+///     sil_rating_approximate: false,
+/// };
+/// assert_eq!(stats.n_escapes, 0);
+/// assert_eq!(stats.sil_rating, 3);
+/// assert!(!stats.sil_rating_approximate);
+/// // Upper bounds must be finite and in (0, 1].
+/// assert!(stats.upper_bound_95 > 0.0 && stats.upper_bound_95 < 1.0);
+/// assert!(stats.upper_bound_99 > 0.0 && stats.upper_bound_99 < 1.0);
+/// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConfidenceStats {
     /// Total violation commands evaluated.
@@ -97,13 +172,63 @@ pub struct ConfidenceStats {
 // ---------------------------------------------------------------------------
 
 /// Complete campaign results.
+///
+/// # Examples
+///
+/// ```
+/// use std::collections::HashMap;
+/// use invariant_robotics_sim::reporter::{
+///     CampaignReport, CheckStats, ConfidenceStats, ProfileStats, ScenarioStats,
+/// };
+///
+/// // A minimal report that passes all criteria.
+/// let report = CampaignReport {
+///     campaign_name: "franka_sil3_campaign".to_string(),
+///     total_commands: 1000,
+///     total_approved: 800,
+///     total_rejected: 200,
+///     approval_rate: 0.8,
+///     rejection_rate: 0.2,
+///     legitimate_pass_rate: 0.99,
+///     violation_escape_count: 0,
+///     violation_escape_rate: 0.0,
+///     false_rejection_count: 8,
+///     false_rejection_rate: 0.01,
+///     per_profile: HashMap::new(),
+///     per_scenario: HashMap::new(),
+///     per_check: HashMap::new(),
+///     criteria_met: true,
+///     confidence: ConfidenceStats {
+///         n_trials: 200,
+///         n_escapes: 0,
+///         upper_bound_95: 1.49e-2,
+///         upper_bound_99: 2.30e-2,
+///         mtbf_hours_95: 1.86,
+///         mtbf_hours_99: 1.21,
+///         sil_rating: 1,
+///         sil_rating_approximate: false,
+///     },
+/// };
+///
+/// assert_eq!(report.campaign_name, "franka_sil3_campaign");
+/// assert_eq!(report.total_commands, 1000);
+/// assert_eq!(report.violation_escape_count, 0);
+/// assert!(report.criteria_met);
+/// assert!(report.approval_rate > 0.0 && report.approval_rate < 1.0);
+/// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CampaignReport {
+    /// Human-readable name of the campaign that produced this report.
     pub campaign_name: String,
+    /// Total number of commands evaluated across all environments and episodes.
     pub total_commands: u64,
+    /// Total number of commands approved by the validator.
     pub total_approved: u64,
+    /// Total number of commands rejected by the validator.
     pub total_rejected: u64,
+    /// Fraction of commands approved (total_approved / total_commands).
     pub approval_rate: f64,
+    /// Fraction of commands rejected (total_rejected / total_commands).
     pub rejection_rate: f64,
     /// Fraction of legitimate commands correctly approved.
     pub legitimate_pass_rate: f64,
@@ -115,11 +240,15 @@ pub struct CampaignReport {
     pub false_rejection_count: u64,
     /// Fraction of legitimate commands incorrectly rejected.
     pub false_rejection_rate: f64,
+    /// Per-profile breakdown of approval and rejection counts.
     pub per_profile: HashMap<String, ProfileStats>,
+    /// Per-scenario breakdown of approval, rejection, and escape counts.
     pub per_scenario: HashMap<String, ScenarioStats>,
+    /// Per-check breakdown of pass/fail counts.
     pub per_check: HashMap<String, CheckStats>,
     /// Whether all success-criteria thresholds were met.
     pub criteria_met: bool,
+    /// Statistical confidence bounds on the violation-escape rate.
     pub confidence: ConfidenceStats,
 }
 
@@ -425,6 +554,7 @@ mod tests {
                 category: "test".into(),
                 passed: *passed,
                 details: "".into(),
+                derating: None,
             })
             .collect();
         SignedVerdict {
@@ -1000,5 +1130,492 @@ mod tests {
         // 1B trials: upper_99 ≈ 5.3e-9 => level 4.
         let conf = compute_confidence(1_000_000_000, 0);
         assert_eq!(conf.sil_rating, 4);
+    }
+
+    // =========================================================================
+    // Multi-profile reporting tests
+    // =========================================================================
+
+    #[test]
+    fn multi_profile_per_profile_stats_independent() {
+        let mut reporter = CampaignReporter::new("multi".into(), default_criteria());
+        // Franka Panda: 10 approved
+        for _ in 0..10 {
+            reporter.record_result("franka_panda", "Baseline", false, &make_verdict(true, &[]));
+        }
+        // UR10: 8 approved, 2 rejected
+        for _ in 0..8 {
+            reporter.record_result("ur10", "Baseline", false, &make_verdict(true, &[]));
+        }
+        for _ in 0..2 {
+            reporter.record_result("ur10", "Baseline", false, &make_verdict(false, &[]));
+        }
+        // Quadruped: 5 all rejected (violations)
+        for _ in 0..5 {
+            reporter.record_result(
+                "quadruped_12dof",
+                "AuthEsc",
+                true,
+                &make_verdict(false, &[]),
+            );
+        }
+        // Humanoid: 3 approved
+        for _ in 0..3 {
+            reporter.record_result(
+                "humanoid_28dof",
+                "Baseline",
+                false,
+                &make_verdict(true, &[]),
+            );
+        }
+        let report = reporter.finalize();
+
+        assert_eq!(report.total_commands, 28);
+        assert_eq!(report.per_profile.len(), 4);
+        let fp = &report.per_profile["franka_panda"];
+        assert_eq!(fp.total, 10);
+        assert_eq!(fp.approved, 10);
+        assert_eq!(fp.rejected, 0);
+        let ur = &report.per_profile["ur10"];
+        assert_eq!(ur.total, 10);
+        assert_eq!(ur.approved, 8);
+        assert_eq!(ur.rejected, 2);
+        let qd = &report.per_profile["quadruped_12dof"];
+        assert_eq!(qd.total, 5);
+        assert_eq!(qd.approved, 0);
+        assert_eq!(qd.rejected, 5);
+        let hm = &report.per_profile["humanoid_28dof"];
+        assert_eq!(hm.total, 3);
+        assert_eq!(hm.approved, 3);
+        assert_eq!(hm.rejected, 0);
+    }
+
+    #[test]
+    fn five_profiles_all_accounted_for() {
+        let profiles = [
+            "franka_panda",
+            "ur10",
+            "quadruped_12dof",
+            "humanoid_28dof",
+            "ur10e_haas_cell",
+        ];
+        let mut reporter = CampaignReporter::new("five".into(), default_criteria());
+        for p in &profiles {
+            for _ in 0..4 {
+                reporter.record_result(p, "Baseline", false, &make_verdict(true, &[]));
+            }
+        }
+        let report = reporter.finalize();
+        assert_eq!(report.total_commands, 20);
+        assert_eq!(report.total_approved, 20);
+        assert_eq!(report.per_profile.len(), 5);
+        for p in &profiles {
+            let stats = &report.per_profile[*p];
+            assert_eq!(stats.total, 4, "profile {p} must have 4 commands");
+            assert_eq!(stats.approved, 4);
+        }
+    }
+
+    #[test]
+    fn multi_profile_escapes_tracked_per_scenario() {
+        let mut reporter = CampaignReporter::new("esc".into(), default_criteria());
+        // Profile A: violation correctly rejected
+        reporter.record_result(
+            "franka_panda",
+            "PositionViolation",
+            true,
+            &make_verdict(false, &[]),
+        );
+        // Profile B: same violation escapes!
+        reporter.record_result("ur10", "PositionViolation", true, &make_verdict(true, &[]));
+        let report = reporter.finalize();
+        assert_eq!(report.violation_escape_count, 1);
+        let sc = &report.per_scenario["PositionViolation"];
+        assert_eq!(sc.total, 2);
+        assert_eq!(sc.escaped, 1);
+        assert_eq!(sc.expected_reject, 2);
+    }
+
+    #[test]
+    fn multi_profile_false_rejections_tracked() {
+        let mut reporter = CampaignReporter::new("fr".into(), default_criteria());
+        // Profile A: legitimate approved
+        reporter.record_result("franka_panda", "Baseline", false, &make_verdict(true, &[]));
+        // Profile B: legitimate wrongly rejected
+        reporter.record_result("ur10", "Baseline", false, &make_verdict(false, &[]));
+        // Profile C: legitimate approved
+        reporter.record_result(
+            "quadruped_12dof",
+            "Baseline",
+            false,
+            &make_verdict(true, &[]),
+        );
+        let report = reporter.finalize();
+        assert_eq!(report.false_rejection_count, 1);
+        assert!((report.false_rejection_rate - 1.0 / 3.0).abs() < 1e-10);
+    }
+
+    // =========================================================================
+    // Multi-scenario aggregation tests
+    // =========================================================================
+
+    #[test]
+    fn multiple_scenarios_tracked_independently() {
+        let mut reporter = CampaignReporter::new("sc".into(), default_criteria());
+        reporter.record_result("franka_panda", "Baseline", false, &make_verdict(true, &[]));
+        reporter.record_result(
+            "franka_panda",
+            "Aggressive",
+            false,
+            &make_verdict(true, &[]),
+        );
+        reporter.record_result("franka_panda", "AuthEsc", true, &make_verdict(false, &[]));
+        reporter.record_result(
+            "franka_panda",
+            "ChainForgery",
+            true,
+            &make_verdict(false, &[]),
+        );
+        let report = reporter.finalize();
+        assert_eq!(report.per_scenario.len(), 4);
+        assert_eq!(report.per_scenario["Baseline"].total, 1);
+        assert_eq!(report.per_scenario["Aggressive"].total, 1);
+        assert_eq!(report.per_scenario["AuthEsc"].total, 1);
+        assert_eq!(report.per_scenario["ChainForgery"].total, 1);
+    }
+
+    #[test]
+    fn per_check_stats_across_profiles() {
+        let mut reporter = CampaignReporter::new("chk".into(), default_criteria());
+        reporter.record_result(
+            "franka_panda",
+            "Baseline",
+            false,
+            &make_verdict(
+                true,
+                &[
+                    ("joint_limits", true),
+                    ("velocity", true),
+                    ("authority", true),
+                ],
+            ),
+        );
+        reporter.record_result(
+            "ur10",
+            "Violation",
+            true,
+            &make_verdict(
+                false,
+                &[
+                    ("joint_limits", false),
+                    ("velocity", true),
+                    ("authority", true),
+                ],
+            ),
+        );
+        reporter.record_result(
+            "humanoid_28dof",
+            "Violation",
+            true,
+            &make_verdict(
+                false,
+                &[
+                    ("joint_limits", false),
+                    ("velocity", false),
+                    ("authority", true),
+                ],
+            ),
+        );
+        let report = reporter.finalize();
+        let jl = &report.per_check["joint_limits"];
+        assert_eq!(jl.total, 3);
+        assert_eq!(jl.passed, 1);
+        assert_eq!(jl.failed, 2);
+        let vel = &report.per_check["velocity"];
+        assert_eq!(vel.total, 3);
+        assert_eq!(vel.passed, 2);
+        assert_eq!(vel.failed, 1);
+        let auth = &report.per_check["authority"];
+        assert_eq!(auth.total, 3);
+        assert_eq!(auth.passed, 3);
+        assert_eq!(auth.failed, 0);
+    }
+
+    // =========================================================================
+    // Rate invariant tests across scenarios
+    // =========================================================================
+
+    #[test]
+    fn approval_rate_invariant_mixed_profiles_and_scenarios() {
+        let mut reporter = CampaignReporter::new("inv".into(), default_criteria());
+        // Mix of profiles and scenarios
+        for _ in 0..20 {
+            reporter.record_result("franka_panda", "Baseline", false, &make_verdict(true, &[]));
+        }
+        for _ in 0..10 {
+            reporter.record_result("ur10", "Baseline", false, &make_verdict(false, &[]));
+        }
+        for _ in 0..15 {
+            reporter.record_result(
+                "quadruped_12dof",
+                "Violation",
+                true,
+                &make_verdict(false, &[]),
+            );
+        }
+        for _ in 0..5 {
+            reporter.record_result(
+                "humanoid_28dof",
+                "Violation",
+                true,
+                &make_verdict(true, &[]),
+            );
+        }
+        let report = reporter.finalize();
+        assert_eq!(report.total_commands, 50);
+        assert_eq!(report.total_approved, 25); // 20 + 5
+        assert_eq!(report.total_rejected, 25); // 10 + 15
+        let sum = report.approval_rate + report.rejection_rate;
+        assert!((sum - 1.0).abs() < 1e-12);
+        assert_eq!(report.violation_escape_count, 5);
+        assert!((report.violation_escape_rate - 5.0 / 20.0).abs() < 1e-10);
+        assert_eq!(report.false_rejection_count, 10);
+        assert!((report.false_rejection_rate - 10.0 / 30.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn legitimate_pass_rate_across_profiles() {
+        let mut reporter = CampaignReporter::new("lpr".into(), default_criteria());
+        // 50 legitimate from panda: 48 approved, 2 rejected
+        for _ in 0..48 {
+            reporter.record_result("franka_panda", "Baseline", false, &make_verdict(true, &[]));
+        }
+        for _ in 0..2 {
+            reporter.record_result("franka_panda", "Baseline", false, &make_verdict(false, &[]));
+        }
+        // 50 legitimate from ur10: 50 approved
+        for _ in 0..50 {
+            reporter.record_result("ur10", "Baseline", false, &make_verdict(true, &[]));
+        }
+        let report = reporter.finalize();
+        // 98 out of 100 legitimate approved => 0.98
+        assert!((report.legitimate_pass_rate - 0.98).abs() < f64::EPSILON);
+    }
+
+    // =========================================================================
+    // Confidence stats: scaling and monotonicity
+    // =========================================================================
+
+    #[test]
+    fn confidence_upper_bound_decreases_with_more_trials() {
+        let conf_100 = compute_confidence(100, 0);
+        let conf_1000 = compute_confidence(1000, 0);
+        let conf_10000 = compute_confidence(10_000, 0);
+        assert!(conf_1000.upper_bound_95 < conf_100.upper_bound_95);
+        assert!(conf_10000.upper_bound_95 < conf_1000.upper_bound_95);
+        assert!(conf_1000.upper_bound_99 < conf_100.upper_bound_99);
+        assert!(conf_10000.upper_bound_99 < conf_1000.upper_bound_99);
+    }
+
+    #[test]
+    fn confidence_99_always_wider_than_95() {
+        for &n in &[10u64, 100, 1000, 10_000, 100_000, 1_000_000] {
+            let conf = compute_confidence(n, 0);
+            assert!(
+                conf.upper_bound_99 >= conf.upper_bound_95,
+                "99% bound must >= 95% bound for n={n}"
+            );
+        }
+    }
+
+    #[test]
+    fn mtbf_increases_with_more_trials_zero_escapes() {
+        let conf_100 = compute_confidence(100, 0);
+        let conf_10000 = compute_confidence(10_000, 0);
+        assert!(
+            conf_10000.mtbf_hours_95 > conf_100.mtbf_hours_95,
+            "more trials with 0 escapes should increase MTBF"
+        );
+    }
+
+    #[test]
+    fn mtbf_finite_for_nonzero_escapes() {
+        let conf = compute_confidence(1000, 5);
+        assert!(conf.mtbf_hours_95.is_finite());
+        assert!(conf.mtbf_hours_99.is_finite());
+        assert!(conf.mtbf_hours_95 > 0.0);
+        assert!(conf.mtbf_hours_99 > 0.0);
+    }
+
+    #[test]
+    fn sil_rating_monotonically_increases_with_trials() {
+        // With 0 escapes, more trials always means same or higher SIL
+        let sil_1k = compute_confidence(1_000, 0).sil_rating;
+        let sil_1m = compute_confidence(1_000_000, 0).sil_rating;
+        let sil_100m = compute_confidence(100_000_000, 0).sil_rating;
+        let sil_1b = compute_confidence(1_000_000_000, 0).sil_rating;
+        assert!(sil_1m >= sil_1k);
+        assert!(sil_100m >= sil_1m);
+        assert!(sil_1b >= sil_100m);
+    }
+
+    // =========================================================================
+    // Edge case: large mixed campaigns
+    // =========================================================================
+
+    #[test]
+    fn large_mixed_campaign_accounting_invariants() {
+        let mut reporter = CampaignReporter::new("big".into(), default_criteria());
+        let profiles = ["franka_panda", "ur10", "quadruped_12dof", "humanoid_28dof"];
+        let scenarios = ["Baseline", "Aggressive", "AuthEsc", "PromptInj"];
+
+        // 4 profiles × 4 scenarios × 25 commands = 400 total
+        for p in &profiles {
+            for (i, s) in scenarios.iter().enumerate() {
+                let expected_reject = i >= 2; // AuthEsc, PromptInj are adversarial
+                let approved = !expected_reject; // Legitimate approved, adversarial rejected
+                for _ in 0..25 {
+                    reporter.record_result(p, s, expected_reject, &make_verdict(approved, &[]));
+                }
+            }
+        }
+        let report = reporter.finalize();
+        assert_eq!(report.total_commands, 400);
+        assert_eq!(report.total_approved, 200); // 4 profiles × 2 scenarios × 25
+        assert_eq!(report.total_rejected, 200);
+        assert_eq!(report.violation_escape_count, 0);
+        assert_eq!(report.false_rejection_count, 0);
+        assert_eq!(report.per_profile.len(), 4);
+        assert_eq!(report.per_scenario.len(), 4);
+        for p in &profiles {
+            assert_eq!(report.per_profile[*p].total, 100);
+        }
+        for s in &scenarios {
+            assert_eq!(report.per_scenario[*s].total, 100);
+        }
+    }
+
+    #[test]
+    fn single_command_per_profile_all_accounted() {
+        let profiles = [
+            "franka_panda",
+            "ur10",
+            "quadruped_12dof",
+            "humanoid_28dof",
+            "ur10e_haas_cell",
+        ];
+        let mut reporter = CampaignReporter::new("single".into(), default_criteria());
+        for p in &profiles {
+            reporter.record_result(p, "Baseline", false, &make_verdict(true, &[]));
+        }
+        let report = reporter.finalize();
+        assert_eq!(report.total_commands, 5);
+        assert_eq!(report.total_approved, 5);
+        assert_eq!(report.per_profile.len(), 5);
+    }
+
+    #[test]
+    fn scenario_stats_escape_and_false_rejection_exhaustive() {
+        let mut reporter = CampaignReporter::new("exhaust".into(), default_criteria());
+        // Violation: 3 correctly rejected, 1 escaped
+        for _ in 0..3 {
+            reporter.record_result("franka_panda", "Vio", true, &make_verdict(false, &[]));
+        }
+        reporter.record_result("franka_panda", "Vio", true, &make_verdict(true, &[]));
+        // Legitimate: 4 approved, 1 false rejection
+        for _ in 0..4 {
+            reporter.record_result("franka_panda", "Leg", false, &make_verdict(true, &[]));
+        }
+        reporter.record_result("franka_panda", "Leg", false, &make_verdict(false, &[]));
+        let report = reporter.finalize();
+        let vio = &report.per_scenario["Vio"];
+        assert_eq!(vio.escaped, 1);
+        assert_eq!(vio.false_rejections, 0);
+        assert_eq!(vio.expected_reject, 4);
+        let leg = &report.per_scenario["Leg"];
+        assert_eq!(leg.escaped, 0);
+        assert_eq!(leg.false_rejections, 1);
+        assert_eq!(leg.expected_reject, 0);
+    }
+
+    #[test]
+    fn criteria_evaluation_with_mixed_profiles() {
+        // Default criteria: 98% pass, 0% escape, 2% false rejection
+        let mut reporter = CampaignReporter::new("crit".into(), default_criteria());
+        // 100 legitimate from various profiles
+        for _ in 0..50 {
+            reporter.record_result("franka_panda", "Baseline", false, &make_verdict(true, &[]));
+        }
+        for _ in 0..50 {
+            reporter.record_result("ur10", "Baseline", false, &make_verdict(true, &[]));
+        }
+        // 50 violations correctly rejected
+        for _ in 0..25 {
+            reporter.record_result(
+                "quadruped_12dof",
+                "AuthEsc",
+                true,
+                &make_verdict(false, &[]),
+            );
+        }
+        for _ in 0..25 {
+            reporter.record_result("humanoid_28dof", "AuthEsc", true, &make_verdict(false, &[]));
+        }
+        let report = reporter.finalize();
+        assert!(
+            report.criteria_met,
+            "clean mixed campaign should pass criteria"
+        );
+        assert_eq!(report.violation_escape_count, 0);
+        assert_eq!(report.false_rejection_count, 0);
+    }
+
+    #[test]
+    fn criteria_fails_when_one_profile_has_escapes() {
+        let mut reporter = CampaignReporter::new("esc".into(), default_criteria());
+        for _ in 0..100 {
+            reporter.record_result("franka_panda", "Baseline", false, &make_verdict(true, &[]));
+        }
+        // ur10 has one escape
+        for _ in 0..9 {
+            reporter.record_result("ur10", "Vio", true, &make_verdict(false, &[]));
+        }
+        reporter.record_result("ur10", "Vio", true, &make_verdict(true, &[]));
+        let report = reporter.finalize();
+        assert!(!report.criteria_met, "one escape should fail criteria");
+    }
+
+    #[test]
+    fn report_serialization_round_trip() {
+        let mut reporter = CampaignReporter::new("serde".into(), default_criteria());
+        for _ in 0..10 {
+            reporter.record_result(
+                "franka_panda",
+                "Baseline",
+                false,
+                &make_verdict(true, &[("check_a", true)]),
+            );
+        }
+        let report = reporter.finalize();
+        let json = serde_json::to_string(&report).expect("report must serialize");
+        let back: CampaignReport = serde_json::from_str(&json).expect("report must deserialize");
+        assert_eq!(back.campaign_name, "serde");
+        assert_eq!(back.total_commands, 10);
+        assert_eq!(back.total_approved, 10);
+    }
+
+    #[test]
+    fn confidence_stats_included_in_report() {
+        let mut reporter = CampaignReporter::new("conf".into(), default_criteria());
+        // Record 100 violation commands, all rejected
+        for _ in 0..100 {
+            reporter.record_result("franka_panda", "Vio", true, &make_verdict(false, &[]));
+        }
+        let report = reporter.finalize();
+        assert_eq!(report.confidence.n_trials, 100);
+        assert_eq!(report.confidence.n_escapes, 0);
+        assert!(report.confidence.upper_bound_95 > 0.0);
+        assert!(report.confidence.upper_bound_95 < 0.1);
+        assert!(!report.confidence.sil_rating_approximate);
     }
 }

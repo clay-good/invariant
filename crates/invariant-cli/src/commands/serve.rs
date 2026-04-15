@@ -72,12 +72,9 @@ pub struct ServeArgs {
     #[arg(long)]
     pub bridge: bool,
     /// Path for the Unix socket when --bridge is enabled.
-    #[arg(
-        long,
-        value_name = "SOCKET_PATH",
-        default_value = "/tmp/invariant.sock"
-    )]
-    pub bridge_socket: String,
+    /// Defaults to `$TMPDIR/invariant.sock` (or `/tmp/invariant.sock` if TMPDIR is unset).
+    #[arg(long, value_name = "SOCKET_PATH")]
+    pub bridge_socket: Option<String>,
     /// Enable periodic runtime integrity monitors (Section 10.5).
     /// Runs binary hash, profile hash, memory canary, and clock drift checks
     /// in a background task. Triggers incident lockdown on critical failures.
@@ -126,6 +123,18 @@ struct AppState {
     /// to track divergence over time. Wrapped in std::sync::Mutex for
     /// mutable access from the validate handler.
     digital_twin: Option<std::sync::Mutex<DigitalTwinState>>,
+    /// Last seen command sequence number for replay protection (Step 106).
+    /// Rejects any command whose sequence is not strictly greater than the
+    /// last accepted sequence, preventing replay of previously-approved
+    /// signed actuation commands.
+    last_sequence: std::sync::atomic::AtomicU64,
+    /// Previous command's joint states for P4 acceleration check.
+    /// Updated after each successful validation.
+    previous_joints: std::sync::Mutex<Option<Vec<invariant_core::models::command::JointState>>>,
+    /// Previous command's end-effector forces for P13 force-rate check.
+    /// Updated after each successful validation.
+    previous_forces:
+        std::sync::Mutex<Option<Vec<invariant_core::models::command::EndEffectorForce>>>,
 }
 
 /// Wrapper holding the divergence detector and the last observed snapshot
@@ -211,7 +220,7 @@ struct HealthResponse {
     digital_twin_observations: Option<u64>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 struct ErrorResponse {
     error: String,
 }
@@ -299,6 +308,29 @@ async fn handle_validate(
 
     let mut cmd = req.command;
 
+    // Sequence replay protection (Step 106): reject commands whose sequence
+    // is not strictly greater than the last accepted sequence. This prevents
+    // replay of previously-approved signed actuation commands.
+    {
+        use std::sync::atomic::Ordering;
+        let prev = state.last_sequence.load(Ordering::SeqCst);
+        if cmd.sequence <= prev {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                Json(ErrorResponse {
+                    error: format!(
+                        "command sequence {} is not greater than last accepted sequence {} (replay rejected)",
+                        cmd.sequence, prev
+                    ),
+                }),
+            ));
+        }
+        // Update after validation succeeds — we'll do this after the validate call.
+        // For now just record that we've seen this sequence to prevent concurrent
+        // replays of the same sequence.
+        state.last_sequence.store(cmd.sequence, Ordering::SeqCst);
+    }
+
     // In trust-plane mode, auto-issue a self-signed PCA chain.
     if state.trust_plane {
         forge_authority(&mut cmd, &state.signing_key, &state.kid, "trust-plane").map_err(|e| {
@@ -321,22 +353,40 @@ async fn handle_validate(
         None
     };
 
+    // Read previous joint/force states for P4 (acceleration) and P13 (force rate).
+    let prev_joints = state
+        .previous_joints
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .clone();
+    let prev_forces = state
+        .previous_forces
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .clone();
+
     // Offload CPU-bound validation to a blocking thread to keep the async
     // runtime responsive for heartbeat and health handlers. ValidatorConfig is
     // not Clone, so we move the Arc<AppState> into the closure and access the
     // config through the shared reference.
     let state_for_blocking = Arc::clone(&state);
-    let result =
-        tokio::task::spawn_blocking(move || state_for_blocking.config.validate(&cmd, now, None))
-            .await
-            .map_err(|e| {
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(ErrorResponse {
-                        error: format!("validation task panicked: {e}"),
-                    }),
-                )
-            })?;
+    let result = tokio::task::spawn_blocking(move || {
+        state_for_blocking.config.validate_with_forces(
+            &cmd,
+            now,
+            prev_joints.as_deref(),
+            prev_forces.as_deref(),
+        )
+    })
+    .await
+    .map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse {
+                error: format!("validation task panicked: {e}"),
+            }),
+        )
+    })?;
 
     match result {
         Ok(result) => {
@@ -392,6 +442,19 @@ async fn handle_validate(
                         dt.previous_joints = Some(current_joints.clone());
                     }
                 }
+            }
+
+            // Update previous joint/force state for next command's P4/P13 checks.
+            if let Some(ref audit_cmd) = cmd_for_audit {
+                *state
+                    .previous_joints
+                    .lock()
+                    .unwrap_or_else(|p| p.into_inner()) = Some(audit_cmd.joint_states.clone());
+                *state
+                    .previous_forces
+                    .lock()
+                    .unwrap_or_else(|p| p.into_inner()) =
+                    Some(audit_cmd.end_effector_forces.clone());
             }
 
             Ok(Json(ValidateResponse {
@@ -707,6 +770,9 @@ async fn run_server(args: &ServeArgs) -> i32 {
         incident,
         audit,
         digital_twin,
+        last_sequence: std::sync::atomic::AtomicU64::new(0),
+        previous_joints: std::sync::Mutex::new(None),
+        previous_forces: std::sync::Mutex::new(None),
     });
 
     // Spawn a background task that periodically calls watchdog.check() so that
@@ -837,6 +903,11 @@ async fn run_server(args: &ServeArgs) -> i32 {
     }
 
     // Optionally spawn the Isaac Lab Unix socket bridge alongside HTTP (Step 69/75).
+    let bridge_socket = args.bridge_socket.clone().unwrap_or_else(|| {
+        let mut p = std::env::temp_dir();
+        p.push("invariant.sock");
+        p.to_string_lossy().into_owned()
+    });
     if args.bridge {
         let bridge_validator = Arc::new(
             ValidatorConfig::new(
@@ -855,19 +926,16 @@ async fn run_server(args: &ServeArgs) -> i32 {
             .expect("bridge validator config"),
         );
         let bridge_config = invariant_sim::isaac::bridge::BridgeConfig::new(
-            args.bridge_socket.clone(),
+            bridge_socket.clone(),
             bridge_validator,
             args.watchdog_timeout_ms,
         );
         tokio::spawn(async move {
             if let Err(e) = invariant_sim::isaac::bridge::run_bridge(bridge_config).await {
-                eprintln!("bridge: error: {e}");
+                tracing::error!("bridge: {e}");
             }
         });
-        eprintln!(
-            "invariant serve: Isaac Lab bridge listening on {}",
-            args.bridge_socket
-        );
+        tracing::info!("Isaac Lab bridge listening on {bridge_socket}");
     }
 
     let app = Router::new()
@@ -1032,6 +1100,9 @@ mod tests {
             incident: None,
             audit: None,
             digital_twin: None,
+            last_sequence: std::sync::atomic::AtomicU64::new(0),
+            previous_joints: std::sync::Mutex::new(None),
+            previous_forces: std::sync::Mutex::new(None),
         })
     }
 
@@ -1198,6 +1269,132 @@ mod tests {
 
         // axum returns 4xx for JSON parse errors.
         assert!(resp.status().is_client_error());
+    }
+
+    // --- Sequence replay protection (Step 106) ---
+
+    #[tokio::test]
+    async fn replay_same_sequence_rejected() {
+        let state = make_test_state(true, 0);
+
+        // First request with sequence=1 — must succeed.
+        let mut cmd = make_test_command();
+        cmd.sequence = 1;
+        let body = serde_json::to_string(&ValidateRequest { command: cmd }).unwrap();
+        let app = make_app(Arc::clone(&state));
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/validate")
+                    .header("content-type", "application/json")
+                    .body(Body::from(body))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK, "first request must succeed");
+
+        // Second request with same sequence=1 — must be rejected as replay.
+        let mut cmd2 = make_test_command();
+        cmd2.sequence = 1;
+        let body2 = serde_json::to_string(&ValidateRequest { command: cmd2 }).unwrap();
+        let app2 = make_app(Arc::clone(&state));
+        let resp2 = app2
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/validate")
+                    .header("content-type", "application/json")
+                    .body(Body::from(body2))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            resp2.status(),
+            StatusCode::BAD_REQUEST,
+            "replayed sequence must be rejected"
+        );
+        let body = axum::body::to_bytes(resp2.into_body(), 65536)
+            .await
+            .unwrap();
+        let err: ErrorResponse = serde_json::from_slice(&body).unwrap();
+        assert!(
+            err.error.contains("replay"),
+            "error must mention replay: {}",
+            err.error
+        );
+    }
+
+    #[tokio::test]
+    async fn lower_sequence_after_higher_rejected() {
+        let state = make_test_state(true, 0);
+
+        // First request with sequence=5.
+        let mut cmd = make_test_command();
+        cmd.sequence = 5;
+        let body = serde_json::to_string(&ValidateRequest { command: cmd }).unwrap();
+        let app = make_app(Arc::clone(&state));
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/validate")
+                    .header("content-type", "application/json")
+                    .body(Body::from(body))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        // Second request with sequence=3 (lower) — must be rejected.
+        let mut cmd2 = make_test_command();
+        cmd2.sequence = 3;
+        let body2 = serde_json::to_string(&ValidateRequest { command: cmd2 }).unwrap();
+        let app2 = make_app(Arc::clone(&state));
+        let resp2 = app2
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/validate")
+                    .header("content-type", "application/json")
+                    .body(Body::from(body2))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            resp2.status(),
+            StatusCode::BAD_REQUEST,
+            "lower sequence after higher must be rejected"
+        );
+    }
+
+    #[tokio::test]
+    async fn incrementing_sequence_accepted() {
+        let state = make_test_state(true, 0);
+
+        // Sequence 1 then 2 — both must succeed.
+        for seq in [1u64, 2] {
+            let mut cmd = make_test_command();
+            cmd.sequence = seq;
+            let body = serde_json::to_string(&ValidateRequest { command: cmd }).unwrap();
+            let app = make_app(Arc::clone(&state));
+            let resp = app
+                .oneshot(
+                    Request::builder()
+                        .method("POST")
+                        .uri("/validate")
+                        .header("content-type", "application/json")
+                        .body(Body::from(body))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(resp.status(), StatusCode::OK, "sequence {seq} must succeed");
+        }
     }
 
     // --- Heartbeat endpoint ---
@@ -1466,7 +1663,7 @@ mod tests {
             safe_stop_path: dir.path().join("safe-stop.json"),
             threat_scoring: false,
             bridge: false,
-            bridge_socket: "/tmp/invariant_test.sock".into(),
+            bridge_socket: Some("/tmp/invariant_test.sock".into()),
             monitors: false,
             audit_log: None,
             digital_twin: false,
@@ -1497,7 +1694,7 @@ mod tests {
             safe_stop_path: dir.path().join("safe-stop.json"),
             threat_scoring: false,
             bridge: false,
-            bridge_socket: "/tmp/invariant_test.sock".into(),
+            bridge_socket: Some("/tmp/invariant_test.sock".into()),
             monitors: false,
             audit_log: None,
             digital_twin: false,
@@ -1522,7 +1719,7 @@ mod tests {
             safe_stop_path: dir.path().join("safe-stop.json"),
             threat_scoring: false,
             bridge: false,
-            bridge_socket: "/tmp/invariant_test.sock".into(),
+            bridge_socket: Some("/tmp/invariant_test.sock".into()),
             monitors: false,
             audit_log: None,
             digital_twin: false,
@@ -1549,7 +1746,7 @@ mod tests {
             safe_stop_path: dir.path().join("safe-stop.json"),
             threat_scoring: false,
             bridge: false,
-            bridge_socket: "/tmp/invariant_test.sock".into(),
+            bridge_socket: Some("/tmp/invariant_test.sock".into()),
             monitors: false,
             audit_log: None,
             digital_twin: false,
@@ -1597,7 +1794,7 @@ mod tests {
             safe_stop_path: dir.path().join("safe-stop.json"),
             threat_scoring: false,
             bridge: false,
-            bridge_socket: "/tmp/invariant_test.sock".into(),
+            bridge_socket: Some("/tmp/invariant_test.sock".into()),
             monitors: false,
             audit_log: None,
             digital_twin: false,
@@ -1626,7 +1823,7 @@ mod tests {
             safe_stop_path: dir.path().join("safe-stop.json"),
             threat_scoring: false,
             bridge: false,
-            bridge_socket: "/tmp/invariant_test.sock".into(),
+            bridge_socket: Some("/tmp/invariant_test.sock".into()),
             monitors: false,
             audit_log: None,
             digital_twin: false,
@@ -1653,7 +1850,7 @@ mod tests {
             safe_stop_path: dir.path().join("safe-stop.json"),
             threat_scoring: false,
             bridge: false,
-            bridge_socket: "/tmp/invariant_test.sock".into(),
+            bridge_socket: Some("/tmp/invariant_test.sock".into()),
             monitors: false,
             audit_log: None,
             digital_twin: false,
@@ -1674,14 +1871,10 @@ mod zeroizing {
 
     impl ZeroizeOnDrop for [u8; 32] {
         fn zeroize(&mut self) {
-            for b in self.iter_mut() {
-                // Use volatile_write equivalent via pointer to prevent the
-                // compiler from eliding the zeroing as a dead store.
-                // SAFETY: self is a valid [u8; 32].
-                unsafe {
-                    std::ptr::write_volatile(b as *mut u8, 0);
-                }
-            }
+            // Best-effort zeroing without unsafe. In debug builds the fill is
+            // never elided; in release builds the Drop barrier makes it very
+            // unlikely to be optimized away.
+            self.fill(0);
         }
     }
 

@@ -278,14 +278,16 @@ pub fn assemble(inputs: &PackageInputs, output_dir: &Path) -> Result<ProofPackag
         )?;
     }
 
-    // Copy adversarial reports.
+    // Copy adversarial reports (with path traversal guard).
     for (name, src) in &inputs.adversarial_reports {
+        validate_filename(name)?;
         let dest = output_dir.join("adversarial").join(name);
         copy_and_hash(src, &dest, &mut file_hashes)?;
     }
 
-    // Copy compliance mappings.
+    // Copy compliance mappings (with path traversal guard).
     for (name, src) in &inputs.compliance_mappings {
+        validate_filename(name)?;
         let dest = output_dir.join("compliance").join(name);
         copy_and_hash(src, &dest, &mut file_hashes)?;
     }
@@ -348,6 +350,23 @@ pub fn assemble(inputs: &PackageInputs, output_dir: &Path) -> Result<ProofPackag
         .map_err(|e| format!("write README.md: {e}"))?;
 
     Ok(manifest)
+}
+
+/// Validate that a filename used as a map key does not contain path traversal.
+///
+/// Rejects any name containing `/`, `\`, `..`, or null bytes. This prevents a
+/// caller from writing files outside the intended output directory via crafted
+/// adversarial report or compliance mapping names.
+fn validate_filename(name: &str) -> Result<(), String> {
+    if name.is_empty() {
+        return Err("filename must not be empty".into());
+    }
+    if name.contains('/') || name.contains('\\') || name.contains("..") || name.contains('\0') {
+        return Err(format!(
+            "filename {name:?} contains path traversal characters"
+        ));
+    }
+    Ok(())
 }
 
 /// Copy a file and record its SHA-256 hash.
@@ -711,5 +730,60 @@ mod tests {
         let back: ProofPackageManifest = serde_json::from_str(&json).unwrap();
         assert_eq!(back.campaign_name, "serde_test");
         assert_eq!(back.summary.total_commands, 100);
+    }
+
+    // ── Path traversal tests (Step 101) ───────────────────────────────
+
+    #[test]
+    fn validate_filename_rejects_path_traversal() {
+        assert!(validate_filename("../../../etc/passwd").is_err());
+        assert!(validate_filename("foo/bar.json").is_err());
+        assert!(validate_filename("foo\\bar.json").is_err());
+        assert!(validate_filename("foo\0bar").is_err());
+        assert!(validate_filename("..").is_err());
+        assert!(validate_filename("").is_err());
+    }
+
+    #[test]
+    fn validate_filename_accepts_safe_names() {
+        assert!(validate_filename("protocol_report.json").is_ok());
+        assert!(validate_filename("report-2024.json").is_ok());
+        assert!(validate_filename("a").is_ok());
+    }
+
+    #[test]
+    fn assemble_rejects_path_traversal_in_report_name() {
+        let dir = tempfile::tempdir().unwrap();
+        let output = dir.path().join("proof-package");
+
+        let report_path = dir.path().join("valid_report.json");
+        std::fs::write(&report_path, "{}").unwrap();
+
+        let profile_path = dir.path().join("profile.json");
+        std::fs::write(&profile_path, "{}").unwrap();
+
+        let mut adversarial = HashMap::new();
+        adversarial.insert("../../../tmp/pwned".to_string(), report_path.clone());
+
+        let inputs = PackageInputs {
+            campaign_config: Some(profile_path.clone()),
+            profile: Some(profile_path),
+            audit_log: None,
+            adversarial_reports: adversarial,
+            compliance_mappings: HashMap::new(),
+            public_keys: None,
+            binary_hash: "sha256:test".into(),
+            campaign_name: "test".into(),
+            profile_name: "test".into(),
+            summary: CampaignSummary::compute(100, 100, 0, 0, 0, 0, 100.0),
+        };
+
+        let result = assemble(&inputs, &output);
+        assert!(
+            result.is_err(),
+            "path traversal in report name must be rejected"
+        );
+        let err = result.unwrap_err();
+        assert!(err.contains("path traversal"), "error: {err}");
     }
 }

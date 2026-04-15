@@ -1,0 +1,40 @@
+{
+  "name": "adversarial_zero_margin",
+  "version": "1.0.0",
+  "joints": [
+    {"name": "j1", "type": "revolute", "min": -1.5708, "max": 1.5708, "max_velocity": 6.28, "max_torque": 100.0, "max_acceleration": 50.0},
+    {"name": "j2", "type": "revolute", "min": -1.5708, "max": 1.5708, "max_velocity": 6.28, "max_torque": 100.0, "max_acceleration": 50.0},
+    {"name": "j3", "type": "revolute", "min": -3.1416, "max": 3.1416, "max_velocity": 6.28, "max_torque": 50.0, "max_acceleration": 50.0},
+    {"name": "j4", "type": "revolute", "min": -1.5708, "max": 1.5708, "max_velocity": 6.28, "max_torque": 50.0, "max_acceleration": 50.0},
+    {"name": "j5", "type": "revolute", "min": -3.1416, "max": 3.1416, "max_velocity": 10.0, "max_torque": 20.0, "max_acceleration": 80.0},
+    {"name": "j6", "type": "revolute", "min": -3.1416, "max": 3.1416, "max_velocity": 10.0, "max_torque": 20.0, "max_acceleration": 80.0}
+  ],
+  "workspace": {
+    "type": "aabb",
+    "min": [-2.0, -2.0, 0.0],
+    "max": [2.0, 2.0, 3.0]
+  },
+  "exclusion_zones": [
+    {"type": "sphere", "name": "human_head", "center": [1.0, 0.0, 1.7], "radius": 0.3, "conditional": false}
+  ],
+  "proximity_zones": [
+    {"name": "human", "type": "sphere", "center": [1.0, 0.0, 1.0], "radius": 1.0, "velocity_scale": 0.5, "dynamic": true}
+  ],
+  "collision_pairs": [["j1", "j6"]],
+  "max_delta_time": 0.1,
+  "min_collision_distance": 0.01,
+  "global_velocity_scale": 1.0,
+  "watchdog_timeout_ms": 50,
+  "real_world_margins": {
+    "position_margin": 0.0,
+    "velocity_margin": 0.0,
+    "torque_margin": 0.0,
+    "acceleration_margin": 0.0
+  },
+  "environment": {},
+  "safe_stop_profile": {
+    "strategy": "immediate_stop",
+    "max_deceleration": 50.0,
+    "target_joint_positions": {}
+  }
+}
