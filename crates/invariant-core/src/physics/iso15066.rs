@@ -14,6 +14,7 @@
 use crate::models::command::{EndEffectorForce, EndEffectorPosition};
 use crate::models::profile::ProximityZone;
 use crate::models::verdict::CheckResult;
+use crate::physics::geometry::point_in_sphere;
 
 // ---------------------------------------------------------------------------
 // ISO/TS 15066 body-region force table
@@ -101,6 +102,15 @@ fn is_human_critical(zone: &ProximityZone) -> bool {
     }
 }
 
+/// Check if a point is inside a proximity zone.
+fn point_in_proximity_zone(zone: &ProximityZone, point: &[f64; 3]) -> bool {
+    match zone {
+        ProximityZone::Sphere {
+            center, radius, ..
+        } => point_in_sphere(point, center, *radius),
+    }
+}
+
 /// Check that end-effector forces comply with ISO/TS 15066 limits when the
 /// end-effector is inside a human-critical proximity zone.
 ///
@@ -127,12 +137,41 @@ pub fn check_iso15066_force_limits(
         .filter(|z| is_human_critical(z))
         .collect();
 
-    if critical_zones.is_empty() || ee_positions.is_empty() || ee_forces.is_empty() {
+    if critical_zones.is_empty() || ee_positions.is_empty() {
         return CheckResult {
             name: "iso15066_force_limits".to_string(),
             category: "physics".to_string(),
             passed: true,
-            details: "no human-critical proximity zones active or no force data".to_string(),
+            details: "no human-critical proximity zones active or no end-effector positions"
+                .to_string(),
+            derating: None,
+        };
+    }
+
+    // Fail-closed: if any EE is inside a human-critical zone but no force data
+    // is provided, reject. Missing force data in a human zone is not safe.
+    if ee_forces.is_empty() {
+        // Check if any EE is actually inside a critical zone before rejecting.
+        let ee_in_zone = ee_positions.iter().any(|ee| {
+            critical_zones
+                .iter()
+                .any(|z| point_in_proximity_zone(z, &ee.position))
+        });
+        if ee_in_zone {
+            return CheckResult {
+                name: "iso15066_force_limits".to_string(),
+                category: "physics".to_string(),
+                passed: false,
+                details: "end-effector is inside human-critical zone but no force data provided"
+                    .to_string(),
+                derating: None,
+            };
+        }
+        return CheckResult {
+            name: "iso15066_force_limits".to_string(),
+            category: "physics".to_string(),
+            passed: true,
+            details: "no end-effectors inside human-critical zones".to_string(),
             derating: None,
         };
     }
@@ -218,9 +257,6 @@ pub fn check_iso15066_force_limits(
 fn vector_norm(v: &[f64; 3]) -> f64 {
     (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt()
 }
-
-// point_in_sphere delegated to shared geometry module.
-use super::geometry::point_in_sphere;
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -413,13 +449,26 @@ mod tests {
     // -- No matching force data for an end-effector inside zone: passes --
 
     #[test]
-    fn ee_inside_zone_but_no_force_data_passes() {
+    fn ee_inside_zone_but_no_force_data_rejected() {
+        // Fail-closed: an EE inside a human-critical zone without force data
+        // must be rejected — missing data is not safe.
         let zones = vec![human_critical_zone([0.0, 0.0, 0.0], 1.0)];
         let positions = vec![ee_pos("gripper", [0.0, 0.0, 0.0])];
         let forces: Vec<EndEffectorForce> = vec![]; // no force data
 
         let result = check_iso15066_force_limits(&positions, &forces, &zones, None);
-        assert!(result.passed);
+        assert!(!result.passed, "missing force data in human zone must be rejected");
+    }
+
+    #[test]
+    fn ee_outside_zone_no_force_data_passes() {
+        // EE is far from the human-critical zone — no force data needed.
+        let zones = vec![human_critical_zone([0.0, 0.0, 0.0], 1.0)];
+        let positions = vec![ee_pos("gripper", [5.0, 5.0, 5.0])]; // far away
+        let forces: Vec<EndEffectorForce> = vec![];
+
+        let result = check_iso15066_force_limits(&positions, &forces, &zones, None);
+        assert!(result.passed, "EE outside zone should pass without force data");
     }
 
     // -- NaN force inside critical zone: violation --

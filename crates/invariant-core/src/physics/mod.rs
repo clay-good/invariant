@@ -126,14 +126,29 @@ pub fn run_all_checks(
     // data would vacuously pass all joint-based checks (P1-P4, P10), allowing
     // an empty command to bypass the entire safety envelope.
     if command.joint_states.is_empty() && !profile.joints.is_empty() {
-        let fail = CheckResult {
-            name: "empty_joint_states".to_string(),
-            category: "physics".to_string(),
-            passed: false,
-            details: "command contains no joint states but profile defines joints".to_string(),
-            derating: None,
-        };
-        return vec![fail; 10];
+        let reason = "command contains no joint states but profile defines joints";
+        let names = [
+            "joint_limits",
+            "velocity_limits",
+            "torque_limits",
+            "acceleration_limits",
+            "workspace_bounds",
+            "exclusion_zones",
+            "self_collision",
+            "delta_time",
+            "stability",
+            "proximity_velocity",
+        ];
+        return names
+            .iter()
+            .map(|name| CheckResult {
+                name: name.to_string(),
+                category: "physics".to_string(),
+                passed: false,
+                details: reason.to_string(),
+                derating: None,
+            })
+            .collect();
     }
 
     let margins = profile.real_world_margins.as_ref();

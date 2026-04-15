@@ -88,18 +88,30 @@ impl BoundaryProber {
     pub fn probe_all_joints(profile: &RobotProfile) -> Vec<(Command, bool)> {
         let mut results = Vec::new();
 
-        for joint in &profile.joints {
-            // PA1 – exactly at limits: should pass the joint-limits check.
-            results.push((make_command(profile, &joint.name, joint.min), true));
-            results.push((make_command(profile, &joint.name, joint.max), true));
+        // Account for real-world margins: if the profile has position_margin,
+        // the effective limits are tighter than the raw joint min/max.
+        let margin_frac = profile
+            .real_world_margins
+            .as_ref()
+            .map(|m| m.position_margin)
+            .unwrap_or(0.0);
 
-            // PA2 – just outside limits: should be rejected.
+        for joint in &profile.joints {
+            let range = joint.max - joint.min;
+            let effective_min = joint.min + margin_frac * range;
+            let effective_max = joint.max - margin_frac * range;
+
+            // PA1 – exactly at effective limits: should pass the joint-limits check.
+            results.push((make_command(profile, &joint.name, effective_min), true));
+            results.push((make_command(profile, &joint.name, effective_max), true));
+
+            // PA2 – just outside effective limits: should be rejected.
             results.push((
-                make_command(profile, &joint.name, joint.min - EPSILON),
+                make_command(profile, &joint.name, effective_min - EPSILON),
                 false,
             ));
             results.push((
-                make_command(profile, &joint.name, joint.max + EPSILON),
+                make_command(profile, &joint.name, effective_max + EPSILON),
                 false,
             ));
         }

@@ -107,6 +107,18 @@ fn safe_command(profile: &RobotProfile, chain_b64: &str, ops: Vec<Operation>) ->
             [cx, cy, s.com_height_estimate]
         });
 
+    // Provide zero-force data for each EE so the ISO 15066 fail-closed check
+    // does not reject commands with EEs inside human-critical proximity zones.
+    let end_effector_forces: Vec<invariant_core::models::command::EndEffectorForce> = ee_positions
+        .iter()
+        .map(|ee| invariant_core::models::command::EndEffectorForce {
+            name: ee.name.clone(),
+            force: [0.0, 0.0, 0.0],
+            torque: [0.0, 0.0, 0.0],
+            grasp_force: Some(0.0),
+        })
+        .collect();
+
     Command {
         timestamp: Utc::now(),
         source: "adversarial-test".to_string(),
@@ -121,7 +133,7 @@ fn safe_command(profile: &RobotProfile, chain_b64: &str, ops: Vec<Operation>) ->
         },
         metadata: HashMap::new(),
         locomotion_state: None,
-        end_effector_forces: vec![],
+        end_effector_forces,
         estimated_payload_kg: None,
         signed_sensor_readings: vec![],
         zone_overrides: HashMap::new(),

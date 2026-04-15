@@ -14,7 +14,9 @@ use tempfile::TempDir;
 
 use invariant_core::authority::crypto::{generate_keypair, sign_pca};
 use invariant_core::models::authority::{Operation, Pca};
-use invariant_core::models::command::{Command, CommandAuthority, EndEffectorPosition, JointState};
+use invariant_core::models::command::{
+    Command, CommandAuthority, EndEffectorForce, EndEffectorPosition, JointState,
+};
 use invariant_core::models::profile::RobotProfile;
 use invariant_core::profiles;
 use invariant_core::validator::ValidatorConfig;
@@ -99,6 +101,15 @@ fn safe_command(profile: &RobotProfile, chain_b64: &str, ops: Vec<Operation>) ->
         sequence: 1,
         joint_states,
         delta_time: profile.max_delta_time * 0.5,
+        end_effector_forces: ee_positions
+            .iter()
+            .map(|ee| EndEffectorForce {
+                name: ee.name.clone(),
+                force: [0.0, 0.0, 0.0],
+                torque: [0.0, 0.0, 0.0],
+                grasp_force: Some(0.0),
+            })
+            .collect(),
         end_effector_positions: ee_positions,
         center_of_mass,
         authority: CommandAuthority {
@@ -107,7 +118,6 @@ fn safe_command(profile: &RobotProfile, chain_b64: &str, ops: Vec<Operation>) ->
         },
         metadata: HashMap::new(),
         locomotion_state: None,
-        end_effector_forces: vec![],
         estimated_payload_kg: None,
         signed_sensor_readings: vec![],
         zone_overrides: HashMap::new(),

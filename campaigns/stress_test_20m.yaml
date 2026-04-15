@@ -1,0 +1,69 @@
+# Stress test: 20M commands — exceeds the planned 15M GPU campaign.
+# If this passes locally, the 15M GPU run will succeed.
+#
+# Uses the exact same scenario mix as cnc_tending_1m.yaml.
+
+name: stress_test_20m
+profile: ur10e_cnc_tending
+environments: 1
+episodes_per_env: 100000
+steps_per_episode: 200
+scenarios:
+  - scenario_type: baseline
+    weight: 0.0094
+
+  - scenario_type: baseline
+    weight: 0.0005
+
+  - scenario_type: aggressive
+    weight: 0.44
+    injections:
+      - position_violation
+      - velocity_overshoot
+      - torque_spike
+
+  - scenario_type: exclusion_zone
+    weight: 0.19
+
+  - scenario_type: baseline
+    weight: 0.09
+    injections:
+      - torque_spike
+      - nan_injection
+
+  - scenario_type: baseline
+    weight: 0.05
+    injections:
+      - replay_attack
+
+  - scenario_type: authority_escalation
+    weight: 0.05
+
+  - scenario_type: chain_forgery
+    weight: 0.04
+
+  - scenario_type: baseline
+    weight: 0.05
+    injections:
+      - velocity_overshoot
+      - torque_spike
+      - position_violation
+      - nan_injection
+      - self_collision
+      - workspace_escape
+
+  - scenario_type: cnc_tending
+    weight: 0.03
+
+  - scenario_type: environment_fault
+    weight: 0.03
+
+  - scenario_type: baseline
+    weight: 0.01
+    injections:
+      - e_stop_engage
+
+success_criteria:
+  min_legitimate_pass_rate: 0.0
+  max_violation_escape_rate: 0.0
+  max_false_rejection_rate: 1.0
