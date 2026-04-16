@@ -329,6 +329,60 @@ impl Validate for RobotProfile {
             zone.validate()?;
         }
 
+        // Validate exclusion zones — reject zones with invalid geometry to
+        // prevent silent mis-enforcement of the P6 exclusion check.
+        for zone in &self.exclusion_zones {
+            match zone {
+                ExclusionZone::Aabb { name, min, max, .. } => {
+                    for (i, coord) in min.iter().chain(max.iter()).enumerate() {
+                        if !coord.is_finite() {
+                            return Err(ValidationError::EnvironmentConfigInvalid {
+                                reason: format!(
+                                    "exclusion zone '{}': AABB coordinate {} is not finite",
+                                    name, i
+                                ),
+                            });
+                        }
+                    }
+                    for i in 0..3 {
+                        if min[i] >= max[i] {
+                            return Err(ValidationError::EnvironmentConfigInvalid {
+                                reason: format!(
+                                    "exclusion zone '{}': AABB min[{i}] ({}) must be less than max[{i}] ({})",
+                                    name, min[i], max[i]
+                                ),
+                            });
+                        }
+                    }
+                }
+                ExclusionZone::Sphere {
+                    name,
+                    center,
+                    radius,
+                    ..
+                } => {
+                    for (i, coord) in center.iter().enumerate() {
+                        if !coord.is_finite() {
+                            return Err(ValidationError::EnvironmentConfigInvalid {
+                                reason: format!(
+                                    "exclusion zone '{}': sphere center coordinate {} is not finite",
+                                    name, i
+                                ),
+                            });
+                        }
+                    }
+                    if !radius.is_finite() || *radius <= 0.0 {
+                        return Err(ValidationError::EnvironmentConfigInvalid {
+                            reason: format!(
+                                "exclusion zone '{}': sphere radius must be finite and positive, got {}",
+                                name, radius
+                            ),
+                        });
+                    }
+                }
+            }
+        }
+
         // Validate task envelope tighten-only constraints (Section 17.2)
         if let Some(ref env) = self.task_envelope {
             self.validate_task_envelope(env)?;
@@ -514,22 +568,49 @@ impl Validate for RobotProfile {
                     env_cfg.max_operating_temperature_c
                 )));
             }
+            // warning_temperature_c must be finite, positive, and below max.
+            if !env_cfg.warning_temperature_c.is_finite() || env_cfg.warning_temperature_c <= 0.0 {
+                return Err(err(format!(
+                    "warning_temperature_c must be finite and positive, got {}",
+                    env_cfg.warning_temperature_c
+                )));
+            }
+            if env_cfg.warning_temperature_c >= env_cfg.max_operating_temperature_c {
+                return Err(err(format!(
+                    "warning_temperature_c ({}) must be less than max_operating_temperature_c ({})",
+                    env_cfg.warning_temperature_c, env_cfg.max_operating_temperature_c
+                )));
+            }
+            // Finiteness checks before ordering comparisons for battery percentages.
+            if !env_cfg.critical_battery_pct.is_finite() {
+                return Err(err(format!(
+                    "critical_battery_pct must be finite, got {}",
+                    env_cfg.critical_battery_pct
+                )));
+            }
+            if !env_cfg.low_battery_pct.is_finite() {
+                return Err(err(format!(
+                    "low_battery_pct must be finite, got {}",
+                    env_cfg.low_battery_pct
+                )));
+            }
             if env_cfg.critical_battery_pct >= env_cfg.low_battery_pct {
                 return Err(err(format!(
                     "critical_battery_pct ({}) must be less than low_battery_pct ({})",
                     env_cfg.critical_battery_pct, env_cfg.low_battery_pct
                 )));
             }
-            if env_cfg.warning_latency_ms >= env_cfg.max_latency_ms {
-                return Err(err(format!(
-                    "warning_latency_ms ({}) must be less than max_latency_ms ({})",
-                    env_cfg.warning_latency_ms, env_cfg.max_latency_ms
-                )));
-            }
+            // Check max_latency_ms finiteness BEFORE the warning comparison.
             if !env_cfg.max_latency_ms.is_finite() || env_cfg.max_latency_ms <= 0.0 {
                 return Err(err(format!(
                     "max_latency_ms must be finite and positive, got {}",
                     env_cfg.max_latency_ms
+                )));
+            }
+            if env_cfg.warning_latency_ms >= env_cfg.max_latency_ms {
+                return Err(err(format!(
+                    "warning_latency_ms ({}) must be less than max_latency_ms ({})",
+                    env_cfg.warning_latency_ms, env_cfg.max_latency_ms
                 )));
             }
         }

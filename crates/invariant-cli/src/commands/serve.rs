@@ -325,10 +325,9 @@ async fn handle_validate(
                 }),
             ));
         }
-        // Update after validation succeeds — we'll do this after the validate call.
-        // For now just record that we've seen this sequence to prevent concurrent
-        // replays of the same sequence.
-        state.last_sequence.store(cmd.sequence, Ordering::SeqCst);
+        // The counter is advanced only after validation succeeds (below).
+        // We perform no store here so that a rejected command cannot
+        // consume a sequence number and block future valid commands.
     }
 
     // In trust-plane mode, auto-issue a self-signed PCA chain.
@@ -345,13 +344,10 @@ async fn handle_validate(
 
     let now = Utc::now();
 
-    // Clone command for audit logging and/or digital twin observation
-    // (the original moves into spawn_blocking).
-    let cmd_for_audit = if state.audit.is_some() || state.digital_twin.is_some() {
-        Some(cmd.clone())
-    } else {
-        None
-    };
+    // Clone command for audit logging, digital twin observation, and tracking
+    // previous joint/force state for P4/P13 checks (the original moves into
+    // spawn_blocking, so we always need a clone for post-validation bookkeeping).
+    let cmd_for_audit = Some(cmd.clone());
 
     // Read previous joint/force states for P4 (acceleration) and P13 (force rate).
     let prev_joints = state
@@ -388,8 +384,47 @@ async fn handle_validate(
         )
     })?;
 
+    // Capture the sequence number from the (now-moved) cmd before we match.
+    // We only advance last_sequence when validation succeeds.
+    let cmd_sequence = {
+        // Re-read from the original command.  The cmd was moved into
+        // spawn_blocking, so we captured the sequence number before the move
+        // via cmd_for_audit; fall back to loading the atomic if unavailable.
+        cmd_for_audit
+            .as_ref()
+            .map(|c| c.sequence)
+            .unwrap_or_else(|| {
+                state
+                    .last_sequence
+                    .load(std::sync::atomic::Ordering::SeqCst)
+            })
+    };
+
+    // Update previous joint/force state for the NEXT command's P4/P13 checks.
+    // This must happen regardless of whether validation approved or rejected the
+    // command: the robot's physical state changes whether or not the safety
+    // system approves the motion, so the reference point for the next
+    // acceleration/force-rate comparison must always reflect the most recent
+    // commanded state.
+    if let Some(ref audit_cmd) = cmd_for_audit {
+        *state
+            .previous_joints
+            .lock()
+            .unwrap_or_else(|p| p.into_inner()) = Some(audit_cmd.joint_states.clone());
+        *state
+            .previous_forces
+            .lock()
+            .unwrap_or_else(|p| p.into_inner()) = Some(audit_cmd.end_effector_forces.clone());
+    }
+
     match result {
         Ok(result) => {
+            // Advance the sequence counter now that validation has succeeded.
+            // fetch_max ensures we never regress even under concurrent requests.
+            state
+                .last_sequence
+                .fetch_max(cmd_sequence, std::sync::atomic::Ordering::SeqCst);
+
             // Log to audit trail if configured.
             if let (Some(ref audit_mutex), Some(ref audit_cmd)) = (&state.audit, &cmd_for_audit) {
                 if let Ok(mut logger) = audit_mutex.lock() {
@@ -442,19 +477,6 @@ async fn handle_validate(
                         dt.previous_joints = Some(current_joints.clone());
                     }
                 }
-            }
-
-            // Update previous joint/force state for next command's P4/P13 checks.
-            if let Some(ref audit_cmd) = cmd_for_audit {
-                *state
-                    .previous_joints
-                    .lock()
-                    .unwrap_or_else(|p| p.into_inner()) = Some(audit_cmd.joint_states.clone());
-                *state
-                    .previous_forces
-                    .lock()
-                    .unwrap_or_else(|p| p.into_inner()) =
-                    Some(audit_cmd.end_effector_forces.clone());
             }
 
             Ok(Json(ValidateResponse {

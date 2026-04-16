@@ -25,7 +25,7 @@ use thiserror::Error;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::UnixListener;
 
-use invariant_core::models::command::Command;
+use invariant_core::models::command::{Command, JointState};
 use invariant_core::models::verdict::SignedVerdict;
 use invariant_core::validator::ValidatorConfig;
 
@@ -189,6 +189,7 @@ pub async fn run_bridge(config: BridgeConfig) -> Result<BridgeStats, BridgeError
             let (reader, mut writer) = stream.into_split();
             let mut buf_reader = BufReader::new(reader);
             let mut line = String::new();
+            let mut previous_joints: Option<Vec<JointState>> = None;
 
             loop {
                 line.clear();
@@ -205,11 +206,12 @@ pub async fn run_bridge(config: BridgeConfig) -> Result<BridgeStats, BridgeError
                         "message too large: {n} bytes exceeds {max_msg} limit"
                     ));
                     let _ = write_response(&mut writer, &resp).await;
-                    stats.lock().unwrap().errors += 1;
+                    stats.lock().unwrap_or_else(|p| p.into_inner()).errors += 1;
                     continue;
                 }
 
-                let resp = handle_message(line.trim(), &validator, &stats).await;
+                let resp =
+                    handle_message(line.trim(), &validator, &stats, &mut previous_joints).await;
 
                 if write_response(&mut writer, &resp).await.is_err() {
                     break; // write failed, client probably disconnected
@@ -224,18 +226,22 @@ async fn handle_message(
     raw: &str,
     validator: &ValidatorConfig,
     stats: &Arc<Mutex<BridgeStats>>,
+    previous_joints: &mut Option<Vec<JointState>>,
 ) -> BridgeResponse {
     let msg: IncomingMessage = match serde_json::from_str(raw) {
         Ok(m) => m,
         Err(e) => {
-            stats.lock().unwrap().errors += 1;
+            stats.lock().unwrap_or_else(|p| p.into_inner()).errors += 1;
             return BridgeResponse::error(format!("JSON parse error: {e}"));
         }
     };
 
     match msg {
         IncomingMessage::Heartbeat { heartbeat: true } => {
-            stats.lock().unwrap().heartbeats_received += 1;
+            stats
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .heartbeats_received += 1;
             BridgeResponse::heartbeat_ack()
         }
         IncomingMessage::Heartbeat { heartbeat: false } => {
@@ -243,9 +249,12 @@ async fn handle_message(
         }
         IncomingMessage::Command(cmd) => {
             let now = Utc::now();
-            match validator.validate(&cmd, now, None) {
+            match validator.validate(&cmd, now, previous_joints.as_deref()) {
                 Ok(result) => {
-                    let mut s = stats.lock().unwrap();
+                    if result.signed_verdict.verdict.approved {
+                        *previous_joints = Some(cmd.joint_states.clone());
+                    }
+                    let mut s = stats.lock().unwrap_or_else(|p| p.into_inner());
                     s.commands_received += 1;
                     if result.signed_verdict.verdict.approved {
                         s.commands_approved += 1;
@@ -255,7 +264,7 @@ async fn handle_message(
                     BridgeResponse::verdict(result.signed_verdict)
                 }
                 Err(e) => {
-                    stats.lock().unwrap().errors += 1;
+                    stats.lock().unwrap_or_else(|p| p.into_inner()).errors += 1;
                     BridgeResponse::error(format!("validation error: {e}"))
                 }
             }

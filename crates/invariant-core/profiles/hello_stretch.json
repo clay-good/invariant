@@ -42,6 +42,7 @@
     "max_safe_pitch_rad": 0.087,
     "max_safe_roll_rad": 0.087,
     "max_operating_temperature_c": 50.0,
+    "warning_temperature_c": 40.0,
     "critical_battery_pct": 5.0,
     "low_battery_pct": 15.0,
     "max_latency_ms": 200.0,
