@@ -66,7 +66,7 @@ invariant/
         invariant-eval/         # Trace evaluation engine (presets, rubrics, guardrails)
         invariant-fuzz/         # Adversarial testing framework (protocol, system, cognitive)
         invariant-coordinator/  # Multi-robot coordination safety (separation, partitioning)
-    profiles/                   # 10 built-in robot profile JSON files
+    profiles/                   # 34 built-in robot profile JSON files
     invariant-ros2/             # ROS 2 bridge package (separate, not in Rust workspace)
     formal/                     # Lean 4 formal specification (P1-P25, A1-A3, L1-L4)
 ```
@@ -173,23 +173,62 @@ Total: ~350us. 35% of 1kHz budget.
 
 ## 4. Robot Profiles
 
-13 built-in profiles covering 5 morphologies:
+34 built-in profiles covering 7 morphologies:
 
-| Profile | Type | DOF | Key Features |
-|---------|------|-----|-------------|
-| `humanoid_28dof` | Humanoid | 28 | Stability, locomotion, full-body |
-| `unitree_h1` | Humanoid | 19 | High-torque legs, dual arms |
-| `unitree_g1` | Humanoid | 23 | Compact humanoid, head tracking |
-| `quadruped_12dof` | Quadruped | 12 | 4-foot stability, gait validation |
-| `spot` | Quadruped | 12 | Boston Dynamics Spot, field robot |
-| `franka_panda` | Arm | 7 | Research standard, torque-controlled |
-| `ur10` | Arm | 6 | Collaborative, ISO 10218 |
-| `ur10e_haas_cell` | Arm | 6 | CNC tending with exclusion zones |
-| `ur10e_cnc_tending` | Arm | 6 | CNC cycle state machine |
-| `kuka_iiwa14` | Arm | 7 | 14kg payload, end-effector configs |
-| `kinova_gen3` | Arm | 7 | Lightweight, assistive, 4kg payload |
-| `abb_gofa` | Arm | 6 | Collaborative, 5kg payload |
-| `shadow_hand` | Hand | 24 | Dexterous, per-finger force limits |
+**Humanoids (11)**
+
+| Profile | DOF | Platform |
+|---------|-----|----------|
+| `humanoid_28dof` | 28 | Generic full humanoid |
+| `unitree_h1` | 19 | Unitree H1 |
+| `unitree_g1` | 23 | Unitree G1 |
+| `fourier_gr1` | 39 | Fourier Intelligence GR-1 (NVIDIA GR00T) |
+| `tesla_optimus` | 28 | Tesla Optimus Gen 2 |
+| `figure_02` | 42 | Figure 02 (dexterous hands) |
+| `bd_atlas` | 28 | Boston Dynamics Atlas (Electric) |
+| `agility_digit` | 16 | Agility Robotics Digit |
+| `sanctuary_phoenix` | 24 | Sanctuary AI Phoenix |
+| `onex_neo` | 28 | 1X Technologies NEO |
+| `apptronik_apollo` | 30 | Apptronik Apollo |
+
+**Quadrupeds (5)**
+
+| Profile | DOF | Platform |
+|---------|-----|----------|
+| `quadruped_12dof` | 12 | Generic quadruped |
+| `spot` | 12 | Boston Dynamics Spot |
+| `unitree_go2` | 12 | Unitree Go2 |
+| `unitree_a1` | 12 | Unitree A1 |
+| `anybotics_anymal` | 12 | ANYbotics ANYmal |
+
+**Arms (7)**
+
+| Profile | DOF | Platform |
+|---------|-----|----------|
+| `franka_panda` | 7 | Franka Emika Panda |
+| `ur10` | 6 | Universal Robots UR10/UR10e |
+| `ur10e_haas_cell` | 6 | UR10e + Haas VF-2 CNC cell |
+| `ur10e_cnc_tending` | 6 | UR10e CNC tending cell |
+| `kuka_iiwa14` | 7 | KUKA LBR iiwa 14 |
+| `kinova_gen3` | 7 | Kinova Gen3 |
+| `abb_gofa` | 6 | ABB GoFa CRB 15000 |
+
+**Dexterous Hands (4)**
+
+| Profile | DOF | Platform |
+|---------|-----|----------|
+| `shadow_hand` | 24 | Shadow Dexterous Hand |
+| `allegro_hand` | 16 | Wonik Allegro Hand |
+| `leap_hand` | 16 | CMU LEAP Hand |
+| `psyonic_ability` | 6 | PSYONIC Ability Hand |
+
+**Mobile Manipulators (3)**
+
+| Profile | DOF | Platform |
+|---------|-----|----------|
+| `spot_with_arm` | 19 | Spot + 7-DOF arm |
+| `hello_stretch` | 4 | Hello Robot Stretch |
+| `pal_tiago` | 14 | PAL Robotics TIAGo |
 
 Each profile defines: joints (position/velocity/torque/acceleration limits), workspace (AABB), exclusion zones (AABB + sphere, conditional), proximity zones, collision pairs, stability config, locomotion config, environment config, end-effector configs, real-world margins, task envelopes, safe-stop profile.
 
@@ -252,7 +291,7 @@ invariant compliance  --profile-dir <DIR> --standard <NAME>
 | Validator (DoS caps, replay protection, force pipeline) | 40+ |
 | Signed audit logger (L1-L4) + corruption resilience | 20+ |
 | Watchdog (W1) + clock robustness | 20+ |
-| 17 robot profiles (6 morphologies) | 30+ |
+| 34 robot profiles (7 morphologies) | 50+ |
 | CLI (20 subcommands, stdin, batch, serve modes) | 179+ |
 | Embedded trust plane (axum, heartbeat, health) | 15+ |
 | Sensor integrity (signed + freshness + range) | 30+ |
@@ -260,17 +299,16 @@ invariant compliance  --profile-dir <DIR> --standard <NAME>
 | Multi-robot coordinator (separation, stale policy) | 34+ |
 | Threat scoring engine (6 detectors, overflow-safe) | 20+ |
 | Proof package generator + verifier | 15+ |
-| Dry-run campaign engine (14 scenarios, 27 injections) | 200+ |
+| Dry-run campaign engine (14 scenarios, 27 injections) | 350+ |
 | Adversarial fuzz framework (protocol, system, cognitive) | 101+ |
 | Trace evaluation (3 presets, rubrics, guardrails) | 64+ |
 | ROS 2 bridge (8 message types, Python node) | 5 |
 | Lean 4 formal spec (P1-P25, A1-A3, L1-L4) | N/A |
-| **Total** | **1,816+** |
+| **Total** | **2,023+** |
 
 ### 7.2 Test Quality
 
 - Zero `TODO`/`FIXME`/`HACK`/`unimplemented!()`/`todo!()` markers
-- Zero `#[allow(dead_code)]` or `#[allow(unused)]` suppressions
 - `cargo clippy -- -D warnings` clean
 - `cargo fmt --check` clean
 
@@ -312,7 +350,11 @@ All high-priority code quality issues have been fixed:
 
 ### 9.2 Can Be Done Without Hardware
 
-All previously-pending software tasks are now complete. No software-only work remains.
+All software-only tasks are complete:
+- 34 built-in profiles covering 7 morphologies (11 humanoids, 5 quadrupeds, 7 arms, 4 dexterous hands, 3 mobile manipulators, 4 adversarial)
+- 15M campaign config generator updated for all 34 profiles (272 configs = 34 profiles x 8 shards)
+- Dry-run validation exercised across all 34 profiles and all scenario types
+- 2,023+ tests, clippy clean, fmt clean
 
 ---
 
@@ -350,7 +392,7 @@ All previously-pending software tasks are now complete. No software-only work re
 # Build
 cargo build --release
 
-# Test (1,802+ tests)
+# Test (2,023+ tests)
 cargo test
 
 # Lint
