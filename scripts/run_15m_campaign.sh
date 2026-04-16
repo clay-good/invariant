@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Run the full 15M episode campaign across all profiles.
+# Run the full 15M episode campaign across all 34 profiles.
 #
-# This script runs the campaign in shards — one profile at a time —
+# This script runs the campaign in shards -- one profile at a time --
 # so that partial results are saved even if the pod is interrupted.
 #
 # Expected runtime: 4-8 hours on RunPod (depends on GPU/CPU).
@@ -17,23 +17,52 @@ OUTPUT_DIR="results/${CAMPAIGN_NAME}"
 STEPS_PER_EPISODE=200
 LOG_FILE="${OUTPUT_DIR}/campaign.log"
 
-# Episode distribution per profile (totals ~15M across 13 profiles).
+# Episode distribution per profile (totals ~15M across 34 profiles).
 # Weighted by deployment risk per spec-15m-campaign.md.
 declare -A EPISODES_PER_PROFILE=(
-    ["humanoid_28dof"]=1800000
-    ["unitree_h1"]=1200000
-    ["unitree_g1"]=1200000
-    ["ur10e_haas_cell"]=1500000
-    ["ur10e_cnc_tending"]=1200000
-    ["franka_panda"]=1200000
-    ["kuka_iiwa14"]=900000
-    ["kinova_gen3"]=750000
-    ["abb_gofa"]=750000
-    ["spot"]=1200000
-    ["quadruped_12dof"]=750000
-    ["shadow_hand"]=750000
-    ["ur10"]=600000
+    # Humanoids (11) -- highest priority
+    ["humanoid_28dof"]=900000
+    ["unitree_h1"]=750000
+    ["unitree_g1"]=600000
+    ["fourier_gr1"]=600000
+    ["tesla_optimus"]=600000
+    ["figure_02"]=600000
+    ["bd_atlas"]=600000
+    ["agility_digit"]=450000
+    ["sanctuary_phoenix"]=450000
+    ["onex_neo"]=450000
+    ["apptronik_apollo"]=450000
+    # Quadrupeds (5)
+    ["quadruped_12dof"]=450000
+    ["spot"]=600000
+    ["unitree_go2"]=450000
+    ["unitree_a1"]=300000
+    ["anybotics_anymal"]=300000
+    # Arms (7)
+    ["franka_panda"]=600000
+    ["ur10"]=450000
+    ["ur10e_haas_cell"]=600000
+    ["ur10e_cnc_tending"]=600000
+    ["kuka_iiwa14"]=450000
+    ["kinova_gen3"]=300000
+    ["abb_gofa"]=300000
+    # Dexterous hands (4)
+    ["shadow_hand"]=300000
+    ["allegro_hand"]=300000
+    ["leap_hand"]=150000
+    ["psyonic_ability"]=150000
+    # Mobile manipulators (3)
+    ["spot_with_arm"]=450000
+    ["hello_stretch"]=300000
+    ["pal_tiago"]=300000
+    # Adversarial (4)
+    ["adversarial_zero_margin"]=300000
+    ["adversarial_max_workspace"]=300000
+    ["adversarial_single_joint"]=300000
+    ["adversarial_max_joints"]=300000
 )
+
+NUM_PROFILES=${#EPISODES_PER_PROFILE[@]}
 
 mkdir -p "${OUTPUT_DIR}"
 
@@ -48,7 +77,7 @@ TOTAL_EPISODES=0
 for ep in "${EPISODES_PER_PROFILE[@]}"; do
     TOTAL_EPISODES=$((TOTAL_EPISODES + ep))
 done
-echo "Total episodes: ${TOTAL_EPISODES}" | tee -a "${LOG_FILE}"
+echo "Total episodes: ${TOTAL_EPISODES} across ${NUM_PROFILES} profiles" | tee -a "${LOG_FILE}"
 echo "" | tee -a "${LOG_FILE}"
 
 # Ensure binary exists.
@@ -97,8 +126,8 @@ echo "" | tee -a "${LOG_FILE}"
 echo "============================================================" | tee -a "${LOG_FILE}"
 echo "CAMPAIGN COMPLETE" | tee -a "${LOG_FILE}"
 echo "============================================================" | tee -a "${LOG_FILE}"
-echo "Profiles completed: ${COMPLETED}/13" | tee -a "${LOG_FILE}"
-echo "Profiles failed:    ${FAILED}/13" | tee -a "${LOG_FILE}"
+echo "Profiles completed: ${COMPLETED}/${NUM_PROFILES}" | tee -a "${LOG_FILE}"
+echo "Profiles failed:    ${FAILED}/${NUM_PROFILES}" | tee -a "${LOG_FILE}"
 echo "Results in:         ${OUTPUT_DIR}" | tee -a "${LOG_FILE}"
 echo "Finished:           $(date -u)" | tee -a "${LOG_FILE}"
 

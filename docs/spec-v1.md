@@ -1253,7 +1253,7 @@ With 10,000,000 validated decisions and 0 bypass events:
 | Validator orchestrator (+ DoS caps, replay) | Complete | 30+ tests |
 | Signed audit logger (L1-L4) | Complete | 20+ tests |
 | Watchdog (W1) | Complete | 20+ tests |
-| 10 robot profiles (humanoid, quadruped, Franka, UR10, UR10e×2, H1, G1, Spot, iiwa14) | Complete | 30+ tests |
+| 34 robot profiles (7 morphologies: humanoids, quadrupeds, arms, hands, mobile manipulators, adversarial) | Complete | 50+ tests |
 | CLI (validate, keygen, audit, verify, inspect, eval, diff, campaign, serve, ...) | Complete | 176+ tests |
 | Embedded trust plane (axum server + replay protection) | Complete | 15+ tests |
 | Key management + COSE hardening | Complete | 40+ tests |
@@ -1266,7 +1266,7 @@ With 10,000,000 validated decisions and 0 bypass events:
 | Threat scoring engine | Complete | 20+ tests |
 | Proof package generator + verifier | Complete | 15+ tests |
 | Sensor integrity (signed + freshness) | Complete | 15+ tests |
-| **Total** | **1,767 tests passing** | **Clippy clean** |
+| **Total** | **2,023+ tests passing** | **Clippy clean** |
 
 ### 8.2 Must Build for Isaac Sim Campaign
 
@@ -1274,7 +1274,7 @@ With 10,000,000 validated decisions and 0 bypass events:
 |-----------|----------|--------|-------------|
 | ~~**Isaac Lab bridge** (Python)~~ | P0 | ✅ Done (Step 69/85) | Python wrapper + Unix socket bridge in `invariant-sim::isaac::bridge` |
 | ~~**Campaign runner** (Python)~~ | P0 | ✅ Done (Step 84) | Dry-run campaign engine with seeds, traces, audit, reporting |
-| ~~**13+ new robot profiles**~~ | P0 | ✅ Done (10 profiles) | humanoid_28dof, franka_panda, quadruped_12dof, ur10, ur10e_haas_cell, ur10e_cnc_tending, unitree_h1, unitree_g1, spot, kuka_iiwa14 |
+| ~~**34 robot profiles**~~ | P0 | ✅ Done (34 profiles) | 11 humanoids, 5 quadrupeds, 7 arms, 4 hands, 3 mobile manipulators, 4 adversarial |
 | **Isaac Lab task environments** | P0 | Pending | Custom Isaac Lab envs for each scenario (requires GPU/RunPod) |
 | ~~**Stdin validation mode**~~ | P1 | ✅ Done (Step 59) | `invariant validate --stdin` reads JSON commands, writes verdicts |
 | ~~**New physics checks (P11-P20)**~~ | P1 | ✅ Done (Steps 43-52) | Force, grasp, payload, locomotion, terrain — all 10 checks |
@@ -1315,9 +1315,9 @@ Week 4: Polish
 
 Before spending any money on RunPod, verify locally:
 
-- [x] `cargo test` -- all 1,767+ tests pass
+- [x] `cargo test` -- all 2,023+ tests pass
 - [x] `cargo clippy` -- clean
-- [x] `invariant validate` works with all 10 built-in profiles
+- [x] `invariant validate` works with all 34 built-in profiles
 - [x] `invariant campaign --dry-run` completes with configurable episodes
 - [x] Dry-run traces can be loaded by `invariant eval`
 - [x] All 14 scenario types produce expected approval/rejection patterns
@@ -1338,7 +1338,7 @@ The campaign succeeds when ALL of the following are true:
 2. **Deterministic replay**: Any episode can be reproduced from its seed
 3. **Audit integrity**: 100% of audit chain hashes and signatures verify
 4. **Latency**: p99 validation latency < 1ms
-5. **Coverage**: All 17+ robot profiles tested with all applicable scenarios
+5. **Coverage**: All 34 robot profiles tested with all applicable scenarios
 6. **Adversarial resilience**: 0% bypass rate across 1.5M+ adversarial commands
 7. **Graceful degradation**: Missing sensor data handled correctly (skip or fail per config)
 8. **Watchdog reliability**: 100% of timeout events trigger safe-stop within configured window

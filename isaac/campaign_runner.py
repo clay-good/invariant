@@ -53,19 +53,46 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 BUILTIN_PROFILES = {
-    "ur10": "ur10.json",
-    "ur10e_haas_cell": "ur10e_haas_cell.json",
-    "ur10e_cnc_tending": "ur10e_cnc_tending.json",
-    "franka_panda": "franka_panda.json",
-    "kinova_gen3": "kinova_gen3.json",
-    "abb_gofa": "abb_gofa.json",
-    "kuka_iiwa14": "kuka_iiwa14.json",
+    # Humanoids (11)
     "humanoid_28dof": "humanoid_28dof.json",
     "unitree_h1": "unitree_h1.json",
     "unitree_g1": "unitree_g1.json",
-    "spot": "spot.json",
+    "fourier_gr1": "fourier_gr1.json",
+    "tesla_optimus": "tesla_optimus.json",
+    "figure_02": "figure_02.json",
+    "bd_atlas": "bd_atlas.json",
+    "agility_digit": "agility_digit.json",
+    "sanctuary_phoenix": "sanctuary_phoenix.json",
+    "onex_neo": "onex_neo.json",
+    "apptronik_apollo": "apptronik_apollo.json",
+    # Quadrupeds (5)
     "quadruped_12dof": "quadruped_12dof.json",
+    "spot": "spot.json",
+    "unitree_go2": "unitree_go2.json",
+    "unitree_a1": "unitree_a1.json",
+    "anybotics_anymal": "anybotics_anymal.json",
+    # Arms (7)
+    "franka_panda": "franka_panda.json",
+    "ur10": "ur10.json",
+    "ur10e_haas_cell": "ur10e_haas_cell.json",
+    "ur10e_cnc_tending": "ur10e_cnc_tending.json",
+    "kuka_iiwa14": "kuka_iiwa14.json",
+    "kinova_gen3": "kinova_gen3.json",
+    "abb_gofa": "abb_gofa.json",
+    # Dexterous hands (4)
     "shadow_hand": "shadow_hand.json",
+    "allegro_hand": "allegro_hand.json",
+    "leap_hand": "leap_hand.json",
+    "psyonic_ability": "psyonic_ability.json",
+    # Mobile manipulators (3)
+    "spot_with_arm": "spot_with_arm.json",
+    "hello_stretch": "hello_stretch.json",
+    "pal_tiago": "pal_tiago.json",
+    # Adversarial (4)
+    "adversarial_zero_margin": "adversarial_zero_margin.json",
+    "adversarial_max_workspace": "adversarial_max_workspace.json",
+    "adversarial_single_joint": "adversarial_single_joint.json",
+    "adversarial_max_joints": "adversarial_max_joints.json",
 }
 
 # Scenarios with their default weights and whether they are adversarial.
@@ -505,7 +532,7 @@ def main():
     parser.add_argument(
         "--all-profiles",
         action="store_true",
-        help="Run all 13 built-in profiles",
+        help="Run all 34 built-in profiles",
     )
     parser.add_argument(
         "--output",
