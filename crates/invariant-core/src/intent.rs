@@ -403,7 +403,7 @@ mod tests {
         let now = Utc::now();
         let diff = (expiry - now).num_seconds();
         assert!(
-            diff >= 8 && diff <= 12,
+            (8..=12).contains(&diff),
             "expiry should be ~10s from now, got {diff}s"
         );
     }

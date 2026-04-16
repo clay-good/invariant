@@ -188,6 +188,6 @@ mod tests {
 
     #[test]
     fn default_constructor_works() {
-        let _injector = NumericInjector::default();
+        let _injector = NumericInjector;
     }
 }

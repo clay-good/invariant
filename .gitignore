@@ -1,7 +1,7 @@
-# Rust build artifacts
+# Rust
 /target/
 
-# OS files
+# OS
 .DS_Store
 Thumbs.db
 
@@ -21,23 +21,23 @@ venv/
 .venv/
 *.egg-info/
 
-# Lean 4 build
+# Lean 4
 formal/build/
 formal/lake-packages/
 formal/.lake/
 
-# Claude Code / Codelicious tooling (local-only)
+# Claude Code / Codelicious (local-only)
 .claude/
 .codelicious/
 
-# Sensitive files (never commit)
+# Secrets (never commit)
 .env
 .env.*
 keys.json
 *.pem
 *.key
 
-# Test/runtime artifacts (generated at runtime)
+# Runtime artifacts
 *.jsonl
 safe-stop.json
 results/

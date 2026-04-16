@@ -2610,7 +2610,7 @@ mod tests {
         ];
         let any_env_check_fired = env_check_names
             .iter()
-            .any(|name| report.per_check.get(*name).map_or(false, |c| c.failed > 0));
+            .any(|name| report.per_check.get(*name).is_some_and(|c| c.failed > 0));
         assert!(
             any_env_check_fired,
             "at least one environment check (P21-P25) must record failures — \
@@ -2754,7 +2754,7 @@ mod tests {
         let report = run_dry_campaign(&config, None).expect("velocity overshoot must complete");
         let check = report.per_check.get("velocity_limits");
         assert!(
-            check.map_or(false, |c| c.failed > 0),
+            check.is_some_and(|c| c.failed > 0),
             "VelocityOvershoot must trigger velocity_limits check failures — \
              got checks: {:?}",
             report.per_check.keys().collect::<Vec<_>>()
@@ -2767,7 +2767,7 @@ mod tests {
         let report = run_dry_campaign(&config, None).expect("position violation must complete");
         let check = report.per_check.get("joint_limits");
         assert!(
-            check.map_or(false, |c| c.failed > 0),
+            check.is_some_and(|c| c.failed > 0),
             "PositionViolation must trigger joint_limits check failures — \
              got checks: {:?}",
             report.per_check.keys().collect::<Vec<_>>()
@@ -2780,7 +2780,7 @@ mod tests {
         let report = run_dry_campaign(&config, None).expect("workspace escape must complete");
         let check = report.per_check.get("workspace_bounds");
         assert!(
-            check.map_or(false, |c| c.failed > 0),
+            check.is_some_and(|c| c.failed > 0),
             "WorkspaceEscape must trigger workspace_bounds check failures — \
              got checks: {:?}",
             report.per_check.keys().collect::<Vec<_>>()
@@ -2793,7 +2793,7 @@ mod tests {
         let report = run_dry_campaign(&config, None).expect("delta time violation must complete");
         let check = report.per_check.get("delta_time");
         assert!(
-            check.map_or(false, |c| c.failed > 0),
+            check.is_some_and(|c| c.failed > 0),
             "DeltaTimeViolation must trigger delta_time check failures — \
              got checks: {:?}",
             report.per_check.keys().collect::<Vec<_>>()
@@ -2806,7 +2806,7 @@ mod tests {
         let report = run_dry_campaign(&config, None).expect("authority strip must complete");
         let check = report.per_check.get("authority");
         assert!(
-            check.map_or(false, |c| c.failed > 0),
+            check.is_some_and(|c| c.failed > 0),
             "AuthorityStrip must trigger authority check failures — \
              got checks: {:?}",
             report.per_check.keys().collect::<Vec<_>>()
@@ -2819,7 +2819,7 @@ mod tests {
         let report = run_dry_campaign(&config, None).expect("torque spike must complete");
         let check = report.per_check.get("torque_limits");
         assert!(
-            check.map_or(false, |c| c.failed > 0),
+            check.is_some_and(|c| c.failed > 0),
             "TorqueSpike must trigger torque_limits check failures — \
              got checks: {:?}",
             report.per_check.keys().collect::<Vec<_>>()
@@ -2833,7 +2833,7 @@ mod tests {
         let report = run_dry_campaign(&config, None).expect("authority escalation must complete");
         let check = report.per_check.get("authority");
         assert!(
-            check.map_or(false, |c| c.failed > 0),
+            check.is_some_and(|c| c.failed > 0),
             "AuthorityEscalation must trigger authority check failures"
         );
     }
@@ -2874,7 +2874,7 @@ mod tests {
                 run_dry_campaign(&config, None).unwrap_or_else(|e| panic!("{profile}: {e}"));
             let check = report.per_check.get("velocity_limits");
             assert!(
-                check.map_or(false, |c| c.failed > 0),
+                check.is_some_and(|c| c.failed > 0),
                 "{profile}: VelocityOvershoot must trigger velocity_limits failures"
             );
         }
@@ -2895,7 +2895,7 @@ mod tests {
                 run_dry_campaign(&config, None).unwrap_or_else(|e| panic!("{profile}: {e}"));
             let check = report.per_check.get("authority");
             assert!(
-                check.map_or(false, |c| c.failed > 0),
+                check.is_some_and(|c| c.failed > 0),
                 "{profile}: AuthorityStrip must trigger authority failures"
             );
         }
@@ -3176,7 +3176,7 @@ mod tests {
         let report = run_dry_campaign(&config, None).expect("must complete");
         let check = report.per_check.get("terrain_incline");
         assert!(
-            check.map_or(false, |c| c.failed > 0),
+            check.is_some_and(|c| c.failed > 0),
             "TerrainIncline must trigger terrain_incline failures, got checks: {:?}",
             report.per_check.keys().collect::<Vec<_>>()
         );
@@ -3188,7 +3188,7 @@ mod tests {
         let report = run_dry_campaign(&config, None).expect("must complete");
         let check = report.per_check.get("actuator_temperature");
         assert!(
-            check.map_or(false, |c| c.failed > 0),
+            check.is_some_and(|c| c.failed > 0),
             "TemperatureSpike must trigger actuator_temperature failures, got checks: {:?}",
             report.per_check.keys().collect::<Vec<_>>()
         );
@@ -3200,7 +3200,7 @@ mod tests {
         let report = run_dry_campaign(&config, None).expect("must complete");
         let check = report.per_check.get("battery_state");
         assert!(
-            check.map_or(false, |c| c.failed > 0),
+            check.is_some_and(|c| c.failed > 0),
             "BatteryDrain must trigger battery_state failures, got checks: {:?}",
             report.per_check.keys().collect::<Vec<_>>()
         );
@@ -3212,7 +3212,7 @@ mod tests {
         let report = run_dry_campaign(&config, None).expect("must complete");
         let check = report.per_check.get("communication_latency");
         assert!(
-            check.map_or(false, |c| c.failed > 0),
+            check.is_some_and(|c| c.failed > 0),
             "LatencySpike must trigger communication_latency failures, got checks: {:?}",
             report.per_check.keys().collect::<Vec<_>>()
         );
@@ -3224,7 +3224,7 @@ mod tests {
         let report = run_dry_campaign(&config, None).expect("must complete");
         let check = report.per_check.get("emergency_stop");
         assert!(
-            check.map_or(false, |c| c.failed > 0),
+            check.is_some_and(|c| c.failed > 0),
             "EStopEngage must trigger emergency_stop failures, got checks: {:?}",
             report.per_check.keys().collect::<Vec<_>>()
         );
@@ -3248,7 +3248,7 @@ mod tests {
                 run_dry_campaign(&config, None).unwrap_or_else(|e| panic!("{injection}: {e}"));
             let check = report.per_check.get(*expected_check);
             assert!(
-                check.map_or(false, |c| c.failed > 0),
+                check.is_some_and(|c| c.failed > 0),
                 "{injection} must trigger {expected_check} failures, got checks: {:?}",
                 report.per_check.keys().collect::<Vec<_>>()
             );
@@ -3272,7 +3272,7 @@ mod tests {
                 run_dry_campaign(&config, None).unwrap_or_else(|e| panic!("{injection}: {e}"));
             let check = report.per_check.get(*expected_check);
             assert!(
-                check.map_or(false, |c| c.failed > 0),
+                check.is_some_and(|c| c.failed > 0),
                 "{injection} must trigger {expected_check} failures, got checks: {:?}",
                 report.per_check.keys().collect::<Vec<_>>()
             );
@@ -3297,7 +3297,7 @@ mod tests {
                 run_dry_campaign(&config, None).unwrap_or_else(|e| panic!("{profile}: {e}"));
             let check = report.per_check.get("exclusion_zones");
             assert!(
-                check.map_or(false, |c| c.failed > 0),
+                check.is_some_and(|c| c.failed > 0),
                 "{profile}: ExclusionZone must trigger exclusion_zones failures, \
                  got checks: {:?}",
                 report.per_check.keys().collect::<Vec<_>>()
@@ -3314,7 +3314,7 @@ mod tests {
         let report = run_dry_campaign(&config, None).expect("must complete");
         let check = report.per_check.get("authority");
         assert!(
-            check.map_or(false, |c| c.failed > 0),
+            check.is_some_and(|c| c.failed > 0),
             "ChainForgery must trigger authority failures, got checks: {:?}",
             report.per_check.keys().collect::<Vec<_>>()
         );
@@ -3399,7 +3399,7 @@ mod tests {
         let report = run_dry_campaign(&config, None).expect("must complete");
         let check = report.per_check.get("self_collision");
         assert!(
-            check.map_or(false, |c| c.failed > 0),
+            check.is_some_and(|c| c.failed > 0),
             "SelfCollision must trigger self_collision check failures"
         );
     }
@@ -3425,7 +3425,7 @@ mod tests {
         let report = run_dry_campaign(&config, None).expect("must complete");
         let check = report.per_check.get("proximity_velocity");
         assert!(
-            check.map_or(false, |c| c.failed > 0),
+            check.is_some_and(|c| c.failed > 0),
             "ProximityOverspeed must trigger proximity_velocity check, got: {:?}",
             report.per_check.keys().collect::<Vec<_>>()
         );
@@ -3473,7 +3473,7 @@ mod tests {
         let report = run_dry_campaign(&config, None).expect("must complete");
         let check = report.per_check.get("ee_force_limits");
         assert!(
-            check.map_or(false, |c| c.failed > 0),
+            check.is_some_and(|c| c.failed > 0),
             "ForceOverload must trigger ee_force_limits check, got: {:?}",
             report.per_check.keys().collect::<Vec<_>>()
         );
@@ -3511,7 +3511,7 @@ mod tests {
         let report = run_dry_campaign(&config, None).expect("must complete");
         let check = report.per_check.get("grasp_force_limits");
         assert!(
-            check.map_or(false, |c| c.failed > 0),
+            check.is_some_and(|c| c.failed > 0),
             "GraspForceViolation must trigger grasp_force_limits check, got: {:?}",
             report.per_check.keys().collect::<Vec<_>>()
         );
@@ -3537,7 +3537,7 @@ mod tests {
         let report = run_dry_campaign(&config, None).expect("must complete");
         let check = report.per_check.get("payload_limits");
         assert!(
-            check.map_or(false, |c| c.failed > 0),
+            check.is_some_and(|c| c.failed > 0),
             "PayloadOverload must trigger payload_limits check, got: {:?}",
             report.per_check.keys().collect::<Vec<_>>()
         );
@@ -3631,7 +3631,7 @@ mod tests {
                 .unwrap_or_else(|e| panic!("{injection} on {profile}: {e}"));
             let check = report.per_check.get(expected_check);
             assert!(
-                check.map_or(false, |c| c.failed > 0),
+                check.is_some_and(|c| c.failed > 0),
                 "{injection} on {profile} must trigger '{expected_check}' failures, got: {:?}",
                 report.per_check.keys().collect::<Vec<_>>()
             );
@@ -3722,7 +3722,7 @@ mod tests {
         let config = config_with_injection("ur10e_cnc_tending", "Baseline", "ForceRateSpike", 5);
         let report = run_dry_campaign(&config, None).expect("force rate spike must complete");
         let check = report.per_check.get("force_rate_limits");
-        assert!(check.map_or(false, |c| c.failed > 0),
+        assert!(check.is_some_and(|c| c.failed > 0),
             "ForceRateSpike must trigger force_rate_limits check failures on ur10e_cnc_tending, got: {:?}",
             report.per_check.keys().collect::<Vec<_>>());
     }

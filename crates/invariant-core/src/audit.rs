@@ -697,6 +697,7 @@ mod tests {
         Operation::new(s).unwrap()
     }
 
+    #[allow(dead_code)]
     fn ops(ss: &[&str]) -> BTreeSet<Operation> {
         ss.iter().map(|s| op(s)).collect()
     }
@@ -707,6 +708,7 @@ mod tests {
         (sk, vk)
     }
 
+    #[allow(dead_code)]
     fn test_profile() -> RobotProfile {
         RobotProfile {
             name: "test_robot".into(),
@@ -744,11 +746,13 @@ mod tests {
         }
     }
 
+    #[allow(dead_code)]
     fn encode_chain(hops: &[crate::models::authority::SignedPca]) -> String {
         let json = serde_json::to_vec(hops).unwrap();
         STANDARD.encode(&json)
     }
 
+    #[allow(dead_code)]
     fn make_command(chain_b64: &str, required_ops: Vec<Operation>) -> Command {
         Command {
             timestamp: Utc::now(),
@@ -777,6 +781,7 @@ mod tests {
         }
     }
 
+    #[allow(dead_code)]
     fn make_approved_result(command: &Command) -> (SignedVerdict, ValidatorConfig, SigningKey) {
         let (pca_sk, pca_vk) = make_keypair();
         let (sign_sk, _sign_vk) = make_keypair();

@@ -278,7 +278,10 @@ mod tests {
         let candidate = make_trace(vec![make_step(0, true), make_step(1, false)]);
         let diffs = diff_traces(&baseline, &candidate);
         // Step 1 diverges on both approved and the per-check result.
-        assert!(diffs.len() >= 1, "expected at least one diff, got: {diffs:?}");
+        assert!(
+            !diffs.is_empty(),
+            "expected at least one diff, got: {diffs:?}"
+        );
         assert_eq!(diffs[0].step, 1);
         assert_eq!(diffs[0].field, "approved");
         assert_eq!(diffs[0].baseline, "true");
@@ -333,7 +336,11 @@ mod tests {
         assert!(candidate.steps[1].verdict.verdict.approved);
 
         let diffs = diff_traces(&baseline, &candidate);
-        assert_eq!(diffs.len(), 1, "expected one check_result diff, got: {diffs:?}");
+        assert_eq!(
+            diffs.len(),
+            1,
+            "expected one check_result diff, got: {diffs:?}"
+        );
         assert_eq!(diffs[0].step, 1);
         assert_eq!(diffs[0].field, "check_result");
         assert!(diffs[0].baseline.contains("authority=true"));

@@ -466,7 +466,7 @@ mod tests {
             nbf: None,
         };
         let signed = sign_pca(&claim, &sk).unwrap();
-        let encoded = encode_chain(&[signed.clone()]);
+        let encoded = encode_chain(std::slice::from_ref(&signed));
         let decoded: Vec<SignedPca> =
             serde_json::from_slice(&STANDARD.decode(&encoded).unwrap()).unwrap();
         assert_eq!(decoded.len(), 1);

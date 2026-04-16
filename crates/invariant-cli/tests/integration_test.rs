@@ -136,7 +136,7 @@ fn end_to_end_safe_command_approved() {
     let (sign_sk, _sign_vk) = (generate_keypair(&mut OsRng), ());
 
     let op = Operation::new("actuate:*").unwrap();
-    let chain_b64 = forge_chain(&pca_sk, &kid, &[op.clone()]);
+    let chain_b64 = forge_chain(&pca_sk, &kid, std::slice::from_ref(&op));
 
     let mut trusted = HashMap::new();
     trusted.insert(kid.clone(), pca_vk);
@@ -176,7 +176,7 @@ fn end_to_end_dangerous_command_rejected() {
     let sign_sk = generate_keypair(&mut OsRng);
 
     let op = Operation::new("actuate:*").unwrap();
-    let chain_b64 = forge_chain(&pca_sk, &kid, &[op.clone()]);
+    let chain_b64 = forge_chain(&pca_sk, &kid, std::slice::from_ref(&op));
 
     let mut trusted = HashMap::new();
     trusted.insert(kid, pca_vk);
@@ -238,7 +238,7 @@ fn end_to_end_authority_failure() {
     let op = Operation::new("actuate:*").unwrap();
     // Forge a chain with an unknown key.
     let rogue_sk = generate_keypair(&mut OsRng);
-    let chain_b64 = forge_chain(&rogue_sk, "rogue-key", &[op.clone()]);
+    let chain_b64 = forge_chain(&rogue_sk, "rogue-key", std::slice::from_ref(&op));
 
     let cmd = safe_command(&profile, &chain_b64, vec![op]);
     let result = config.validate(&cmd, Utc::now(), None).unwrap();
@@ -274,7 +274,7 @@ fn end_to_end_audit_round_trip() {
     let audit_sk = generate_keypair(&mut OsRng);
 
     let op = Operation::new("actuate:*").unwrap();
-    let chain_b64 = forge_chain(&pca_sk, &kid, &[op.clone()]);
+    let chain_b64 = forge_chain(&pca_sk, &kid, std::slice::from_ref(&op));
 
     let mut trusted = HashMap::new();
     trusted.insert(kid, pca_vk);
@@ -374,7 +374,7 @@ fn verdict_signature_independently_verifiable() {
     let sign_vk = sign_sk.verifying_key();
 
     let op = Operation::new("actuate:*").unwrap();
-    let chain_b64 = forge_chain(&pca_sk, &kid, &[op.clone()]);
+    let chain_b64 = forge_chain(&pca_sk, &kid, std::slice::from_ref(&op));
 
     let mut trusted = HashMap::new();
     trusted.insert(kid, pca_vk);

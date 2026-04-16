@@ -385,6 +385,6 @@ mod tests {
 
     #[test]
     fn default_constructor_works() {
-        let _prober = BoundaryProber::default();
+        let _prober = BoundaryProber;
     }
 }

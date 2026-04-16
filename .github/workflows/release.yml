@@ -4,32 +4,41 @@ on:
   push:
     tags: ["v*"]
 
+permissions:
+  contents: write
+
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  test:
-    name: Test before release
+  # ---------------------------------------------------------------------------
+  # Gate: run the full test + lint suite before publishing anything
+  # ---------------------------------------------------------------------------
+  preflight:
+    name: Preflight checks
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
-          components: clippy
+          components: clippy, rustfmt
       - uses: Swatinem/rust-cache@v2
-      - run: cargo test
-      - run: cargo clippy -- -D warnings
+      - run: cargo fmt --all --check
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+      - run: cargo test --workspace
 
-  publish:
+  # ---------------------------------------------------------------------------
+  # Publish crates to crates.io in dependency order
+  # ---------------------------------------------------------------------------
+  publish-crates:
     name: Publish to crates.io
-    needs: test
+    needs: preflight
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
 
-      # Publish in dependency order (leaves first)
       - name: Publish invariant-robotics-core
         run: cargo publish -p invariant-robotics-core --no-verify
         env:
@@ -69,15 +78,61 @@ jobs:
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
+  # ---------------------------------------------------------------------------
+  # Create a versioned GitHub Release from the pushed tag
+  # ---------------------------------------------------------------------------
   github-release:
-    name: Create GitHub Release
-    needs: publish
+    name: GitHub Release
+    needs: preflight
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     steps:
       - uses: actions/checkout@v4
-      - name: Create release
+        with:
+          fetch-depth: 0
+
+      - name: Create versioned release
         uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
+
+  # ---------------------------------------------------------------------------
+  # Move the `latest` tag and update/create the "latest" GitHub Release
+  # ---------------------------------------------------------------------------
+  latest-tag:
+    name: Update latest tag
+    needs: [publish-crates, github-release]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Move latest tag to current commit
+        run: |
+          git tag -f latest
+          git push origin latest --force
+
+      - name: Upsert latest GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${GITHUB_REF_NAME}"
+
+          BODY="$(cat <<EOF
+          **Latest stable release: ${VERSION}**
+
+          This release always points to the most recent versioned tag.
+          For release notes see the [${VERSION} release](https://github.com/${{ github.repository }}/releases/tag/${VERSION}).
+
+          \`\`\`sh
+          cargo install invariant-robotics
+          \`\`\`
+          EOF
+          )"
+
+          # Delete existing latest release if present, then recreate
+          gh release delete latest --yes 2>/dev/null || true
+          gh release create latest \
+            --title "Latest (${VERSION})" \
+            --notes "${BODY}" \
+            --prerelease=false

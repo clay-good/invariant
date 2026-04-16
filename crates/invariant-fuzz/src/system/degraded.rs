@@ -199,12 +199,12 @@ mod tests {
 
         let cmd = minimal_command("j1");
         let result = config.validate(&cmd, Utc::now(), None);
-        match result {
-            Ok(r) => assert!(
+        // Err(_) is also correct — fail-closed
+        if let Ok(r) = result {
+            assert!(
                 !r.signed_verdict.verdict.approved,
                 "FM5: no trusted keys → command must be rejected"
-            ),
-            Err(_) => {} // Also correct — fail-closed
+            );
         }
     }
 
@@ -238,10 +238,7 @@ mod tests {
         }
         fn flush(&mut self) -> std::io::Result<()> {
             if self.flushes_remaining == 0 {
-                return Err(std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    "ENOSPC: disk full",
-                ));
+                return Err(std::io::Error::other("ENOSPC: disk full"));
             }
             self.flushes_remaining -= 1;
             Ok(())
@@ -332,7 +329,7 @@ mod tests {
     fn fm7_audit_corruption_reference() {
         // SA6 tests verify: tampered entry, deleted entry, inserted entry.
         // All detected by verify_log hash chain + signature checks.
-        assert!(true, "FM7: see SA6 tests for audit corruption detection");
+        // FM7: see SA6 tests for audit corruption detection.
     }
 
     // ===================================================================
@@ -344,7 +341,7 @@ mod tests {
     #[test]
     fn fm8_profile_corruption_reference() {
         // SA4 tests verify: modified profile changes hash, single byte flip detected.
-        assert!(true, "FM8: see SA4 tests for profile corruption detection");
+        // FM8: see SA4 tests for profile corruption detection.
     }
 
     // ===================================================================
@@ -358,7 +355,7 @@ mod tests {
         // SA9 tests verify: expired PCA rejected, future PCA rejected,
         // clock skew does not bypass temporal checks.
         // Watchdog uses monotonic timestamps (caller-supplied) independent of wall clock.
-        assert!(true, "FM9: see SA9 tests for clock anomaly handling");
+        // FM9: see SA9 tests for clock anomaly handling.
     }
 
     // ===================================================================

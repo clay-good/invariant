@@ -1,4 +1,5 @@
 #[cfg(test)]
+#[allow(clippy::module_inception)]
 mod tests {
     use crate::models::command::{EndEffectorPosition, JointState};
     use crate::models::profile::{
@@ -26,7 +27,7 @@ mod tests {
             name: name.into(),
             position: pos,
             velocity: vel,
-            effort: effort,
+            effort,
         }
     }
 
@@ -1555,8 +1556,8 @@ mod tests {
             joints: vec![JointDefinition {
                 name: "j1".into(),
                 joint_type: JointType::Revolute,
-                min: -3.14,
-                max: 3.14,
+                min: -std::f64::consts::PI,
+                max: std::f64::consts::PI,
                 max_velocity: 5.0,
                 max_torque: 50.0,
                 max_acceleration: 25.0,

@@ -9,21 +9,35 @@
 **Cryptographic command-validation firewall for AI-controlled robots.**
 
 ```
-+----------------------------+     +----------------------------+     +-------------------+
-|     COGNITIVE DOMAIN       |     |    INVARIANT FIREWALL      |     |  KINETIC DOMAIN   |
-|                            |     |                            |     |                   |
-|   LLM reasoning            | --> |   Verify authority chain   | --> |   Joint motors    |
-|   RL policies              |     |   Check 25 physics rules   |     |   Actuators       |
-|   Prompt-injected inputs   |     |   Sign approved commands   |     |   End effectors   |
-|   Hallucinated commands    |     |   Reject + log denied      |     |   The real world  |
-|                            |     |   Watchdog heartbeat       |     |                   |
-|   Error rate: ~10%+        |     |   Error rate: 0%           |     |   Consequence:    |
-|   Stochastic               |     |   Deterministic            |     |   Irreversible    |
-+----------------------------+     +----------------------------+     +-------------------+
-        UNTRUSTED                       TRUST BOUNDARY                     PROTECTED
+  COGNITIVE DOMAIN            INVARIANT FIREWALL            KINETIC DOMAIN
+ +-----------------+     +------------------------+     +----------------+
+ | LLM reasoning   | --> | Verify authority chain | --> | Joint motors   |
+ | RL policies     |     | Check 25 physics rules |     | Actuators      |
+ | Prompt injection|     | Sign approved commands |     | End effectors  |
+ | Hallucinations  |     | Reject + log denied    |     | The real world |
+ |                 |     | Watchdog heartbeat     |     |                |
+ | Error: ~10%+    |     | Error: 0%              |     | Consequence:   |
+ | Stochastic      |     | Deterministic          |     | Irreversible   |
+ +-----------------+     +------------------------+     +----------------+
+      UNTRUSTED              TRUST BOUNDARY                 PROTECTED
 ```
 
 Nothing from the cognitive domain reaches the kinetic domain without Invariant's Ed25519 signature. The AI cannot bypass it. The AI cannot modify it. The motor controller verifies the signature before moving.
+
+---
+
+## Table of Contents
+
+- [Why This Matters](#why-this-matters)
+- [Quick Start](#quick-start)
+- [Safety Invariants](#safety-invariants)
+- [Architecture](#architecture)
+- [CLI Reference](#cli-reference)
+- [Integration](#integration)
+- [Threat Model](#threat-model)
+- [Example Deployment](#example-deployment)
+- [Building](#building)
+- [Contributing](#contributing)
 
 ---
 
@@ -45,23 +59,27 @@ Invariant is that something.
 ## Quick Start
 
 ```sh
-# Build
 cargo build --release
 
-# Run the automated five-minute demo (builds, generates keys, validates, campaigns)
+# Run the automated five-minute demo
 ./examples/demo.sh
 
-# Or do it manually:
+# Or manually:
 ./target/release/invariant keygen --kid my-robot --output keys.json
 ./target/release/invariant inspect --profile profiles/ur10.json
 ./target/release/invariant adversarial --profile profiles/ur10.json --key keys.json --suite all
 # Output: "540 attacks, 0 escapes. PASS"
-
-# Install from crates.io (puts `invariant` on your PATH)
-cargo install invariant-robotics
 ```
 
-### Five-Minute Demo Output
+Install from [crates.io](https://crates.io/crates/invariant-robotics):
+
+```sh
+cargo install invariant-robotics
+invariant --help
+```
+
+<details>
+<summary>Demo output</summary>
 
 ```
 [Step 3] Validating a SAFE command... APPROVED + signed
@@ -72,107 +90,139 @@ cargo install invariant-robotics
          500 approved, 500 rejected, 0 violations escaped.
 ```
 
+</details>
+
 ---
 
-## What It Does
-
-| Invariant | What It Checks | Catches |
-|-----------|---------------|---------|
-| **P1** Joint position limits | `min <= position <= max` | Over-extension, mechanical damage |
-| **P2** Velocity limits | `abs(vel) <= max_vel * scale` | Dangerous speed |
-| **P3** Torque limits | `abs(effort) <= max_torque` | Motor burnout |
-| **P4** Acceleration limits | `abs(accel) <= max_accel` | Jerk, instability |
-| **P5** Workspace boundary | End-effector inside bounds | Reaching outside safe area |
-| **P6** Exclusion zones | End-effector NOT in zone | CNC spindle collision, human collision |
-| **P7** Self-collision | Link distance > minimum | Self-damage |
-| **P8** Time step bounds | `0 < dt <= max_dt` | Stale commands |
-| **P9** Stability (ZMP) | CoM inside support polygon | Falling, tipping |
-| **P10** Proximity velocity scaling | Slow down near humans | ISO/TS 15066 compliance |
-| **P11-P14** Manipulation safety | Force, grasp, payload limits | Crushing, dropping |
-| **P15-P20** Locomotion safety | Speed, foot clearance, friction | Slip, trip, fall |
-| **P21** Terrain incline | IMU pitch/roll vs limits | Walking on unsafe slopes |
-| **P22** Actuator temperature | Per-joint temp vs max | Motor overheating |
-| **P23** Battery state | Charge % vs critical threshold | Power loss mid-task |
-| **P24** Communication latency | RTT vs max acceptable | Stale commands from lag |
-| **P25** Emergency stop | Hardware e-stop engaged | Always reject, cannot disable |
-| **A1-A3** Authority chain | Ed25519 PIC signatures | Confused deputy, privilege escalation |
-| **L1-L4** Audit integrity | Hash chain + signatures | Log tampering |
-| **M1** Signed actuation | Ed25519 on motor commands | Command injection |
-| **W1** Watchdog heartbeat | Safe-stop on timeout | Brain crash |
-| **ISO 15066** Force limits | Body-region force caps | Human contact injury |
+## Safety Invariants
 
 **34 invariants total.** All deterministic. All signed. All audited.
 
+### Physics Checks (P1--P25)
+
+| ID | Check | Catches |
+|----|-------|---------|
+| P1 | Joint position limits | Over-extension, mechanical damage |
+| P2 | Velocity limits | Dangerous speed |
+| P3 | Torque limits | Motor burnout |
+| P4 | Acceleration limits | Jerk, instability |
+| P5 | Workspace boundary | Reaching outside safe area |
+| P6 | Exclusion zones | CNC spindle collision, human collision |
+| P7 | Self-collision | Self-damage |
+| P8 | Time step bounds | Stale commands |
+| P9 | Stability (ZMP) | Falling, tipping |
+| P10 | Proximity velocity scaling | ISO/TS 15066 compliance |
+| P11--P14 | Manipulation safety | Crushing, dropping |
+| P15--P20 | Locomotion safety | Slip, trip, fall |
+| P21 | Terrain incline | Walking on unsafe slopes |
+| P22 | Actuator temperature | Motor overheating |
+| P23 | Battery state | Power loss mid-task |
+| P24 | Communication latency | Stale commands from lag |
+| P25 | Emergency stop | Always reject, cannot disable |
+
+### Authority, Audit, and Integrity
+
+| ID | Check | Guarantee |
+|----|-------|-----------|
+| A1--A3 | Ed25519 PIC authority chain | Cryptographic |
+| L1--L4 | Hash chain + signed audit log | Cryptographic |
+| M1 | Signed actuation commands | Cryptographic |
+| W1 | Watchdog heartbeat / safe-stop | Temporal + cryptographic |
+| ISO 15066 | Body-region force caps | Standards compliance |
+
 ---
 
-## Workspace
+## Architecture
+
+### Workspace
 
 | Crate | Description |
 |-------|-------------|
-| `invariant-core` | 25 physics checks (P1-P25), PIC authority chain, Ed25519 crypto, validator, signed sensor data, URDF parser + forward kinematics, watchdog, audit logger, differential validation, intent pipeline, incident response, key management |
-| `invariant-cli` | CLI binary with 19 subcommands |
-| `invariant-sim` | 13 simulation scenarios, 21 fault injectors, dry-run campaigns, Isaac Lab Unix socket bridge |
-| `invariant-eval` | Trace evaluation: 3 presets (safety, completeness, regression), rubrics, guardrails, differ |
-| `invariant-fuzz` | Adversarial testing: protocol attacks (PA1-PA15), authority attacks (AA1-AA10), system attacks (SA1-SA15), cognitive escape strategies (CE1-CE10) |
-| `invariant-coordinator` | Multi-robot coordination: separation monitoring, workspace partitioning |
-| `formal/` | Lean 4 formal specification of invariants with proof sketches (separate build) |
+| [`invariant-core`](crates/invariant-core/) | Physics checks (P1--P25), PIC authority chain, Ed25519 crypto, validator, URDF parser, watchdog, audit logger, differential validation, intent pipeline |
+| [`invariant-cli`](crates/invariant-cli/) | CLI binary with 19 subcommands |
+| [`invariant-sim`](crates/invariant-sim/) | 13 simulation scenarios, 21 fault injectors, dry-run campaigns, Isaac Lab bridge |
+| [`invariant-eval`](crates/invariant-eval/) | Trace evaluation: safety / completeness / regression presets, rubrics, guardrails, differ |
+| [`invariant-fuzz`](crates/invariant-fuzz/) | Adversarial testing: protocol (PA1--PA15), authority (AA1--AA10), system (SA1--SA15), cognitive (CE1--CE10) |
+| [`invariant-coordinator`](crates/invariant-coordinator/) | Multi-robot coordination: separation monitoring, workspace partitioning |
+| [`formal/`](formal/) | Lean 4 formal specification with proof sketches (separate build) |
 
-### Built-in Robot Profiles
+### Built-in Robot Profiles (23 total)
 
-| Profile | Joints | Type | Use Case |
-|---------|--------|------|----------|
-| `humanoid_28dof` | 28 | Revolute | Full humanoid with stability/ZMP, exclusion zones, proximity scaling |
-| `franka_panda` | 7 | Revolute | Franka Emika Panda arm with operator proximity zones |
-| `quadruped_12dof` | 12 | Revolute | Quadruped with stability polygon |
-| `ur10` | 6 | Revolute | Universal Robots UR10/UR10e generic |
-| `ur10e_haas_cell` | 6 | Revolute | UR10e + Haas VF-2 dev cell with spindle exclusion, operator proximity, gripper force limits |
-| `ur10e_cnc_tending` | 6 | Revolute | UR10e CNC tending cell with tighter workspace, floor zone, conditional spindle area, real-world Guardian margins |
+**Humanoids**
+
+| Profile | Joints | Platform |
+|---------|--------|----------|
+| `humanoid_28dof` | 28 | Generic full humanoid |
+| `unitree_h1` | 19 | Unitree H1 |
+| `unitree_g1` | 23 | Unitree G1 |
+| `fourier_gr1` | 39 | Fourier Intelligence GR-1 (NVIDIA GR00T) |
+| `tesla_optimus` | 28 | Tesla Optimus Gen 2 |
+| `figure_02` | 42 | Figure 02 (with dexterous hands) |
+| `bd_atlas` | 28 | Boston Dynamics Atlas (Electric) |
+| `agility_digit` | 16 | Agility Robotics Digit |
+| `sanctuary_phoenix` | 24 | Sanctuary AI Phoenix |
+| `onex_neo` | 28 | 1X Technologies NEO |
+| `apptronik_apollo` | 30 | Apptronik Apollo |
+
+**Quadrupeds**
+
+| Profile | Joints | Platform |
+|---------|--------|----------|
+| `quadruped_12dof` | 12 | Generic quadruped |
+| `spot` | 12 | Boston Dynamics Spot |
+| `unitree_go2` | 12 | Unitree Go2 |
+| `anybotics_anymal` | 12 | ANYbotics ANYmal |
+
+**Arms and Hands**
+
+| Profile | Joints | Platform |
+|---------|--------|----------|
+| `franka_panda` | 7 | Franka Emika Panda |
+| `ur10` | 6 | Universal Robots UR10/UR10e |
+| `ur10e_haas_cell` | 6 | UR10e + Haas VF-2 CNC cell |
+| `ur10e_cnc_tending` | 6 | UR10e CNC tending cell |
+| `kuka_iiwa14` | 7 | KUKA LBR iiwa 14 |
+| `kinova_gen3` | 7 | Kinova Gen3 |
+| `abb_gofa` | 6 | ABB GoFa CRB 15000 |
+| `shadow_hand` | 24 | Shadow Dexterous Hand |
 
 ---
 
 ## CLI Reference
 
 ```sh
-# FIRST: generate a key pair (required for all commands that sign/verify)
+# Key management
 invariant keygen --kid "my-robot-001" --output keys.json
 
-# Core validation
-invariant validate --profile profiles/ur10.json --command cmd.json --key keys.json
-invariant validate --profile profiles/ur10.json --command cmd.json --key keys.json --mode forge
+# Validation
+invariant validate   --profile profiles/ur10.json --command cmd.json --key keys.json
+invariant differential --profile profiles/ur10.json --command cmd.json --key keys.json --forge
 
-# Intent pipeline (generate signed PCA from templates or direct ops)
+# Intent pipeline
 invariant intent list-templates
 invariant intent template --template pick_and_place --param limb=left_arm --key keys.json
 invariant intent direct --op "actuate:left_arm:*" --key keys.json --duration 30
 
-# Simulation campaigns
+# Campaigns
 invariant campaign --config campaign.yaml --dry-run --key keys.json
 
 # Audit
-invariant audit show --log audit.jsonl --last 10
+invariant audit show   --log audit.jsonl --last 10
 invariant audit verify --log audit.jsonl --pubkey keys.json
-invariant verify --log audit.jsonl --pubkey keys.json  # alias for audit verify
-invariant audit-gaps --log audit.jsonl
+invariant audit-gaps   --log audit.jsonl
 
-# Inspection and analysis
-invariant inspect --profile profiles/ur10.json
-invariant eval trace.json --preset safety-check
-invariant diff trace_a.json trace_b.json
-invariant bench --profile profiles/ur10.json --key keys.json
+# Inspection
+invariant inspect    --profile profiles/ur10.json
+invariant eval       trace.json --preset safety-check
+invariant diff       trace_a.json trace_b.json
+invariant bench      --profile profiles/ur10.json --key keys.json
 invariant compliance --profile profiles/ur10.json --key keys.json
-
-# Differential validation (dual-channel, IEC 61508)
-invariant differential --profile profiles/ur10.json --command cmd.json --key keys.json --forge
 
 # Adversarial testing
 invariant adversarial --profile profiles/ur10.json --key keys.json --suite all
 
-# Server mode (embedded Trust Plane)
+# Server mode
 invariant serve --profile profiles/ur10.json --key keys.json --port 8080 --trust-plane
-
-# Full production Guardian mode
-invariant serve --profile profiles/ur10e_cnc_tending.json --key keys.json \
-  --threat-scoring --monitors --bridge --audit-log audit.jsonl --digital-twin
 
 # Profile management
 invariant profile init --name my_robot --joints 6 --output my_robot.json
@@ -182,10 +232,64 @@ invariant verify-self
 invariant verify-package --path proof-package/
 invariant transfer --sim-log sim.jsonl --real-log shadow.jsonl
 
-# Shell completions (bash, zsh, fish, elvish, powershell)
+# Shell completions
 invariant completions bash >> ~/.bashrc
-invariant completions zsh > ~/.zfunc/_invariant
+invariant completions zsh  > ~/.zfunc/_invariant
 invariant completions fish > ~/.config/fish/completions/invariant.fish
+```
+
+---
+
+## Integration
+
+```
+Isaac Lab  -->  [ Invariant ]  -->  Isaac Sim actuators
+ROS 2      -->  [ Invariant ]  -->  Hardware drivers
+Edge PC    -->  [ Invariant ]  -->  Cobot via safety relay
+Custom RL  -->  [ Invariant ]  -->  Any robot with a profile
+```
+
+### Library Embedding (Rust)
+
+```rust
+use invariant_robotics_core::validator::ValidatorConfig;
+
+let config = ValidatorConfig::new(profile, trusted_keys, signing_key, kid)?;
+let result = config.validate(&command, now, previous_joints)?;
+
+if result.signed_verdict.verdict.approved {
+    // Send result.actuation_command to motor controller
+}
+```
+
+### HTTP Server
+
+```sh
+invariant serve --profile profiles/ur10.json --key keys.json --port 8080
+```
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/validate` | POST | Submit command, get signed verdict + actuation command |
+| `/heartbeat` | POST | Watchdog keepalive |
+| `/health` | GET | Status, profile, watchdog state, uptime |
+
+### Unix Socket (Isaac Lab / Edge)
+
+```sh
+invariant serve --profile profiles/ur10e_cnc_tending.json --key keys.json --bridge
+```
+
+Listens on `/tmp/invariant.sock`. Python client:
+
+```python
+from invariant_isaac_bridge import InvariantBridge
+
+with InvariantBridge("/tmp/invariant.sock") as bridge:
+    verdict = bridge.validate(command_dict)
+    if verdict["approved"]:
+        env.apply_action(verdict["signed_verdict"])
+    bridge.heartbeat()
 ```
 
 ---
@@ -211,120 +315,56 @@ All 12 attacks tested end-to-end in `adversarial_test.rs`. Zero escapes.
 
 ---
 
-## Integration
+## Example Deployment
 
-```
-Isaac Lab   -->  [ Invariant ]  -->  Isaac Sim actuators
-ROS 2       -->  [ Invariant ]  -->  Hardware drivers
-Edge PC     -->  [ Invariant ]  -->  Cobot via safety relay
-Custom RL   -->  [ Invariant ]  -->  Any robot with a profile
-```
-
-### Embedded Server Mode
-
-```sh
-invariant serve --profile profiles/ur10.json --key keys.json --port 8080
-```
-
-Three endpoints:
-- `POST /validate` -- submit command, get signed verdict + actuation command
-- `POST /heartbeat` -- watchdog keepalive
-- `GET /health` -- status, profile, watchdog state, uptime, threat scoring, monitors, digital twin divergence, incident lockdown
-
-### Unix Socket Mode (Isaac Lab / Edge Deployment)
-
-```sh
-invariant serve --profile profiles/ur10e_cnc_tending.json --key keys.json --bridge
-```
-
-Invariant listens on `/tmp/invariant.sock`. The cognitive layer sends JSON commands, receives signed verdicts. Approved commands include a `SignedActuationCommand`. Rejected commands are logged and skipped.
-
-Python client (`crates/invariant-sim/invariant_isaac_bridge.py`):
-
-```python
-from invariant_isaac_bridge import InvariantBridge
-
-with InvariantBridge("/tmp/invariant.sock") as bridge:
-    verdict = bridge.validate(command_dict)
-    if verdict["approved"]:
-        env.apply_action(verdict["signed_verdict"])
-    bridge.heartbeat()
-```
-
-Isaac Lab CNC tending environment (`isaac/envs/`):
-
-```python
-from isaac.envs import CncTendingEnv
-
-env = CncTendingEnv(num_billets=15, connect_bridge=True)
-obs = env.reset()
-while not env.is_done:
-    obs, info = env.cycle_step()
-```
-
-### Library Embedding
-
-```rust
-use invariant_robotics_core::validator::ValidatorConfig;
-
-let config = ValidatorConfig::new(profile, trusted_keys, signing_key, kid)?;
-let result = config.validate(&command, now, previous_joints)?;
-
-if result.signed_verdict.verdict.approved {
-    // Send result.actuation_command to motor controller
-}
-```
-
----
-
-## Example Deployment: UR10e + Haas VF-2 CNC Tending Cell
-
-Invariant ships with a complete example deployment for a UR10e cobot tending a Haas VF-2 CNC mill -- including profiles, campaigns, Isaac Lab environment, and stress tests.
+<details>
+<summary>UR10e + Haas VF-2 CNC Tending Cell</summary>
 
 ```
 EDGE PC (Invariant)          UR10e                    HAAS VF-2
-├─ Safety firewall    ──►    ├─ 6-axis cobot   ──►   ├─ 12,000 RPM spindle
-├─ 25 physics checks         ├─ Schunk gripper        ├─ 30HP
-├─ Authority chain           ├─ Load/unload           ├─ M-code I/O
-├─ Heartbeat relay           └─ Safety input           └─ Cycle coordination
-├─ Audit logging
-└─ Incident response
++- Safety firewall    -->    +- 6-axis cobot   -->   +- 12,000 RPM spindle
++- 25 physics checks         +- Schunk gripper        +- 30HP
++- Authority chain           +- Load/unload           +- M-code I/O
++- Heartbeat relay           +- Safety input           +- Cycle coordination
++- Audit logging
++- Incident response
 ```
 
-**The CNC tending profile (`profiles/ur10e_cnc_tending.json`) defines:**
+The CNC tending profile (`profiles/ur10e_cnc_tending.json`) defines:
 - 6 joints with real UR10e hardware limits
-- Tighter workspace [-1.2, -0.8, 0.0] to [0.8, 0.8, 1.8] matching cell footprint
-- 4 exclusion zones: conditional spindle area, enclosure rear, floor zone, edge PC enclosure
+- Workspace `[-1.2, -0.8, 0.0]` to `[0.8, 0.8, 1.8]` matching cell footprint
+- 4 exclusion zones: conditional spindle area, enclosure rear, floor zone, edge PC
 - Door approach proximity zone (50% velocity scaling near humans)
-- Gripper force limits: 140N max force, 100N max grasp, 10kg max payload
-- Real-world Guardian margins: 5% position, 15% velocity, 10% torque, 10% acceleration
-- Environmental awareness: 5° tilt limit, 75°C actuator temp, 50ms latency bound, e-stop always active
-- 100ms watchdog timeout with controlled_crouch safe-stop
+- Gripper force limits: 140N max, 100N grasp, 10kg payload
+- Guardian margins: 5% position, 15% velocity, 10% torque, 10% acceleration
+- Environmental awareness: 5 deg tilt, 75 C actuator temp, 50ms latency, e-stop
+- 100ms watchdog with `controlled_crouch` safe-stop
 
 ### Stress Test Campaigns
 
 ```sh
-# Generate keys first
-./target/release/invariant keygen --kid ur10e-001 --output keys.json
+invariant keygen --kid ur10e-001 --output keys.json
 
-# Normal production cycles (100K commands — all should pass)
-./target/release/invariant campaign --config campaigns/ur10e_normal_ops.yaml --key keys.json --dry-run
+# Normal production cycles (100K commands)
+invariant campaign --config campaigns/ur10e_normal_ops.yaml --key keys.json --dry-run
 
-# Spindle safety (50K commands — arm tries to enter CNC enclosure)
-./target/release/invariant campaign --config campaigns/ur10e_spindle_safety.yaml --key keys.json --dry-run
+# Spindle safety (50K commands -- arm tries to enter CNC enclosure)
+invariant campaign --config campaigns/ur10e_spindle_safety.yaml --key keys.json --dry-run
 
-# Full adversarial (100K commands — every attack type)
-./target/release/invariant campaign --config campaigns/ur10e_adversarial.yaml --key keys.json --dry-run
+# Full adversarial (100K commands)
+invariant campaign --config campaigns/ur10e_adversarial.yaml --key keys.json --dry-run
 
-# Watchdog / brain crash (10K commands — edge PC crash simulation)
-./target/release/invariant campaign --config campaigns/ur10e_watchdog.yaml --key keys.json --dry-run
+# Watchdog / brain crash (10K commands)
+invariant campaign --config campaigns/ur10e_watchdog.yaml --key keys.json --dry-run
 
-# 1 MILLION command proof package (~50 seconds on MacBook)
-./target/release/invariant campaign --config campaigns/ur10e_million_proof.yaml --key keys.json --dry-run
+# 1M command proof package (~50s on MacBook)
+invariant campaign --config campaigns/ur10e_million_proof.yaml --key keys.json --dry-run
 
 # 1.06M episode CNC tending campaign
-./target/release/invariant campaign --config campaigns/cnc_tending_1m.yaml --key keys.json --dry-run
+invariant campaign --config campaigns/cnc_tending_1m.yaml --key keys.json --dry-run
 ```
+
+</details>
 
 ---
 
@@ -332,23 +372,10 @@ EDGE PC (Invariant)          UR10e                    HAAS VF-2
 
 ```sh
 cargo build --release
-cargo test                    # ~2000 tests (unit + integration + doc-tests)
-python3 -m pytest isaac/tests # Python tests (unit + e2e bridge)
+cargo test                    # ~2000 tests
 cargo clippy -- -D warnings   # zero warnings
+python3 -m pytest isaac/tests # Python tests
 ./examples/demo.sh            # five-minute proof
-```
-
-### Install from crates.io
-
-```sh
-cargo install invariant-robotics
-invariant --help
-```
-
-Or from source:
-
-```sh
-cargo install --path crates/invariant-cli
 ```
 
 ---
@@ -363,4 +390,4 @@ To report a vulnerability, see [SECURITY.md](SECURITY.md).
 
 ## License
 
-This project is licensed under the [MIT License](LICENSE).
+[MIT](LICENSE)

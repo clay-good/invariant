@@ -665,13 +665,13 @@ mod tests {
     fn identity_transform() {
         let tf = Transform::default();
         let m = tf.to_matrix();
-        for i in 0..4 {
-            for j in 0..4 {
+        for (i, row) in m.iter().enumerate() {
+            for (j, &val) in row.iter().enumerate() {
                 let expected = if i == j { 1.0 } else { 0.0 };
                 assert!(
-                    (m[i][j] - expected).abs() < 1e-12,
+                    (val - expected).abs() < 1e-12,
                     "identity[{i}][{j}] = {} (expected {expected})",
-                    m[i][j]
+                    val
                 );
             }
         }

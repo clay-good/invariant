@@ -257,7 +257,7 @@ mod tests {
 
     #[test]
     fn default_constructor_works() {
-        let _gen = CommandGenerator::default();
+        let _gen = CommandGenerator;
     }
 
     #[test]

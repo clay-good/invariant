@@ -1144,7 +1144,7 @@ scenarios:
             .sum();
         // Allow 5% tolerance due to integer rounding across 17 profiles × 8 shards
         assert!(
-            total >= 14_000_000 && total <= 16_000_000,
+            (14_000_000..=16_000_000).contains(&total),
             "total episodes {total} should be ~15M"
         );
     }

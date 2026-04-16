@@ -400,6 +400,7 @@ mod tests {
     use crate::monitors::MonitorSeverity;
     use std::sync::Arc;
 
+    #[allow(dead_code)]
     fn make_responder() -> (IncidentResponder, Arc<MemoryAlertSink>) {
         let sink = Arc::new(MemoryAlertSink::new());
         // We need to put an owned Box in the responder. Create a second

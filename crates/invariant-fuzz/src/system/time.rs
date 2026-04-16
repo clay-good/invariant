@@ -122,7 +122,7 @@ mod tests {
         trusted.insert(kid.to_string(), sk.verifying_key());
 
         // Real time: expired.
-        let result = verify_chain(&[signed.clone()], &trusted, Utc::now());
+        let result = verify_chain(std::slice::from_ref(&signed), &trusted, Utc::now());
         assert!(result.is_err(), "SA9: expired PCA rejected at real time");
 
         // Simulated backward skew: pass a time 2 hours in the past.

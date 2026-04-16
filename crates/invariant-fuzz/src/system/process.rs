@@ -88,6 +88,6 @@ mod tests {
         //
         // Spot check: none of the core validation modules use std::env.
         // (Verified by grep during code review; this test documents the assertion.)
-        assert!(true, "SA10: no sensitive env var reads in validation path");
+        // SA10: no sensitive env var reads in validation path — assertion verified by code review.
     }
 }

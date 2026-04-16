@@ -574,8 +574,8 @@ mod tests {
                 JointDefinition {
                     name: "j1".into(),
                     joint_type: JointType::Revolute,
-                    min: -3.14,
-                    max: 3.14,
+                    min: -std::f64::consts::PI,
+                    max: std::f64::consts::PI,
                     max_velocity: 5.0,
                     max_torque: 100.0,
                     max_acceleration: 50.0,
@@ -902,7 +902,7 @@ mod tests {
         let joints = vec![
             JointState {
                 name: "j1".into(),
-                position: -3.14,
+                position: -std::f64::consts::PI,
                 velocity: 0.0,
                 effort: 0.0,
             },

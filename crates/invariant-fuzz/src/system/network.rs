@@ -57,12 +57,12 @@ mod tests {
         let config = setup_validator();
         let cmd = minimal_command("test");
         let result = config.validate(&cmd, Utc::now(), None);
-        match result {
-            Ok(r) => assert!(
+        // Validator error = also a rejection, which is correct
+        if let Ok(r) = result {
+            assert!(
                 !r.signed_verdict.verdict.approved,
                 "SA13: command without PCA chain must be rejected"
-            ),
-            Err(_) => {} // Validator error = also a rejection, which is correct
+            );
         }
     }
 
@@ -74,12 +74,12 @@ mod tests {
         cmd.authority.pca_chain = "AAAA_this_is_garbage_base64_that_decodes_to_nonsense".into();
 
         let result = config.validate(&cmd, Utc::now(), None);
-        match result {
-            Ok(r) => assert!(
+        // Also correct — validator error
+        if let Ok(r) = result {
+            assert!(
                 !r.signed_verdict.verdict.approved,
                 "SA13: garbage PCA chain must be rejected"
-            ),
-            Err(_) => {} // Also correct — validator error
+            );
         }
     }
 

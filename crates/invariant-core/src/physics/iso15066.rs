@@ -105,9 +105,7 @@ fn is_human_critical(zone: &ProximityZone) -> bool {
 /// Check if a point is inside a proximity zone.
 fn point_in_proximity_zone(zone: &ProximityZone, point: &[f64; 3]) -> bool {
     match zone {
-        ProximityZone::Sphere {
-            center, radius, ..
-        } => point_in_sphere(point, center, *radius),
+        ProximityZone::Sphere { center, radius, .. } => point_in_sphere(point, center, *radius),
     }
 }
 
@@ -457,7 +455,10 @@ mod tests {
         let forces: Vec<EndEffectorForce> = vec![]; // no force data
 
         let result = check_iso15066_force_limits(&positions, &forces, &zones, None);
-        assert!(!result.passed, "missing force data in human zone must be rejected");
+        assert!(
+            !result.passed,
+            "missing force data in human zone must be rejected"
+        );
     }
 
     #[test]
@@ -468,7 +469,10 @@ mod tests {
         let forces: Vec<EndEffectorForce> = vec![];
 
         let result = check_iso15066_force_limits(&positions, &forces, &zones, None);
-        assert!(result.passed, "EE outside zone should pass without force data");
+        assert!(
+            result.passed,
+            "EE outside zone should pass without force data"
+        );
     }
 
     // -- NaN force inside critical zone: violation --

@@ -524,7 +524,7 @@ mod tests {
 
         // In forge mode we don't need a pre-signed chain — the command just
         // needs a required_ops list.
-        let op = Operation::new(&format!("actuate:{profile_name}:{joint_name}:position")).unwrap();
+        let op = Operation::new(format!("actuate:{profile_name}:{joint_name}:position")).unwrap();
         use invariant_core::models::command::EndEffectorPosition;
         let cmd = Command {
             timestamp: chrono::Utc::now(),

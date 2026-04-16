@@ -1417,9 +1417,7 @@ mod tests {
         );
         assert_eq!(report.findings[0].severity, Severity::Error);
         assert!(
-            report.findings[0]
-                .message
-                .contains("both traces are empty"),
+            report.findings[0].message.contains("both traces are empty"),
             "unexpected message: {}",
             report.findings[0].message
         );

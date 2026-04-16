@@ -915,22 +915,28 @@ mod tests {
 
     #[test]
     fn config_validate_rejects_zero_separation() {
-        let mut config = CoordinationConfig::default();
-        config.min_separation_m = 0.0;
+        let config = CoordinationConfig {
+            min_separation_m: 0.0,
+            ..Default::default()
+        };
         assert!(config.validate().is_err());
     }
 
     #[test]
     fn config_validate_rejects_negative_separation() {
-        let mut config = CoordinationConfig::default();
-        config.min_separation_m = -1.0;
+        let config = CoordinationConfig {
+            min_separation_m: -1.0,
+            ..Default::default()
+        };
         assert!(config.validate().is_err());
     }
 
     #[test]
     fn config_validate_rejects_nan_separation() {
-        let mut config = CoordinationConfig::default();
-        config.min_separation_m = f64::NAN;
+        let config = CoordinationConfig {
+            min_separation_m: f64::NAN,
+            ..Default::default()
+        };
         assert!(config.validate().is_err());
     }
 
@@ -973,8 +979,10 @@ mod tests {
 
     #[test]
     fn config_validate_rejects_zero_max_robots() {
-        let mut config = CoordinationConfig::default();
-        config.max_robots = 0;
+        let config = CoordinationConfig {
+            max_robots: 0,
+            ..Default::default()
+        };
         assert!(config.validate().is_err(), "max_robots=0 must be rejected");
     }
 
@@ -985,15 +993,20 @@ mod tests {
         let now = Utc::now();
 
         // Create a robot with more than MAX_EE_PER_ROBOT (64) end-effectors.
-        let many_ees: Vec<(&str, [f64; 3])> = (0..70)
-            .map(|_| ("ee", [0.0, 0.0, 1.0]))
-            .collect();
+        let many_ees: Vec<(&str, [f64; 3])> = (0..70).map(|_| ("ee", [0.0, 0.0, 1.0])).collect();
         let state = robot_state("r1", &many_ees, now);
         let result = monitor.update_state(state).unwrap();
         assert_eq!(result.truncated_ee, 6, "expected 70 - 64 = 6 truncated EEs");
 
         // Verify the stored state was actually truncated.
-        assert_eq!(monitor.get_state("r1").unwrap().end_effector_positions.len(), 64);
+        assert_eq!(
+            monitor
+                .get_state("r1")
+                .unwrap()
+                .end_effector_positions
+                .len(),
+            64
+        );
     }
 
     #[test]

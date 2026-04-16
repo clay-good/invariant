@@ -538,7 +538,7 @@ mod tests {
 
     #[test]
     fn config_from_margins() {
-        let cfg = DivergenceConfig::from_margins(0.05, 0.15, 6.28);
+        let cfg = DivergenceConfig::from_margins(0.05, 0.15, std::f64::consts::TAU);
         assert!((cfg.position_alert_threshold - 0.314).abs() < 0.001);
         assert!(cfg.position_reject_threshold > cfg.position_alert_threshold);
     }
