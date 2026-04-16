@@ -1451,7 +1451,7 @@ mod tests {
         }
     }
 
-    // ── Audit log corruption resilience (Step 99) ─────────────────────
+    // ── Audit log corruption resilience ─────────────────────
 
     #[test]
     fn open_file_with_truncated_last_line_returns_error() {

@@ -85,8 +85,8 @@ pub struct ServeArgs {
     /// is disabled.
     #[arg(long, value_name = "AUDIT_FILE")]
     pub audit_log: Option<PathBuf>,
-    /// Enable real-time digital twin divergence detection (Section 18.3,
-    /// Step 82). Compares commanded joint states against observed sensor
+    /// Enable real-time digital twin divergence detection (Section 18.3).
+    /// Compares commanded joint states against observed sensor
     /// feedback to detect sim-to-real divergence. Feeds critical divergence
     /// into the incident response pipeline. Requires --monitors for
     /// automatic lockdown on catastrophic divergence.
@@ -110,7 +110,7 @@ struct AppState {
     auth_token: Option<String>,
     /// File path for atomic safe-stop command writes.
     safe_stop_path: PathBuf,
-    /// Whether threat scoring is enabled (Step 68/75).
+    /// Whether threat scoring is enabled.
     threat_scoring_enabled: bool,
     /// Incident responder for lockdown on critical monitor failures (Section 10.6).
     incident: Option<RwLock<invariant_core::incident::IncidentResponder>>,
@@ -118,12 +118,12 @@ struct AppState {
     /// decision is logged. Wrapped in std::sync::Mutex because AuditLogger
     /// takes &mut self.
     audit: Option<std::sync::Mutex<invariant_core::audit::AuditLogger<std::fs::File>>>,
-    /// Real-time digital twin divergence detector (Section 18.3, Step 83).
+    /// Real-time digital twin divergence detector (Section 18.3).
     /// Compares commanded joint states against the previous command's joints
     /// to track divergence over time. Wrapped in std::sync::Mutex for
     /// mutable access from the validate handler.
     digital_twin: Option<std::sync::Mutex<DigitalTwinState>>,
-    /// Last seen command sequence number for replay protection (Step 106).
+    /// Last seen command sequence number for replay protection.
     /// Rejects any command whose sequence is not strictly greater than the
     /// last accepted sequence, preventing replay of previously-approved
     /// signed actuation commands.
@@ -198,16 +198,16 @@ struct HealthResponse {
     /// Whether the watchdog background task appears alive (None when watchdog
     /// is disabled).
     watchdog_alive: Option<bool>,
-    /// Whether continuous adversarial monitoring is active (Step 68/75).
+    /// Whether continuous adversarial monitoring is active.
     threat_scoring: bool,
-    /// Whether runtime integrity monitors are active (Step 78).
+    /// Whether runtime integrity monitors are active.
     monitors_enabled: bool,
-    /// Whether the system is in incident lockdown (Step 78).
+    /// Whether the system is in incident lockdown.
     /// When true, all /validate requests return 503.
     incident_locked_down: bool,
     /// Number of incidents recorded in the current session.
     incident_count: usize,
-    /// Whether real-time digital twin divergence detection is active (Step 83).
+    /// Whether real-time digital twin divergence detection is active.
     digital_twin_enabled: bool,
     /// Current divergence level (null when digital twin is disabled).
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -308,7 +308,7 @@ async fn handle_validate(
 
     let mut cmd = req.command;
 
-    // Sequence replay protection (Step 106): reject commands whose sequence
+    // Sequence replay protection: reject commands whose sequence
     // is not strictly greater than the last accepted sequence. This prevents
     // replay of previously-approved signed actuation commands.
     {
@@ -390,7 +390,7 @@ async fn handle_validate(
 
     match result {
         Ok(result) => {
-            // Log to audit trail if configured (Step 80).
+            // Log to audit trail if configured.
             if let (Some(ref audit_mutex), Some(ref audit_cmd)) = (&state.audit, &cmd_for_audit) {
                 if let Ok(mut logger) = audit_mutex.lock() {
                     if let Err(e) = logger.log(audit_cmd, &result.signed_verdict) {
@@ -399,7 +399,7 @@ async fn handle_validate(
                 }
             }
 
-            // Digital twin divergence detection (Step 83).
+            // Digital twin divergence detection.
             // Compare the current command's joints against the previous
             // command's joints. In Shadow/Guardian mode with real sensor
             // feedback, the "observed" would come from signed sensor
@@ -681,7 +681,7 @@ async fn run_server(args: &ServeArgs) -> i32 {
         }
     };
 
-    // Optionally enable continuous adversarial monitoring (Step 68/75).
+    // Optionally enable continuous adversarial monitoring.
     let config = if args.threat_scoring {
         eprintln!("info: threat scoring enabled (Section 11.3)");
         config.with_threat_scorer(invariant_core::threat::ThreatScorer::with_defaults())
@@ -711,7 +711,7 @@ async fn run_server(args: &ServeArgs) -> i32 {
         None
     };
 
-    // Optionally create incident responder + monitors (Step 78).
+    // Optionally create incident responder + monitors.
     let incident = if args.monitors {
         eprintln!("info: runtime monitors enabled (Section 10.5/10.6)");
         Some(RwLock::new(
@@ -723,7 +723,7 @@ async fn run_server(args: &ServeArgs) -> i32 {
         None
     };
 
-    // Optionally create audit logger (Step 80).
+    // Optionally create audit logger.
     let audit = if let Some(ref audit_path) = args.audit_log {
         let file = match std::fs::OpenOptions::new()
             .create(true)
@@ -745,7 +745,7 @@ async fn run_server(args: &ServeArgs) -> i32 {
         None
     };
 
-    // Optionally create digital twin divergence detector (Step 83).
+    // Optionally create digital twin divergence detector.
     let digital_twin = if args.digital_twin {
         eprintln!("info: digital twin divergence detection enabled (Section 18.3)");
         Some(std::sync::Mutex::new(DigitalTwinState {
@@ -844,7 +844,7 @@ async fn run_server(args: &ServeArgs) -> i32 {
         });
     }
 
-    // Optionally spawn the runtime integrity monitor background task (Step 78).
+    // Optionally spawn the runtime integrity monitor background task.
     if args.monitors {
         let monitor_state = Arc::clone(&state);
         let profile_path = args.profile.clone();
@@ -902,7 +902,7 @@ async fn run_server(args: &ServeArgs) -> i32 {
         });
     }
 
-    // Optionally spawn the Isaac Lab Unix socket bridge alongside HTTP (Step 69/75).
+    // Optionally spawn the Isaac Lab Unix socket bridge alongside HTTP.
     let bridge_socket = args.bridge_socket.clone().unwrap_or_else(|| {
         let mut p = std::env::temp_dir();
         p.push("invariant.sock");
@@ -1271,7 +1271,7 @@ mod tests {
         assert!(resp.status().is_client_error());
     }
 
-    // --- Sequence replay protection (Step 106) ---
+    // --- Sequence replay protection ---
 
     #[tokio::test]
     async fn replay_same_sequence_rejected() {

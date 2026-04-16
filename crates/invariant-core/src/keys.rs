@@ -271,7 +271,7 @@ impl KeyFile {
 }
 
 // ---------------------------------------------------------------------------
-// KeyStore trait — abstract key storage (Step 32)
+// KeyStore trait — abstract key storage
 // ---------------------------------------------------------------------------
 
 /// Errors from key store operations.
@@ -306,7 +306,7 @@ pub enum KeyStoreError {
     },
 }
 
-/// Abstract key storage backend (Section 8.3, Step 32).
+/// Abstract key storage backend (Section 8.3).
 ///
 /// Implementations provide Ed25519 signing and public key retrieval.
 /// The private key may reside in memory (file backend), in the OS keyring
@@ -749,7 +749,7 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
-    // KeyStore trait tests (Step 32)
+    // KeyStore trait tests
     // -----------------------------------------------------------------------
 
     #[test]

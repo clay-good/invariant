@@ -1,4 +1,4 @@
-// ISO/TS 15066 proximity-triggered force limiting (Step 45).
+// ISO/TS 15066 proximity-triggered force limiting.
 //
 // When an end-effector is inside a proximity zone tagged as human-critical,
 // the maximum allowable force is clamped to ISO/TS 15066 body-region limits.
@@ -529,7 +529,7 @@ mod tests {
         }));
     }
 
-    // ── Step 104: ISO 15066 NaN zone center fail-closed tests ─────────
+    // ── ISO 15066 NaN zone center fail-closed tests ─────────
 
     #[test]
     fn point_in_sphere_nan_center_returns_true() {

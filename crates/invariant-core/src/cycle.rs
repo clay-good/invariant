@@ -1,4 +1,4 @@
-// CNC tending cycle state machine (Step 67).
+// CNC tending cycle state machine.
 //
 // Models the complete load/unload cycle from CNC cell specification Section 5.
 // The coordinator manages:
@@ -622,7 +622,7 @@ mod tests {
         ]
     }
 
-    // ── Reset re-arms spindle zone (Step 100) ─────────────────────────
+    // ── Reset re-arms spindle zone ─────────────────────────
 
     #[test]
     fn reset_from_mid_cycle_state_is_rejected() {

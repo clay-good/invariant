@@ -3728,7 +3728,7 @@ mod tests {
     }
 
     // =========================================================================
-    // Step 4: 15M Campaign dry-run validation — all 22 scenarios × key profiles
+    // 15M Campaign dry-run validation — all 22 scenarios × key profiles
     // =========================================================================
 
     /// Run every scenario against a representative profile and verify:

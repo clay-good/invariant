@@ -12,7 +12,7 @@ pub mod key_file;
     about = "Cryptographic command-validation firewall for AI-controlled robots"
 )]
 struct Cli {
-    /// Verify the integrity of the Invariant binary itself (Section 10.3, Step 33).
+    /// Verify the integrity of the Invariant binary itself (Section 10.3).
     #[arg(long)]
     verify_self: bool,
 

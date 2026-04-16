@@ -1,4 +1,4 @@
-// Proof package generation (Section 20, Step 70).
+// Proof package generation (Section 20).
 //
 // Assembles a self-contained proof package directory from campaign results,
 // adversarial reports, audit logs, and compliance mappings. The package is
@@ -732,7 +732,7 @@ mod tests {
         assert_eq!(back.summary.total_commands, 100);
     }
 
-    // ── Path traversal tests (Step 101) ───────────────────────────────
+    // ── Path traversal tests ───────────────────────────────
 
     #[test]
     fn validate_filename_rejects_path_traversal() {

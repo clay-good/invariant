@@ -33,35 +33,35 @@ pub mod audit;
 /// Re-exports the `models::authority` data types so that
 /// `invariant_core::authority::Pca` works without ambiguity (P1-5).
 pub mod authority;
-/// CNC tending cycle state machine (Step 67).
+/// CNC tending cycle state machine.
 pub mod cycle;
-/// Differential validation: dual-instance verdict comparison (Step 37).
+/// Differential validation: dual-instance verdict comparison.
 pub mod differential;
 /// Real-time digital twin divergence detection (Section 18.3).
 pub mod digital_twin;
-/// Built-in standard task envelopes (Section 17.3, Step 76).
+/// Built-in standard task envelopes (Section 17.3).
 pub mod envelopes;
-/// Incident response automation (Section 10.6, Step 36).
+/// Incident response automation (Section 10.6).
 pub mod incident;
-/// Intent-to-operations pipeline (Section 15, Step 53).
+/// Intent-to-operations pipeline (Section 15).
 pub mod intent;
-/// Key file management and abstract key storage (Step 32).
+/// Key file management and abstract key storage.
 pub mod keys;
 /// Core data models: command, verdict, audit, profile, trace, authority, actuation.
 pub mod models;
-/// Runtime integrity monitors (Section 10.5, Step 34).
+/// Runtime integrity monitors (Section 10.5).
 pub mod monitors;
 /// Physics safety checks (P1–P25).
 pub mod physics;
 /// Built-in robot profile library embedded at compile time.
 pub mod profiles;
-/// Proof package generation (Section 20, Step 70).
+/// Proof package generation (Section 20).
 pub mod proof_package;
-/// Audit log replication and Merkle root witness (Section 10.4, Step 35).
+/// Audit log replication and Merkle root witness (Section 10.4).
 pub mod replication;
-/// Signed sensor data for zero-trust sensor integrity (Step 64).
+/// Signed sensor data for zero-trust sensor integrity.
 pub mod sensor;
-/// Runtime threat scoring engine (Section 11.3, Step 68).
+/// Runtime threat scoring engine (Section 11.3).
 pub mod threat;
 /// URDF parser and forward kinematics solver for zero-trust self-collision.
 pub mod urdf;

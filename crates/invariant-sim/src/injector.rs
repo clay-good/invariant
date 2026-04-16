@@ -55,14 +55,14 @@ pub enum InjectionType {
     ReplayAttack,
     /// Replace numeric fields with `NaN` / `Infinity`.
     NanInjection,
-    // -- Locomotion adversarial injections (Step 52) --
+    // -- Locomotion adversarial injections --
     /// Set base velocity to 3× max locomotion velocity (P15 runaway).
     LocomotionOverspeed,
     /// Violate friction cone constraint: tangential >> normal (P18 slip).
     SlipViolation,
     /// Set swing foot height to 0 or below ground (P16 trip).
     FootClearanceViolation,
-    /// Set swing foot height to 3× max_step_height (P16 stomp, Step 98).
+    /// Set swing foot height to 3× max_step_height (P16 stomp).
     StompViolation,
     /// Set step length to 3× max (P19 overextension).
     StepOverextension,
@@ -70,7 +70,7 @@ pub enum InjectionType {
     HeadingSpinout,
     /// Set ground reaction force to 5× max (P17 stomp).
     GroundReactionSpike,
-    // -- Environmental adversarial injections (Step 91) --
+    // -- Environmental adversarial injections --
     /// Set IMU pitch to 2× max safe pitch (P21 terrain incline).
     TerrainIncline,
     /// Set actuator temperature to 1.5× max operating temperature (P22 overheat).
@@ -374,7 +374,7 @@ fn inject_nan(cmd: &mut Command) {
 }
 
 // ---------------------------------------------------------------------------
-// Locomotion injection implementations (Step 52)
+// Locomotion injection implementations
 // ---------------------------------------------------------------------------
 
 use invariant_core::models::command::{FootState, LocomotionState};
@@ -484,10 +484,10 @@ fn inject_foot_clearance_violation(cmd: &mut Command) {
     }
 }
 
-/// P16 stomp attack: set swing foot height to 3× max_step_height (Step 98).
+/// P16 stomp attack: set swing foot height to 3× max_step_height.
 ///
 /// A foot raised excessively high will slam down with dangerous force. This
-/// exercises the upper-bound check added in Step 97.
+/// exercises the upper-bound check.
 fn inject_stomp_violation(cmd: &mut Command, profile: &RobotProfile) {
     let max_height = profile
         .locomotion
@@ -570,7 +570,7 @@ fn inject_ground_reaction_spike(cmd: &mut Command, profile: &RobotProfile) {
 }
 
 // ---------------------------------------------------------------------------
-// Environmental injection helpers (Step 91)
+// Environmental injection helpers
 // ---------------------------------------------------------------------------
 
 use invariant_core::models::command::{ActuatorTemperature, EnvironmentState};
@@ -1114,7 +1114,7 @@ mod tests {
         }
     }
 
-    // --- Locomotion injections (Step 52) ---
+    // --- Locomotion injections ---
 
     #[test]
     fn locomotion_overspeed_exceeds_max() {
@@ -1167,7 +1167,7 @@ mod tests {
         );
     }
 
-    // --- StompViolation (Step 98) ---
+    // --- StompViolation ---
 
     #[test]
     fn stomp_violation_above_max_step_height() {
@@ -1238,7 +1238,7 @@ mod tests {
         );
     }
 
-    // --- Environmental injections (Step 91) ---
+    // --- Environmental injections ---
 
     #[test]
     fn terrain_incline_exceeds_max_pitch() {

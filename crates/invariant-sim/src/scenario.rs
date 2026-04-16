@@ -63,24 +63,24 @@ pub enum ScenarioType {
     PromptInjection,
     /// Sequence disorder: alternating sources with non-monotonic sequence numbers.
     MultiAgentHandoff,
-    // -- Locomotion adversarial scenarios (Step 52) --
+    // -- Locomotion adversarial scenarios --
     /// Runaway: base velocity gradually increases past the locomotion limit (P15).
     LocomotionRunaway,
     /// Slip: foot forces exceed friction cone while walking (P18).
     LocomotionSlip,
     /// Trip: swing foot clearance drops below minimum during gait (P16 lower bound).
     LocomotionTrip,
-    /// Stomp: swing foot rises above max_step_height during gait (P16 upper bound, Step 98).
+    /// Stomp: swing foot rises above max_step_height during gait (P16 upper bound).
     LocomotionStomp,
     /// Fall: centre-of-mass + base velocity combine to cause instability (P9+P15+P19).
     LocomotionFall,
-    /// CNC tending cycle: exercises conditional exclusion zones (Step 66) and
-    /// the CycleCoordinator (Step 67). First half simulates loading (spindle
+    /// CNC tending cycle: exercises conditional exclusion zones and
+    /// the CycleCoordinator. First half simulates loading (spindle
     /// zone disabled, EE inside spindle area — should pass), second half
     /// simulates cutting (spindle zone active, EE inside spindle area — should
     /// be rejected).
     CncTending,
-    /// Environmental fault: exercises P21-P25 environmental checks (Step 91).
+    /// Environmental fault: exercises P21-P25 environmental checks.
     /// Commands carry environment_state with escalating hazards: terrain incline,
     /// overheating actuators, battery drain, latency spikes, and e-stop engage.
     /// All commands should be rejected by the environment checks.
@@ -841,7 +841,7 @@ impl<'a> ScenarioGenerator<'a> {
     }
 
     // -----------------------------------------------------------------------
-    // Locomotion adversarial scenarios (Step 52)
+    // Locomotion adversarial scenarios
     // -----------------------------------------------------------------------
 
     /// Build a default locomotion state for scenarios (safe baseline values).
@@ -1096,7 +1096,7 @@ impl<'a> ScenarioGenerator<'a> {
             .collect()
     }
 
-    /// Stomp: swing foot height ramps upward past `max_step_height` (Step 98).
+    /// Stomp: swing foot height ramps upward past `max_step_height`.
     ///
     /// Generates graduated commands where foot z-position increases from a safe
     /// height (50% of max_step_height) to 3× max_step_height. Early commands

@@ -1,4 +1,4 @@
-//! `invariant differential` — Dual-instance differential validation (Step 37).
+//! `invariant differential` — Dual-instance differential validation.
 //!
 //! Validates a command (or batch of commands) through two independent validator
 //! instances and compares their verdicts. Disagreements indicate potential bugs,

@@ -1,4 +1,4 @@
-//! Runtime integrity monitors (Section 10.5, Step 34).
+//! Runtime integrity monitors (Section 10.5).
 //!
 //! Six self-check functions that run continuously to detect compromise:
 //!

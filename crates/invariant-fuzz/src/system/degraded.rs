@@ -1,4 +1,4 @@
-//! Step 60: Degraded mode failure tests.
+//! Degraded mode failure tests.
 //!
 //! Automated test cases for every failure mode from spec Section 19.
 //! Verifies the core invariant: "If Invariant cannot guarantee safety,

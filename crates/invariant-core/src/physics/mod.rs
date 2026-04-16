@@ -228,7 +228,7 @@ pub fn run_all_checks(
     let mut manip_results = run_manipulation_checks(command, profile, previous_forces);
     results.append(&mut manip_results);
 
-    // ISO/TS 15066: Proximity-triggered force limiting (Step 45).
+    // ISO/TS 15066: Proximity-triggered force limiting.
     // Active when both proximity zones and force data are present.
     results.push(iso15066::check_iso15066_force_limits(
         &command.end_effector_positions,
@@ -322,7 +322,7 @@ pub fn run_environment_checks(command: &Command, profile: &RobotProfile) -> Vec<
     let mut results = Vec::new();
 
     // Sensor range plausibility — reject physically impossible values before
-    // P21-P25 threshold checks. Always active, no config needed (Step 108).
+    // P21-P25 threshold checks. Always active, no config needed.
     results.push(environment::check_sensor_range(env));
 
     // P25: Emergency stop — always active, no config needed.

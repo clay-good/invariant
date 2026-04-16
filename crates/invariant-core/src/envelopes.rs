@@ -1,4 +1,4 @@
-// Built-in standard task envelopes (Section 17.3, Step 76).
+// Built-in standard task envelopes (Section 17.3).
 //
 // Pre-defined safety envelopes for common humanoid/manipulator tasks.
 // Each envelope tightens limits from the base profile for a specific task

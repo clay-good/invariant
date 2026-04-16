@@ -993,7 +993,7 @@ mod tests {
         ));
     }
 
-    // ── Rule 7: StabilityConfigInvalid (Step 99) ────────────────────────────
+    // ── Rule 7: StabilityConfigInvalid ────────────────────────────
 
     fn valid_stability() -> super::profile::StabilityConfig {
         super::profile::StabilityConfig {

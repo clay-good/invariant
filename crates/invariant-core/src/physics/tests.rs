@@ -2292,7 +2292,7 @@ mod tests {
         assert_eq!(env, deserialized);
     }
 
-    // ── P7 self-collision edge cases (Step 99) ──────────────────────────
+    // ── P7 self-collision edge cases ──────────────────────────
 
     #[test]
     fn p7_identical_positions_fails_with_nonzero_threshold() {
@@ -2341,7 +2341,7 @@ mod tests {
         assert!(r.details.contains("NaN"));
     }
 
-    // ── P10 proximity boundary edge cases (Step 99) ───────────────────
+    // ── P10 proximity boundary edge cases ───────────────────
 
     #[test]
     fn p10_ee_exactly_on_sphere_boundary_triggers_scaling() {
@@ -2404,7 +2404,7 @@ mod tests {
         assert!(!r.passed, "NaN EE position must be rejected");
     }
 
-    // ── P8 delta_time edge cases (Step 99) ────────────────────────────
+    // ── P8 delta_time edge cases ────────────────────────────
 
     #[test]
     fn p8_negative_delta_time_rejected() {
@@ -2430,7 +2430,7 @@ mod tests {
         assert!(r.passed, "delta_time exactly at max must pass");
     }
 
-    // ── P6 exclusion zone NaN bounds (Step 100) ─────────────────────────
+    // ── P6 exclusion zone NaN bounds ─────────────────────────
 
     #[test]
     fn p6_aabb_nan_bound_fails_closed() {
@@ -2499,7 +2499,7 @@ mod tests {
         );
     }
 
-    // ── P21-P25 environment checks silent skip (Step 100) ─────────────
+    // ── P21-P25 environment checks silent skip ─────────────
 
     #[test]
     fn env_checks_skip_p21_p24_when_config_absent() {
@@ -2605,7 +2605,7 @@ mod tests {
         assert!((config.warning_latency_ms - 50.0).abs() < 0.001);
     }
 
-    // ── P25 e-stop cannot-be-disabled enforcement (Step 100) ──────────
+    // ── P25 e-stop cannot-be-disabled enforcement ──────────
 
     #[test]
     fn p25_estop_engaged_rejects_without_environment_config() {
@@ -2780,7 +2780,7 @@ mod tests {
         );
     }
 
-    // ── P18 friction cone zero-coefficient edge case (Step 102) ───────
+    // ── P18 friction cone zero-coefficient edge case ───────
 
     #[test]
     fn p18_zero_friction_passes_with_zero_tangential() {
@@ -2850,7 +2850,7 @@ mod tests {
         assert!(!r.passed, "any tangential force on zero-friction must fail");
     }
 
-    // ── P13 force rate with invalid delta_time (Step 102) ─────────────
+    // ── P13 force rate with invalid delta_time ─────────────
 
     #[test]
     fn p13_force_rate_zero_delta_time_with_matching_ee_fails() {
@@ -2916,7 +2916,7 @@ mod tests {
         assert!(!r.passed, "NaN delta_time must fail");
     }
 
-    // ── P10 proximity NaN zone center fail-closed (Step 105) ──────────
+    // ── P10 proximity NaN zone center fail-closed ──────────
 
     #[test]
     fn p10_proximity_nan_zone_center_triggers_scaling() {
@@ -2963,7 +2963,7 @@ mod tests {
         );
     }
 
-    // ── P10 proximity point_in_sphere NaN point defense-in-depth (Step 105) ──
+    // ── P10 proximity point_in_sphere NaN point defense-in-depth ──
 
     #[test]
     fn p10_proximity_nan_ee_position_caught_by_sphere_guard() {
@@ -2971,7 +2971,7 @@ mod tests {
         // point_in_sphere, the function itself must be self-contained: a NaN
         // point must return true (inside zone), not false (outside). This
         // documents that the defense-in-depth guard works — consistent with
-        // the ISO 15066 point_in_sphere fix in Step 104.
+        // the ISO 15066 point_in_sphere.
         //
         // We test via active_proximity_scale indirectly: if point_in_sphere
         // treats NaN point as inside, any zone with velocity_scale < 1.0 will
@@ -3001,7 +3001,7 @@ mod tests {
         );
     }
 
-    // ── Margin composition tests (Step 105) ───────────────────────────
+    // ── Margin composition tests ───────────────────────────
 
     #[test]
     fn p1_position_valid_without_margins_rejected_with_margins() {

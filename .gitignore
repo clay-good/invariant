@@ -40,3 +40,4 @@ keys.json
 # Test/runtime artifacts (generated at runtime)
 *.jsonl
 safe-stop.json
+results/

@@ -1,4 +1,4 @@
-// Signed sensor data for zero-trust sensor integrity (Step 64).
+// Signed sensor data for zero-trust sensor integrity.
 //
 // In the current design, the cognitive layer reports end-effector positions,
 // forces, and locomotion state as bare floating-point values inside each
@@ -380,7 +380,7 @@ pub fn check_sensor_freshness(
 }
 
 /// Check that a sensor reading's payload values are within physical plausibility
-/// bounds (Step 109).
+/// bounds.
 ///
 /// Rejects values that no real sensor can produce:
 /// - Any vector component that is NaN or infinite
@@ -566,7 +566,7 @@ pub fn verify_sensor_batch(
         // Check freshness.
         check_sensor_freshness(&signed.reading, now, max_age_ms)?;
 
-        // Check physical plausibility (Step 109).
+        // Check physical plausibility.
         check_payload_range(&signed.reading)?;
 
         verified.push(signed.reading.clone());
@@ -856,7 +856,7 @@ mod tests {
         );
     }
 
-    // ── Sensor freshness: future-dated reading rejection (Step 100) ───
+    // ── Sensor freshness: future-dated reading rejection ───
 
     #[test]
     fn freshness_rejects_future_dated_reading() {
@@ -907,7 +907,7 @@ mod tests {
         assert!(result.is_err(), "batch with future-dated reading must fail");
     }
 
-    // ── Sensor payload range validation (Step 109) ────────────────────
+    // ── Sensor payload range validation ────────────────────
 
     fn make_payload_reading(name: &str, payload: SensorPayload) -> SensorReading {
         SensorReading {

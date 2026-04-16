@@ -272,7 +272,7 @@ impl ValidatorConfig {
         // Run threat scoring if a scorer is configured (Section 11.3).
         // Use poison recovery: if a previous panic poisoned the mutex, recover
         // the inner scorer and continue rather than propagating a panic that
-        // would permanently brick the validator (Step 106).
+        // would permanently brick the validator.
         let threat_analysis = self.threat_scorer.as_ref().map(|scorer| {
             let authority_passed = checks.first().is_some_and(|c| c.passed);
             scorer
@@ -1912,7 +1912,7 @@ mod tests {
         }
     }
 
-    // ── Zeroed signing key security test (Step 99) ────────────────────
+    // ── Zeroed signing key security test ────────────────────
 
     #[test]
     fn zeroed_signing_key_produces_verifiable_signature_only_with_matching_vk() {
@@ -1966,7 +1966,7 @@ mod tests {
         );
     }
 
-    // ── Sensor-physics binding gap documentation test (Step 100) ──────
+    // ── Sensor-physics binding gap documentation test ──────
 
     #[test]
     fn require_signed_policy_empty_readings_rejects() {
@@ -2006,7 +2006,7 @@ mod tests {
         );
     }
 
-    // ── Step 103: Command size cap + DoS protection tests ─────────────
+    // ── Command size cap + DoS protection tests ─────────────
 
     #[test]
     fn oversized_joint_states_rejected() {
@@ -2100,7 +2100,7 @@ mod tests {
         );
     }
 
-    // ── Step 103: Joint name mismatch tests ───────────────────────────
+    // ── Joint name mismatch tests ───────────────────────────
 
     #[test]
     fn command_with_extra_joints_rejected() {
@@ -2147,7 +2147,7 @@ mod tests {
         assert!(result.unwrap().details.contains("joint_states"));
     }
 
-    // ── Step 103: Remaining collection size cap tests ──────────────────
+    // ── Remaining collection size cap tests ──────────────────
 
     #[test]
     fn oversized_end_effector_forces_rejected() {
@@ -2284,14 +2284,14 @@ mod tests {
         );
     }
 
-    // ── Step 106: Replay + threat scorer poison tests ─────────────────
+    // ── Replay + threat scorer poison tests ─────────────────
 
     #[test]
     fn identical_commands_produce_identical_verdicts() {
         // Documents that the validator is deterministic: the same command
         // submitted twice produces the same approval and signature. This is
         // the prerequisite for the serve handler's sequence monotonicity
-        // check (Step 106) — without that check, replay is trivial.
+        // check — without that check, replay is trivial.
         let profile = load_builtin("franka_panda").unwrap();
         let (chain_b64, trusted, _) = make_forge_chain();
         let sign_sk = make_keypair().0;

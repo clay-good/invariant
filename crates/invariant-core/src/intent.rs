@@ -1,4 +1,4 @@
-// Intent-to-operations pipeline (Step 53, Section 15).
+// Intent-to-operations pipeline (Section 15).
 //
 // Converts human intent into a signed PCA_0 with explicit operations. Three
 // modes, all producing the same artifact:

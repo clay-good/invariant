@@ -3,7 +3,7 @@ name = "invariant-robotics-coordinator"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "Multi-robot coordination safety monitor for Invariant (Step 39)."
+description = "Multi-robot coordination safety monitor for Invariant."
 readme = "../../README.md"
 
 [dependencies]

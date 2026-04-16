@@ -1,4 +1,4 @@
-//! `invariant intent` — Intent-to-operations pipeline (Step 53).
+//! `invariant intent` — Intent-to-operations pipeline.
 //!
 //! Generates a signed PCA_0 from human intent using template-based or direct
 //! specification modes. Outputs the signed PCA chain as base64 JSON (ready to

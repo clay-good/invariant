@@ -1,4 +1,4 @@
-// Isaac Lab Unix socket IPC bridge (Section 21.1, Step 69).
+// Isaac Lab Unix socket IPC bridge (Section 21.1).
 //
 // Listens on a Unix domain socket and validates commands from Isaac Lab
 // (or any client speaking the newline-delimited JSON protocol).

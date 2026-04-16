@@ -37,7 +37,7 @@ pub struct AdversarialArgs {
     /// Export structured training data for cognitive layer improvement (Section 11.5).
     #[arg(long, value_name = "TRAINING_FILE")]
     pub export_training: Option<PathBuf>,
-    /// Run mutation-based fuzzing for N iterations instead of structured suites (Step 27).
+    /// Run mutation-based fuzzing for N iterations instead of structured suites.
     #[arg(long)]
     pub fuzz: bool,
     /// Number of fuzz iterations (default 10000). Only used with --fuzz.
@@ -93,7 +93,7 @@ pub fn run(args: &AdversarialArgs) -> i32 {
     };
 
     // -----------------------------------------------------------------------
-    // Fuzz mode: mutation-based fuzzing for N iterations (Step 27)
+    // Fuzz mode: mutation-based fuzzing for N iterations
     // -----------------------------------------------------------------------
     if args.fuzz {
         return run_fuzz_mode(&config, &profile, &kid, &raw_key_bytes, args);
@@ -117,7 +117,7 @@ pub fn run(args: &AdversarialArgs) -> i32 {
     }
 
     // -----------------------------------------------------------------------
-    // Environment suite: P21-P25 environmental hazard injection (Step 95)
+    // Environment suite: P21-P25 environmental hazard injection
     // -----------------------------------------------------------------------
     if suite == "environment" || suite == "all" {
         run_environment_suite(&config, &profile, &kid, &raw_key_bytes, &mut aggregate);
@@ -504,7 +504,7 @@ fn build_base_command_with_chain(
 }
 
 // ---------------------------------------------------------------------------
-// Environment suite: P21-P25 environmental hazard injection (Step 95)
+// Environment suite: P21-P25 environmental hazard injection
 // ---------------------------------------------------------------------------
 
 fn run_environment_suite(
@@ -586,7 +586,7 @@ fn run_environment_suite(
 }
 
 // ---------------------------------------------------------------------------
-// Fuzz mode: mutation-based fuzzing for N iterations (Step 27)
+// Fuzz mode: mutation-based fuzzing for N iterations
 // ---------------------------------------------------------------------------
 
 fn run_fuzz_mode(

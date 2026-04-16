@@ -190,7 +190,7 @@ mod tests {
         assert!(result.details.contains("NaN or infinite"));
     }
 
-    // ── P16 max_step_height upper-bound tests (Step 97) ───────────────
+    // ── P16 max_step_height upper-bound tests ───────────────
 
     #[test]
     fn p16_swing_foot_below_max_step_height_passes() {

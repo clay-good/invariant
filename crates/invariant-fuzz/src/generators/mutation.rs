@@ -1,4 +1,4 @@
-//! Step 26: Mutation engine — valid-to-invalid command transformer.
+//! Mutation engine — valid-to-invalid command transformer.
 //!
 //! Takes a known-valid command and applies targeted mutations to produce
 //! commands that should be rejected. Each mutation targets a specific check.

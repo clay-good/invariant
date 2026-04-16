@@ -1,4 +1,4 @@
-//! Audit log replication and Merkle root witness (Section 10.4, Step 35).
+//! Audit log replication and Merkle root witness (Section 10.4).
 //!
 //! Provides:
 //! - `AuditReplicator` trait — abstract audit log replication backend
@@ -460,7 +460,7 @@ mod tests {
         assert!(matches!(err, ReplicationError::Unavailable { .. }));
     }
 
-    // ── Merkle tree corruption documentation tests (Step 101) ─────────
+    // ── Merkle tree corruption documentation tests ─────────
 
     #[test]
     fn merkle_root_from_log_with_partial_corruption_produces_different_root() {

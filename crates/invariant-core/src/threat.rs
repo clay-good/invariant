@@ -1,4 +1,4 @@
-// Runtime threat scoring engine (Section 11.3, Step 68).
+// Runtime threat scoring engine (Section 11.3).
 //
 // Implements the 5 behavioral detectors from the spec:
 // 1. Boundary clustering  — commands near rejection thresholds
@@ -936,7 +936,7 @@ mod tests {
         assert!(scorer.window.len() <= 10);
     }
 
-    // ── u64 counter overflow safety (Step 101) ────────────────────────
+    // ── u64 counter overflow safety ────────────────────────
 
     #[test]
     fn authority_probing_score_remains_bounded_after_many_checks() {

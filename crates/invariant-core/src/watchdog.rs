@@ -648,7 +648,7 @@ mod tests {
         assert_eq!(cmd.joint_states[1].position, 1.5);
     }
 
-    // ── Step 102: Watchdog edge case tests ────────────────────────────
+    // ── Watchdog edge case tests ────────────────────────────
 
     #[test]
     fn latch_is_truly_one_way_heartbeat_cannot_clear() {

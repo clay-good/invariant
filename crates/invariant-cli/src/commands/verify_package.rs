@@ -1,4 +1,4 @@
-//! `invariant verify-package` — deep proof package verification (Section 20.2, Step 71).
+//! `invariant verify-package` — deep proof package verification (Section 20.2).
 //!
 //! Verifies the integrity of a proof package by:
 //! 1. Parsing the manifest and validating its schema

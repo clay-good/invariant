@@ -1,4 +1,4 @@
-//! Incident response automation (Section 10.6, Step 36).
+//! Incident response automation (Section 10.6).
 //!
 //! When a system-level attack is detected (via runtime monitors or manual
 //! trigger), the incident responder executes a 6-step pipeline:

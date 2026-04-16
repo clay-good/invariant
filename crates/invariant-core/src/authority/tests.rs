@@ -237,7 +237,7 @@ mod tests {
         ));
     }
 
-    // ── Step 102: Operation wildcard edge case tests ────────────────────
+    // ── Operation wildcard edge case tests ────────────────────
 
     #[test]
     fn wildcard_does_not_match_exact_prefix_segment() {
@@ -776,7 +776,7 @@ mod tests {
         ));
     }
 
-    // ── Single-hop chain edge cases (Step 99) ───────────────────────────
+    // ── Single-hop chain edge cases ───────────────────────────
 
     #[test]
     fn single_hop_chain_with_sufficient_ops_succeeds() {
@@ -849,7 +849,7 @@ mod tests {
         assert!(result.is_ok());
     }
 
-    // ── Step 106: COSE malformed input tests ──────────────────────────
+    // ── COSE malformed input tests ──────────────────────────
 
     #[test]
     fn empty_cose_bytes_returns_error_not_panic() {

@@ -942,7 +942,7 @@ mod tests {
         assert!(snap.window_max_position_error < 1e-9);
     }
 
-    // ── NaN fail-closed tests (Step 101) ──────────────────────────────
+    // ── NaN fail-closed tests ──────────────────────────────
 
     #[test]
     fn observe_nan_position_does_not_classify_as_normal() {
@@ -1012,7 +1012,7 @@ mod tests {
         assert_eq!(snap3.level, DivergenceLevel::Normal);
     }
 
-    // ── window_size=0 validation (Step 101) ───────────────────────────
+    // ── window_size=0 validation ───────────────────────────
 
     #[test]
     #[should_panic(expected = "window_size must be >= 1")]

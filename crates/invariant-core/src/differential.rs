@@ -1,4 +1,4 @@
-// Differential validation: dual-instance verdict comparison (Step 37).
+// Differential validation: dual-instance verdict comparison.
 //
 // Runs the same command through two independent ValidatorConfig instances
 // and compares their verdicts. If the two instances disagree on approval

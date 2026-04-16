@@ -1,4 +1,4 @@
-//! `invariant verify-self` / `invariant --verify-self` — binary integrity check (Step 33).
+//! `invariant verify-self` / `invariant --verify-self` — binary integrity check.
 //!
 //! Computes the SHA-256 hash of the running binary and compares it against:
 //! 1. A compile-time hash set via `INVARIANT_BUILD_HASH` env var during build

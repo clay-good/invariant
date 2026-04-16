@@ -370,7 +370,7 @@ fn validate_config(config: &CampaignConfig) -> Result<(), CampaignError> {
 }
 
 // ---------------------------------------------------------------------------
-// 15M Campaign Config Generator (spec-15m-campaign.md Step 3)
+// 15M Campaign Config Generator
 // ---------------------------------------------------------------------------
 
 /// Profile weight and applicable scenario categories for the 15M campaign.
