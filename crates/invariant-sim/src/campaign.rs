@@ -441,89 +441,180 @@ fn all_scenario_entries() -> Vec<ScenarioConfig> {
 /// serialized to YAML and submitted to RunPod workers.
 pub fn generate_15m_configs(total_episodes: u64, shards: u32) -> Vec<CampaignConfig> {
     let profiles = [
+        // ── Humanoids (11) ──────────────────────────────────────────
         ProfileAllocation {
             name: "humanoid_28dof",
-            weight: 0.10,
+            weight: 0.06,
             has_locomotion: true,
         },
         ProfileAllocation {
             name: "unitree_h1",
-            weight: 0.08,
+            weight: 0.05,
             has_locomotion: true,
         },
         ProfileAllocation {
             name: "unitree_g1",
-            weight: 0.07,
+            weight: 0.04,
             has_locomotion: true,
         },
         ProfileAllocation {
-            name: "ur10e_haas_cell",
-            weight: 0.09,
-            has_locomotion: false,
+            name: "fourier_gr1",
+            weight: 0.04,
+            has_locomotion: true,
         },
         ProfileAllocation {
-            name: "ur10e_cnc_tending",
-            weight: 0.07,
-            has_locomotion: false,
+            name: "tesla_optimus",
+            weight: 0.04,
+            has_locomotion: true,
         },
         ProfileAllocation {
-            name: "franka_panda",
-            weight: 0.07,
-            has_locomotion: false,
+            name: "figure_02",
+            weight: 0.04,
+            has_locomotion: true,
         },
         ProfileAllocation {
-            name: "kuka_iiwa14",
-            weight: 0.06,
-            has_locomotion: false,
+            name: "bd_atlas",
+            weight: 0.04,
+            has_locomotion: true,
         },
         ProfileAllocation {
-            name: "kinova_gen3",
-            weight: 0.05,
-            has_locomotion: false,
+            name: "agility_digit",
+            weight: 0.03,
+            has_locomotion: true,
         },
         ProfileAllocation {
-            name: "abb_gofa",
-            weight: 0.05,
-            has_locomotion: false,
+            name: "sanctuary_phoenix",
+            weight: 0.03,
+            has_locomotion: true,
+        },
+        ProfileAllocation {
+            name: "onex_neo",
+            weight: 0.03,
+            has_locomotion: true,
+        },
+        ProfileAllocation {
+            name: "apptronik_apollo",
+            weight: 0.03,
+            has_locomotion: true,
+        },
+        // ── Quadrupeds (5) ──────────────────────────────────────────
+        ProfileAllocation {
+            name: "quadruped_12dof",
+            weight: 0.03,
+            has_locomotion: true,
         },
         ProfileAllocation {
             name: "spot",
-            weight: 0.07,
+            weight: 0.04,
             has_locomotion: true,
         },
         ProfileAllocation {
-            name: "quadruped_12dof",
-            weight: 0.05,
-            has_locomotion: false,
+            name: "unitree_go2",
+            weight: 0.03,
+            has_locomotion: true,
         },
         ProfileAllocation {
-            name: "shadow_hand",
+            name: "unitree_a1",
+            weight: 0.02,
+            has_locomotion: true,
+        },
+        ProfileAllocation {
+            name: "anybotics_anymal",
+            weight: 0.02,
+            has_locomotion: true,
+        },
+        // ── Arms (7) ───────────────────────────────────────────────
+        ProfileAllocation {
+            name: "franka_panda",
             weight: 0.04,
             has_locomotion: false,
         },
         ProfileAllocation {
             name: "ur10",
+            weight: 0.03,
+            has_locomotion: false,
+        },
+        ProfileAllocation {
+            name: "ur10e_haas_cell",
             weight: 0.04,
             has_locomotion: false,
         },
         ProfileAllocation {
-            name: "adversarial_zero_margin",
+            name: "ur10e_cnc_tending",
             weight: 0.04,
+            has_locomotion: false,
+        },
+        ProfileAllocation {
+            name: "kuka_iiwa14",
+            weight: 0.03,
+            has_locomotion: false,
+        },
+        ProfileAllocation {
+            name: "kinova_gen3",
+            weight: 0.02,
+            has_locomotion: false,
+        },
+        ProfileAllocation {
+            name: "abb_gofa",
+            weight: 0.02,
+            has_locomotion: false,
+        },
+        // ── Dexterous Hands (4) ────────────────────────────────────
+        ProfileAllocation {
+            name: "shadow_hand",
+            weight: 0.02,
+            has_locomotion: false,
+        },
+        ProfileAllocation {
+            name: "allegro_hand",
+            weight: 0.02,
+            has_locomotion: false,
+        },
+        ProfileAllocation {
+            name: "leap_hand",
+            weight: 0.01,
+            has_locomotion: false,
+        },
+        ProfileAllocation {
+            name: "psyonic_ability",
+            weight: 0.01,
+            has_locomotion: false,
+        },
+        // ── Mobile Manipulators (3) ────────────────────────────────
+        ProfileAllocation {
+            name: "spot_with_arm",
+            weight: 0.03,
+            has_locomotion: true,
+        },
+        ProfileAllocation {
+            name: "hello_stretch",
+            weight: 0.02,
+            has_locomotion: true,
+        },
+        ProfileAllocation {
+            name: "pal_tiago",
+            weight: 0.02,
+            has_locomotion: true,
+        },
+        // ── Adversarial (4) ────────────────────────────────────────
+        ProfileAllocation {
+            name: "adversarial_zero_margin",
+            weight: 0.02,
             has_locomotion: false,
         },
         ProfileAllocation {
             name: "adversarial_max_workspace",
-            weight: 0.04,
+            weight: 0.02,
             has_locomotion: false,
         },
         ProfileAllocation {
             name: "adversarial_single_joint",
-            weight: 0.04,
+            weight: 0.02,
             has_locomotion: false,
         },
         ProfileAllocation {
             name: "adversarial_max_joints",
-            weight: 0.04,
+            weight: 0.02,
             has_locomotion: false,
         },
     ];
@@ -1131,8 +1222,8 @@ scenarios:
     #[test]
     fn generate_15m_produces_configs_for_all_profiles() {
         let configs = generate_15m_configs(15_000_000, 8);
-        // 17 profiles × 8 shards = 136 configs
-        assert_eq!(configs.len(), 136, "17 profiles × 8 shards");
+        // 34 profiles × 8 shards = 272 configs
+        assert_eq!(configs.len(), 272, "34 profiles × 8 shards");
     }
 
     #[test]
