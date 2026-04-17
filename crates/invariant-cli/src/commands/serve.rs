@@ -308,26 +308,38 @@ async fn handle_validate(
 
     let mut cmd = req.command;
 
-    // Sequence replay protection: reject commands whose sequence
-    // is not strictly greater than the last accepted sequence. This prevents
-    // replay of previously-approved signed actuation commands.
+    // Sequence replay protection: atomically claim the sequence slot.
+    // Uses a compare-exchange loop to ensure that exactly one concurrent
+    // request with a given sequence number can proceed.  Without CAS, two
+    // requests with the same sequence could both pass a load-then-check
+    // window before either stores the new value.
     {
         use std::sync::atomic::Ordering;
-        let prev = state.last_sequence.load(Ordering::SeqCst);
-        if cmd.sequence <= prev {
-            return Err((
-                StatusCode::BAD_REQUEST,
-                Json(ErrorResponse {
-                    error: format!(
-                        "command sequence {} is not greater than last accepted sequence {} (replay rejected)",
-                        cmd.sequence, prev
-                    ),
-                }),
-            ));
+        loop {
+            let prev = state.last_sequence.load(Ordering::SeqCst);
+            if cmd.sequence <= prev {
+                return Err((
+                    StatusCode::BAD_REQUEST,
+                    Json(ErrorResponse {
+                        error: format!(
+                            "command sequence {} is not greater than last accepted sequence {} (replay rejected)",
+                            cmd.sequence, prev
+                        ),
+                    }),
+                ));
+            }
+            // Atomically advance prev → cmd.sequence.  If another request
+            // raced ahead and changed the value, retry the loop.
+            if state
+                .last_sequence
+                .compare_exchange(prev, cmd.sequence, Ordering::SeqCst, Ordering::SeqCst)
+                .is_ok()
+            {
+                break;
+            }
+            // CAS failed — another request advanced the counter.  Re-check
+            // whether our sequence is still valid against the new value.
         }
-        // The counter is advanced only after validation succeeds (below).
-        // We perform no store here so that a rejected command cannot
-        // consume a sequence number and block future valid commands.
     }
 
     // In trust-plane mode, auto-issue a self-signed PCA chain.
@@ -384,22 +396,6 @@ async fn handle_validate(
         )
     })?;
 
-    // Capture the sequence number from the (now-moved) cmd before we match.
-    // We only advance last_sequence when validation succeeds.
-    let cmd_sequence = {
-        // Re-read from the original command.  The cmd was moved into
-        // spawn_blocking, so we captured the sequence number before the move
-        // via cmd_for_audit; fall back to loading the atomic if unavailable.
-        cmd_for_audit
-            .as_ref()
-            .map(|c| c.sequence)
-            .unwrap_or_else(|| {
-                state
-                    .last_sequence
-                    .load(std::sync::atomic::Ordering::SeqCst)
-            })
-    };
-
     // Update previous joint/force state for the NEXT command's P4/P13 checks.
     // This must happen regardless of whether validation approved or rejected the
     // command: the robot's physical state changes whether or not the safety
@@ -419,11 +415,8 @@ async fn handle_validate(
 
     match result {
         Ok(result) => {
-            // Advance the sequence counter now that validation has succeeded.
-            // fetch_max ensures we never regress even under concurrent requests.
-            state
-                .last_sequence
-                .fetch_max(cmd_sequence, std::sync::atomic::Ordering::SeqCst);
+            // Sequence counter was already advanced atomically via CAS
+            // in the replay protection block above.
 
             // Log to audit trail if configured.
             if let (Some(ref audit_mutex), Some(ref audit_cmd)) = (&state.audit, &cmd_for_audit) {
