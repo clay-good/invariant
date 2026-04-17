@@ -243,17 +243,32 @@ struct ErrorResponse {
 // Auth helper
 // ---------------------------------------------------------------------------
 
-/// Constant-time byte comparison that does not short-circuit on mismatch.
+/// Constant-time token comparison that does not leak the expected token's
+/// length via timing.
 ///
-/// This prevents timing side-channel attacks on secret token comparisons
-/// (Finding 15). Returns `true` iff both slices are the same length and
-/// contain identical bytes.
+/// A naive comparison that short-circuits on length mismatch lets an attacker
+/// binary-search the correct token length in O(log N) attempts. We avoid this
+/// by hashing both values with SHA-256 (keyed by a domain separator) before
+/// comparing the fixed-length (32-byte) digests. The XOR-fold comparison on
+/// equal-length digests is constant-time regardless of where they differ.
 fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
-    if a.len() != b.len() {
-        return false;
-    }
-    a.iter()
-        .zip(b.iter())
+    use sha2::{Digest, Sha256};
+
+    // Domain-separated hashes ensure that even if an attacker can observe
+    // the digest of the expected token, they cannot use it to forge a
+    // matching input without inverting SHA-256.
+    let hash_a = Sha256::new()
+        .chain_update(b"invariant-auth-v1:")
+        .chain_update(a)
+        .finalize();
+    let hash_b = Sha256::new()
+        .chain_update(b"invariant-auth-v1:")
+        .chain_update(b)
+        .finalize();
+
+    hash_a
+        .iter()
+        .zip(hash_b.iter())
         .fold(0u8, |acc, (x, y)| acc | (x ^ y))
         == 0
 }
