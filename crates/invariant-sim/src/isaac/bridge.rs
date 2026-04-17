@@ -22,7 +22,7 @@ use std::sync::{Arc, Mutex};
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::net::UnixListener;
 
 use invariant_core::models::command::{Command, JointState};
@@ -193,13 +193,32 @@ pub async fn run_bridge(config: BridgeConfig) -> Result<BridgeStats, BridgeError
 
             loop {
                 line.clear();
-                let n = match buf_reader.read_line(&mut line).await {
-                    Ok(0) => break, // EOF — client disconnected
-                    Ok(n) => n,
-                    Err(_) => {
-                        break; // read error, client disconnected
+
+                // Read at most max_msg bytes to prevent OOM from a
+                // malicious client sending unbounded data without a
+                // newline.  We use take() on the inner reader so that
+                // read_line cannot buffer more than max_msg bytes.
+                let n = {
+                    let mut limited = (&mut buf_reader).take(max_msg as u64);
+                    match limited.read_line(&mut line).await {
+                        Ok(0) => break, // EOF — client disconnected
+                        Ok(n) => n,
+                        Err(_) => {
+                            break; // read error, client disconnected
+                        }
                     }
                 };
+
+                // If the line does not end with '\n', the message was
+                // truncated by the byte limit — reject and disconnect.
+                if !line.ends_with('\n') {
+                    let resp = BridgeResponse::error(format!(
+                        "message too large: exceeded {max_msg} byte limit"
+                    ));
+                    let _ = write_response(&mut writer, &resp).await;
+                    stats.lock().unwrap_or_else(|p| p.into_inner()).errors += 1;
+                    break; // disconnect — stream is in an unknown state
+                }
 
                 if n > max_msg {
                     let resp = BridgeResponse::error(format!(
@@ -1004,6 +1023,53 @@ mod tests {
             "DoS guard must reject oversized messages, got: {:?}",
             resp.error
         );
+
+        handle.abort();
+        let _ = std::fs::remove_file(&socket_path);
+    }
+
+    #[tokio::test]
+    async fn bridge_rejects_oversized_message_without_newline() {
+        // A malicious client sends a large payload with no newline.
+        // The bridge must not OOM — it should reject and disconnect
+        // after reading at most max_message_bytes.
+        let (validator, _) = make_validator();
+        let socket_path = unique_socket_path();
+
+        // Use a small limit so the test runs quickly.
+        let max_bytes = 1024;
+        let mut config = BridgeConfig::new(socket_path.clone(), validator, 0);
+        config.max_message_bytes = max_bytes;
+
+        let handle = tokio::spawn(async move {
+            let _ = run_bridge(config).await;
+        });
+
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        let stream = UnixStream::connect(&socket_path).await.unwrap();
+        let (reader, mut writer) = stream.into_split();
+        let mut buf_reader = BufReader::new(reader);
+
+        // Send 2x the limit with no newline.
+        let oversized = "x".repeat(max_bytes * 2);
+        writer.write_all(oversized.as_bytes()).await.unwrap();
+        // Close the write half so the server sees EOF on the take'd reader.
+        drop(writer);
+
+        // Server should send an error response before disconnecting.
+        let mut response_line = String::new();
+        let n = buf_reader.read_line(&mut response_line).await.unwrap();
+        if n > 0 {
+            let resp: BridgeResponse = serde_json::from_str(response_line.trim()).unwrap();
+            assert_eq!(resp.response_type, "error");
+            assert!(
+                resp.error.as_ref().unwrap().contains("too large"),
+                "expected 'too large' error, got: {:?}",
+                resp.error
+            );
+        }
+        // The key assertion: we got here without OOM.
 
         handle.abort();
         let _ = std::fs::remove_file(&socket_path);
