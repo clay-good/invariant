@@ -92,6 +92,12 @@ pub struct ServeArgs {
     /// automatic lockdown on catastrophic divergence.
     #[arg(long)]
     pub digital_twin: bool,
+    /// When set, return HTTP 503 if the audit log write fails instead of
+    /// silently continuing. This enforces the L1 audit completeness
+    /// invariant: no approved command reaches the motor without an audit
+    /// record. Production deployments should enable this flag.
+    #[arg(long)]
+    pub fail_on_audit_error: bool,
 }
 
 // ---------------------------------------------------------------------------
@@ -135,6 +141,11 @@ struct AppState {
     /// Updated after each successful validation.
     previous_forces:
         std::sync::Mutex<Option<Vec<invariant_core::models::command::EndEffectorForce>>>,
+    /// Count of audit log write failures. Exposed on /health so monitoring
+    /// systems can alert on audit trail degradation.
+    audit_errors: std::sync::atomic::AtomicU64,
+    /// When true, return HTTP 503 on audit write failure (L1 enforcement).
+    fail_on_audit_error: bool,
 }
 
 /// Wrapper holding the divergence detector and the last observed snapshot
@@ -218,6 +229,9 @@ struct HealthResponse {
     /// Total observations processed by the divergence detector.
     #[serde(skip_serializing_if = "Option::is_none")]
     digital_twin_observations: Option<u64>,
+    /// Number of audit log write failures since startup.
+    /// Non-zero values indicate audit trail degradation (L1 risk).
+    audit_errors: u64,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -420,9 +434,31 @@ async fn handle_validate(
 
             // Log to audit trail if configured.
             if let (Some(ref audit_mutex), Some(ref audit_cmd)) = (&state.audit, &cmd_for_audit) {
-                if let Ok(mut logger) = audit_mutex.lock() {
-                    if let Err(e) = logger.log(audit_cmd, &result.signed_verdict) {
-                        eprintln!("audit: log error: {e}");
+                let audit_ok = match audit_mutex.lock() {
+                    Ok(mut logger) => match logger.log(audit_cmd, &result.signed_verdict) {
+                        Ok(_entry) => true,
+                        Err(e) => {
+                            eprintln!("audit: log error: {e}");
+                            false
+                        }
+                    },
+                    Err(_poisoned) => {
+                        eprintln!("audit: mutex poisoned, cannot write entry");
+                        false
+                    }
+                };
+                if !audit_ok {
+                    state
+                        .audit_errors
+                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    if state.fail_on_audit_error {
+                        return Err((
+                            StatusCode::SERVICE_UNAVAILABLE,
+                            Json(ErrorResponse {
+                                error: "audit log write failed — verdict withheld (L1 enforcement)"
+                                    .into(),
+                            }),
+                        ));
                     }
                 }
             }
@@ -597,6 +633,9 @@ async fn handle_health(State(state): State<Arc<AppState>>) -> Json<HealthRespons
         digital_twin_level: dt_level,
         digital_twin_max_position_error: dt_max_pos_err,
         digital_twin_observations: dt_observations,
+        audit_errors: state
+            .audit_errors
+            .load(std::sync::atomic::Ordering::Relaxed),
     })
 }
 
@@ -788,6 +827,8 @@ async fn run_server(args: &ServeArgs) -> i32 {
         last_sequence: std::sync::atomic::AtomicU64::new(0),
         previous_joints: std::sync::Mutex::new(None),
         previous_forces: std::sync::Mutex::new(None),
+        audit_errors: std::sync::atomic::AtomicU64::new(0),
+        fail_on_audit_error: args.fail_on_audit_error,
     });
 
     // Spawn a background task that periodically calls watchdog.check() so that
@@ -1118,6 +1159,8 @@ mod tests {
             last_sequence: std::sync::atomic::AtomicU64::new(0),
             previous_joints: std::sync::Mutex::new(None),
             previous_forces: std::sync::Mutex::new(None),
+            audit_errors: std::sync::atomic::AtomicU64::new(0),
+            fail_on_audit_error: false,
         })
     }
 
@@ -1682,6 +1725,7 @@ mod tests {
             monitors: false,
             audit_log: None,
             digital_twin: false,
+            fail_on_audit_error: false,
         };
         // No env var set; no file; CLI arg must win.
         // We must clear the env var in case it leaked from another test.
@@ -1713,6 +1757,7 @@ mod tests {
             monitors: false,
             audit_log: None,
             digital_twin: false,
+            fail_on_audit_error: false,
         };
         std::env::remove_var("INVARIANT_AUTH_TOKEN");
         let result = resolve_auth_token(&args).unwrap();
@@ -1738,6 +1783,7 @@ mod tests {
             monitors: false,
             audit_log: None,
             digital_twin: false,
+            fail_on_audit_error: false,
         };
         std::env::remove_var("INVARIANT_AUTH_TOKEN");
         let result = resolve_auth_token(&args);
@@ -1765,6 +1811,7 @@ mod tests {
             monitors: false,
             audit_log: None,
             digital_twin: false,
+            fail_on_audit_error: false,
         };
         std::env::remove_var("INVARIANT_AUTH_TOKEN");
         let result = resolve_auth_token(&args).unwrap();
@@ -1813,6 +1860,7 @@ mod tests {
             monitors: false,
             audit_log: None,
             digital_twin: false,
+            fail_on_audit_error: false,
         };
         assert_eq!(run(&args), 2);
     }
@@ -1842,6 +1890,7 @@ mod tests {
             monitors: false,
             audit_log: None,
             digital_twin: false,
+            fail_on_audit_error: false,
         };
         assert_eq!(run(&args), 2);
     }
@@ -1869,6 +1918,7 @@ mod tests {
             monitors: false,
             audit_log: None,
             digital_twin: false,
+            fail_on_audit_error: false,
         };
         assert_eq!(run(&args), 2);
     }
