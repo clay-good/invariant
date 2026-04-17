@@ -51,7 +51,7 @@ pub struct ServeArgs {
     ///
     /// SECURITY: Passing tokens via CLI arguments exposes them in the process
     /// table. Prefer `--auth-token-file` or `INVARIANT_AUTH_TOKEN` env var.
-    #[arg(long, value_name = "TOKEN")]
+    #[arg(long, value_name = "TOKEN", hide = true)]
     pub auth_token: Option<String>,
     /// Read the auth token from a file rather than the CLI argument.
     /// The file must contain exactly the raw token string (trailing newline
@@ -1083,6 +1083,12 @@ fn resolve_auth_token(args: &ServeArgs) -> Result<Option<String>, String> {
     }
 
     // 3. CLI arg (least preferred — visible in process table).
+    if args.auth_token.is_some() {
+        eprintln!(
+            "WARNING: --auth-token exposes the token in the process table. \
+             Use --auth-token-file or INVARIANT_AUTH_TOKEN instead."
+        );
+    }
     Ok(args.auth_token.clone())
 }
 
