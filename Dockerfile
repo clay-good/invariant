@@ -45,9 +45,14 @@ COPY crates/invariant-sim/invariant_isaac_bridge.py /opt/invariant/isaac/
 COPY scripts/ /opt/invariant/scripts/
 
 # Install Python dependencies (minimal — Isaac Sim provides most).
-RUN pip install --no-cache-dir huggingface_hub
+RUN pip install --no-cache-dir huggingface_hub==0.23.4
 
 WORKDIR /opt/invariant
+
+# Run as non-root to limit blast radius of container escapes.
+RUN groupadd -r invariant && useradd -r -g invariant -u 1000 invariant && \
+    chown -R invariant:invariant /opt/invariant
+USER 1000
 
 # Default: run the campaign runner.
 ENTRYPOINT ["python", "isaac/campaign_runner.py"]
