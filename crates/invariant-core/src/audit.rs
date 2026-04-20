@@ -398,22 +398,24 @@ impl AuditLogger<std::fs::File> {
         signing_key: SigningKey,
         signer_kid: String,
     ) -> Result<Self, AuditError> {
-        use std::io::Seek;
-
-        // Open once with read+write+create. This single open eliminates the
-        // TOCTOU race between reading existing content and opening for append.
+        // Open with read + append + create.  O_APPEND is critical for the
+        // L4 immutability invariant: it guarantees that every write(2) call
+        // atomically positions the file offset at EOF before writing,
+        // preventing a concurrent process (or fork) from overwriting
+        // existing entries.  The manual seek-to-EOF that was here before
+        // was NOT atomic and could race with another writer.
+        //
+        // read(true) is needed for read_last_line to scan backward and
+        // recover the hash chain state.  SeekFrom::End works on append-
+        // mode file descriptors for reads.
         let mut file = std::fs::OpenOptions::new()
             .read(true)
-            .write(true)
+            .append(true)
             .create(true)
-            .truncate(false)
             .open(path)?;
 
         // Read only the last non-empty line to recover chain state.
         let (next_sequence, last_entry_hash) = read_last_line(&mut file)?;
-
-        // Seek to end so all subsequent writes append without overwriting data.
-        file.seek(std::io::SeekFrom::End(0))?;
 
         if next_sequence == 0 {
             Ok(Self::new(file, signing_key, signer_kid))
