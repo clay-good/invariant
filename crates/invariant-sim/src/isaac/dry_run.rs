@@ -287,16 +287,26 @@ pub fn run_dry_campaign(
         // Ensure commands with end-effector positions also carry zero-force
         // data so the ISO 15066 fail-closed check does not reject legitimate
         // commands that happen to be near human-critical proximity zones.
+        // For profile-defined end-effectors, set grasp_force to the P12 lower
+        // bound (min_grasp_force_n) so baseline commands are not rejected.
         for cmd in commands.iter_mut() {
             if !cmd.end_effector_positions.is_empty() && cmd.end_effector_forces.is_empty() {
                 cmd.end_effector_forces = cmd
                     .end_effector_positions
                     .iter()
-                    .map(|ee| EndEffectorForce {
-                        name: ee.name.clone(),
-                        force: [0.0, 0.0, 0.0],
-                        torque: [0.0, 0.0, 0.0],
-                        grasp_force: Some(0.0),
+                    .map(|ee| {
+                        let min_grasp = profile
+                            .end_effectors
+                            .iter()
+                            .find(|cfg| cfg.name == ee.name)
+                            .map(|cfg| cfg.min_grasp_force_n)
+                            .unwrap_or(0.0);
+                        EndEffectorForce {
+                            name: ee.name.clone(),
+                            force: [0.0, 0.0, 0.0],
+                            torque: [0.0, 0.0, 0.0],
+                            grasp_force: Some(min_grasp),
+                        }
                     })
                     .collect();
             }

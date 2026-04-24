@@ -1246,10 +1246,15 @@ mod tests {
         let mut cmd = make_cmd(&profile);
         inject(&mut cmd, InjectionType::TerrainIncline, &profile);
         let env = cmd.environment_state.as_ref().unwrap();
-        // Default max_safe_pitch_rad = 0.2618, injected 2x = 0.5236
+        let max_pitch = profile
+            .environment
+            .as_ref()
+            .map(|e| e.max_safe_pitch_rad)
+            .unwrap_or(0.2618);
         assert!(
-            env.imu_pitch_rad.unwrap() > 0.2618,
-            "TerrainIncline: pitch should exceed default max"
+            env.imu_pitch_rad.unwrap() > max_pitch,
+            "TerrainIncline: pitch {:.4} should exceed max {max_pitch:.4}",
+            env.imu_pitch_rad.unwrap()
         );
     }
 
@@ -1530,10 +1535,15 @@ mod tests {
         let mut cmd = make_cmd(&profile);
         inject(&mut cmd, InjectionType::TerrainIncline, &profile);
         let env = cmd.environment_state.as_ref().unwrap();
-        // No environment config on ur10; default max_pitch = 0.2618, injected 2× = 0.5236
+        let max_pitch = profile
+            .environment
+            .as_ref()
+            .map(|e| e.max_safe_pitch_rad)
+            .unwrap_or(0.2618);
         assert!(
-            env.imu_pitch_rad.unwrap() > 0.2618,
-            "ur10 TerrainIncline: pitch should exceed default max 0.2618"
+            env.imu_pitch_rad.unwrap() > max_pitch,
+            "ur10 TerrainIncline: pitch {:.4} should exceed max {max_pitch:.4}",
+            env.imu_pitch_rad.unwrap()
         );
     }
 
