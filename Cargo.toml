@@ -10,7 +10,7 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "0.0.2"
+version = "0.0.3"
 authors = ["Clay Good <hi@claygood.com>"]
 edition = "2021"
 rust-version = "1.75"

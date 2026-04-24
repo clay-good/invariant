@@ -408,7 +408,7 @@ impl CoordinationMonitor {
 
     /// Register or update a robot's state.
     ///
-    /// If the incoming state has more than [`MAX_EE_PER_ROBOT`] (64)
+    /// If the incoming state has more than 64
     /// end-effectors, the list is truncated as a DoS guard and the number
     /// of dropped entries is returned via [`UpdateResult::truncated_ee`].
     pub fn update_state(&mut self, state: RobotState) -> Result<UpdateResult, CoordinatorError> {

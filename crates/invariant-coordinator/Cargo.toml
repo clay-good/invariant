@@ -7,7 +7,7 @@ description = "Multi-robot coordination safety monitor for Invariant."
 readme = "../../README.md"
 
 [dependencies]
-invariant-core = { package = "invariant-robotics-core", path = "../invariant-core", version = "0.0.2" }
+invariant-core = { package = "invariant-robotics-core", path = "../invariant-core", version = "0.0.3" }
 serde.workspace = true
 serde_json.workspace = true
 chrono.workspace = true

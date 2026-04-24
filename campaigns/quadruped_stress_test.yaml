@@ -1,0 +1,36 @@
+# Quadruped (Spot) Stress Test Campaign
+#
+# Exercises the spot profile with locomotion-heavy adversarial scenarios:
+# slip, trip, stomp, and environmental faults.
+#
+# Usage:
+#   invariant campaign --config campaigns/quadruped_stress_test.yaml --key keys.json --dry-run
+
+name: quadruped_stress_test
+profile: spot
+environments: 1
+episodes_per_env: 50000
+steps_per_episode: 200
+scenarios:
+  - scenario_type: baseline
+    weight: 0.40
+
+  - scenario_type: aggressive
+    weight: 0.20
+
+  - scenario_type: locomotion_slip
+    weight: 0.10
+
+  - scenario_type: locomotion_trip
+    weight: 0.10
+
+  - scenario_type: locomotion_stomp
+    weight: 0.10
+
+  - scenario_type: environment_fault
+    weight: 0.10
+
+success_criteria:
+  min_legitimate_pass_rate: 0.0
+  max_violation_escape_rate: 0.0
+  max_false_rejection_rate: 1.0

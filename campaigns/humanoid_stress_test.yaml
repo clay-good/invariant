@@ -1,0 +1,36 @@
+# Humanoid 28-DOF Stress Test Campaign
+#
+# Exercises the humanoid_28dof profile across baseline, adversarial,
+# locomotion, LLM hallucination, and environmental fault scenarios.
+#
+# Usage:
+#   invariant campaign --config campaigns/humanoid_stress_test.yaml --key keys.json --dry-run
+
+name: humanoid_stress_test
+profile: humanoid_28dof
+environments: 1
+episodes_per_env: 50000
+steps_per_episode: 200
+scenarios:
+  - scenario_type: baseline
+    weight: 0.40
+
+  - scenario_type: aggressive
+    weight: 0.20
+
+  - scenario_type: locomotion_runaway
+    weight: 0.10
+
+  - scenario_type: locomotion_fall
+    weight: 0.10
+
+  - scenario_type: prompt_injection
+    weight: 0.10
+
+  - scenario_type: environment_fault
+    weight: 0.10
+
+success_criteria:
+  min_legitimate_pass_rate: 0.0
+  max_violation_escape_rate: 0.0
+  max_false_rejection_rate: 1.0

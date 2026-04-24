@@ -1,0 +1,31 @@
+# Dexterous Hand (Shadow Hand) Stress Test Campaign
+#
+# Exercises the shadow_hand profile with manipulation-focused adversarial
+# scenarios: baseline, aggressive boundary, LLM hallucination, and
+# authority escalation attacks.
+#
+# Usage:
+#   invariant campaign --config campaigns/hand_stress_test.yaml --key keys.json --dry-run
+
+name: hand_stress_test
+profile: shadow_hand
+environments: 1
+episodes_per_env: 20000
+steps_per_episode: 200
+scenarios:
+  - scenario_type: baseline
+    weight: 0.50
+
+  - scenario_type: aggressive
+    weight: 0.30
+
+  - scenario_type: prompt_injection
+    weight: 0.10
+
+  - scenario_type: authority_escalation
+    weight: 0.10
+
+success_criteria:
+  min_legitimate_pass_rate: 0.0
+  max_violation_escape_rate: 0.0
+  max_false_rejection_rate: 1.0

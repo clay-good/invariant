@@ -5,6 +5,58 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.0.3] - 2026-04-16
+
+### Added
+- 21 new robot profiles: Fourier GR-1, Tesla Optimus, Figure 02, BD Atlas, Agility Digit, Sanctuary Phoenix, 1X NEO, Apptronik Apollo, Unitree Go2, ANYbotics ANYmal, Unitree A1, Allegro Hand, LEAP Hand, PSYONIC Ability Hand, Spot+Arm, Hello Stretch, PAL TIAGo, and 4 adversarial test profiles (total: 34)
+- Dry-run validation coverage for all 34 profiles across all scenario types
+- 15M campaign config generator updated for 34 profiles (272 configs)
+- Cross-profile dry-run test suites for hands, mobile manipulators, and new humanoids
+- ExclusionZone geometry validation at profile load time
+- EnvironmentConfig warning_temperature_c validation
+- Per-connection joint state tracking in Unix socket bridge (enables P4 acceleration checks)
+- Environment configs for 9 profiles (franka_panda, humanoid_28dof, quadruped_12dof, ur10, ur10e_haas_cell, shadow_hand, allegro_hand, leap_hand, psyonic_ability)
+- End-effector configs for 5 profiles (franka_panda, humanoid_28dof, unitree_g1, unitree_h1, ur10)
+- Per-IP rate limiting for `invariant serve` (`--rate-limit` flag) with automatic stale-entry cleanup
+- Audit log size limit (`AuditError::LogFull`) to prevent silent disk exhaustion
+- Bridge connection limits via tokio Semaphore (default: 256 max connections)
+- Bridge per-message read timeout (30s) and per-response write timeout (10s)
+- `--fail-on-audit-error` flag for L1 audit completeness enforcement (HTTP 503 on write failure)
+- Audit error counter exposed on `/health` endpoint for monitoring audit trail degradation
+- Python test job in CI workflow
+- Cross-platform binary builds (x86_64/aarch64, Linux/macOS) attached to GitHub Releases
+- CycloneDX SBOM generation in release workflow
+- 5 new per-profile campaign configs (humanoid, quadruped, hand, mobile manipulator, smoke test)
+- Streaming SHA-256 command hash (`sha256_hex_json`) to eliminate intermediate Vec allocation
+- Bridge P4 acceleration check integration test
+
+### Fixed
+- Bridge always passed None for previous_joints, permanently disabling P4 acceleration check on Unix socket path
+- Serve handler sequence counter stored before validation succeeded (TOCTOU race); replaced with compare-exchange loop
+- Serve handler previous_joints not updated on validation error, causing state drift
+- EnvironmentConfig warning_temperature_c never validated (NaN caused division-by-zero)
+- EnvironmentConfig critical_battery_pct NaN slipped through ordering check
+- EnvironmentConfig max_latency_ms finiteness checked after use in comparison
+- Bridge stats.lock().unwrap() without poison recovery
+- All clippy warnings resolved across all 6 crates
+- Bridge OOM via unbounded read_line (P0: malicious client could send gigabytes without newline)
+- Constant-time token comparison leaked token length via timing side channel (P1)
+- Digital twin mutex poisoning silently ignored in health endpoint and validate handler
+- Audit logger open_file missing O_APPEND, breaking L4 immutability invariant under concurrent writes
+- `read_last_line` performed O(n) syscalls scanning backward byte-by-byte; now reads last 128 KiB in one read
+- `--no-verify` removed from all `cargo publish` commands to catch packaging misconfigurations
+
+### Changed
+- Campaign runner BUILTIN_PROFILES expanded from 13 to 34
+- run_15m_campaign.sh episode distribution updated for 34 profiles
+- README reorganized with table of contents and collapsible sections
+- CI workflow: added fail-fast: false, --workspace flags, RUSTFLAGS
+- Release workflow: added latest tag automation, preflight gate, binary builds, and SBOM
+- ValidatorConfig stores profile_name, profile_hash, and signer_kid as Arc<str> to reduce hot-path allocations
+- Dockerfile runs as non-root user (UID 1000), pins huggingface_hub version
+- `--auth-token` CLI argument hidden from --help output (prefer --auth-token-file or env var)
+- Production serve router uses `into_make_service_with_connect_info` for real client IP extraction
+
 ## [0.0.2] - 2026-04-13
 
 ### Added

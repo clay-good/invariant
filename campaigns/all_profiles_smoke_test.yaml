@@ -1,0 +1,43 @@
+# All-Profiles Smoke Test
+#
+# Quick sanity check that every profile passes baseline validation.
+# Uses a single representative profile here; for full coverage across
+# all 34 profiles, use the 15M campaign config generator:
+#
+#   python3 isaac/generate_15m_configs.py \
+#     --total-episodes 34000 \
+#     --shards 1 \
+#     --output-dir campaigns/smoke_configs
+#
+# This generates one config per profile (34 configs, 1000 episodes each)
+# and runs them with:
+#
+#   for cfg in campaigns/smoke_configs/*.yaml; do
+#     invariant campaign --config "$cfg" --key keys.json --dry-run
+#   done
+#
+# The config below is a standalone quick-run using the generic humanoid
+# profile as a representative smoke test.
+
+name: all_profiles_smoke_test
+profile: humanoid_28dof
+environments: 1
+episodes_per_env: 1000
+steps_per_episode: 100
+scenarios:
+  - scenario_type: baseline
+    weight: 0.60
+
+  - scenario_type: aggressive
+    weight: 0.20
+
+  - scenario_type: prompt_injection
+    weight: 0.10
+
+  - scenario_type: authority_escalation
+    weight: 0.10
+
+success_criteria:
+  min_legitimate_pass_rate: 0.0
+  max_violation_escape_rate: 0.0
+  max_false_rejection_rate: 1.0

@@ -389,7 +389,7 @@ invariant campaign --config campaigns/cnc_tending_1m.yaml --key keys.json --dry-
 
 ```sh
 cargo build --release
-cargo test                    # ~2000 tests
+cargo test                    # ~2,047 tests
 cargo clippy -- -D warnings   # zero warnings
 python3 -m pytest isaac/tests # Python tests
 ./examples/demo.sh            # five-minute proof

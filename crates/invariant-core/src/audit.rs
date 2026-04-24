@@ -49,6 +49,19 @@ pub enum AuditError {
         /// Human-readable description of the I/O failure.
         reason: String,
     },
+
+    /// The audit log has reached its configured maximum size.
+    /// The entry was NOT written. External log rotation is required
+    /// before new entries can be written.
+    #[error("audit log full: writing {entry_bytes} bytes would exceed {max_bytes} byte limit (current size: {current_bytes})")]
+    LogFull {
+        /// Current file size in bytes.
+        current_bytes: u64,
+        /// Size of the entry that was rejected.
+        entry_bytes: u64,
+        /// Configured maximum file size.
+        max_bytes: u64,
+    },
 }
 
 impl From<std::io::Error> for AuditError {
@@ -165,6 +178,13 @@ pub struct AuditLogger<W: Write> {
     signer_kid: String,
     sequence: u64,
     previous_hash: String,
+    /// Optional maximum file size in bytes. When set, `log()` returns
+    /// `AuditError::LogFull` instead of writing if the entry would push
+    /// the total bytes written past this limit. This does NOT implement
+    /// rotation — external tools (e.g. logrotate) are responsible for that.
+    max_file_bytes: Option<u64>,
+    /// Tracks total bytes written through this logger instance.
+    bytes_written: u64,
 }
 
 impl<W: Write> AuditLogger<W> {
@@ -189,6 +209,8 @@ impl<W: Write> AuditLogger<W> {
             signer_kid,
             sequence: 0,
             previous_hash: String::new(),
+            max_file_bytes: None,
+            bytes_written: 0,
         }
     }
 
@@ -209,6 +231,8 @@ impl<W: Write> AuditLogger<W> {
             signer_kid,
             sequence: next_sequence,
             previous_hash: last_entry_hash,
+            max_file_bytes: None,
+            bytes_written: 0,
         }
     }
 
@@ -290,12 +314,26 @@ impl<W: Write> AuditLogger<W> {
         let json = serde_json::to_string(&signed).map_err(|e| AuditError::Serialization {
             reason: e.to_string(),
         })?;
+
+        // Check max file size before writing. The +1 accounts for the newline.
+        let write_len = json.len() as u64 + 1;
+        if let Some(max) = self.max_file_bytes {
+            if self.bytes_written + write_len > max {
+                return Err(AuditError::LogFull {
+                    current_bytes: self.bytes_written,
+                    entry_bytes: write_len,
+                    max_bytes: max,
+                });
+            }
+        }
+
         writeln!(self.writer, "{json}")?;
         // Flush to ensure the write is fully committed through any buffering
         // layer before advancing hash chain state.
         self.writer.flush()?;
 
         // Only advance hash chain state after confirmed write.
+        self.bytes_written += write_len;
         self.previous_hash = entry.entry_hash.clone();
         self.sequence += 1;
 
@@ -310,6 +348,20 @@ impl<W: Write> AuditLogger<W> {
     /// The hash of the last written entry (empty string if no entries yet).
     pub fn previous_hash(&self) -> &str {
         &self.previous_hash
+    }
+
+    /// Set the maximum file size in bytes. When set, `log()` returns
+    /// `AuditError::LogFull` if writing the entry would exceed this limit.
+    /// Pass `None` to disable the limit (default).
+    pub fn set_max_file_bytes(&mut self, max: Option<u64>) {
+        self.max_file_bytes = max;
+    }
+
+    /// Set the initial byte count (e.g., from the current file size when
+    /// resuming an existing log). This is used together with `max_file_bytes`
+    /// to track total log size.
+    pub fn set_initial_bytes(&mut self, bytes: u64) {
+        self.bytes_written = bytes;
     }
 
     // Returns the completed entry together with its serialized bytes (with the
@@ -417,16 +469,27 @@ impl AuditLogger<std::fs::File> {
         // Read only the last non-empty line to recover chain state.
         let (next_sequence, last_entry_hash) = read_last_line(&mut file)?;
 
+        // Record the current file size so max_file_bytes tracking starts
+        // from the correct offset when resuming an existing log.
+        let file_size = file
+            .metadata()
+            .map(|m| m.len())
+            .unwrap_or(0);
+
         if next_sequence == 0 {
-            Ok(Self::new(file, signing_key, signer_kid))
+            let mut logger = Self::new(file, signing_key, signer_kid);
+            logger.bytes_written = file_size;
+            Ok(logger)
         } else {
-            Ok(Self::resume(
+            let mut logger = Self::resume(
                 file,
                 signing_key,
                 signer_kid,
                 next_sequence,
                 last_entry_hash,
-            ))
+            );
+            logger.bytes_written = file_size;
+            Ok(logger)
         }
     }
 }
@@ -439,6 +502,12 @@ impl AuditLogger<std::fs::File> {
 ///
 /// Returns `(0, "")` if the file is empty or contains only blank lines.
 #[cfg(not(target_os = "unknown"))]
+/// Size of the trailing chunk read from EOF. 128 KiB is large enough to
+/// contain even very large audit entries while keeping memory usage bounded.
+/// This reduces startup latency for large audit logs from O(line_length)
+/// syscalls to O(1) — one seek + one read regardless of entry size.
+const TAIL_READ_BYTES: u64 = 128 * 1024;
+
 fn read_last_line(file: &mut std::fs::File) -> Result<(u64, String), AuditError> {
     use std::io::{Read, Seek};
 
@@ -447,47 +516,36 @@ fn read_last_line(file: &mut std::fs::File) -> Result<(u64, String), AuditError>
         return Ok((0, String::new()));
     }
 
-    // Scan backward to find the start of the last non-empty line.
-    // We read one byte at a time from the end, collecting the line content.
-    let mut pos = file_len;
-    let mut line_bytes: Vec<u8> = Vec::new();
-    let mut found_content = false;
+    // Read the last TAIL_READ_BYTES (or the whole file if smaller) in one
+    // read, then scan backward in memory for the last newline.
+    let read_start = file_len.saturating_sub(TAIL_READ_BYTES);
+    let read_len = (file_len - read_start) as usize;
+    file.seek(std::io::SeekFrom::Start(read_start))?;
+    let mut buf = vec![0u8; read_len];
+    file.read_exact(&mut buf)?;
 
-    loop {
-        if pos == 0 {
-            break;
-        }
-        pos -= 1;
-        file.seek(std::io::SeekFrom::Start(pos))?;
-        let mut byte = [0u8; 1];
-        file.read_exact(&mut byte)?;
-
-        if byte[0] == b'\n' {
-            if found_content {
-                // We've collected the full line in reverse; stop here.
-                break;
-            }
-            // Skip trailing newlines / blank lines at end of file.
-            continue;
-        }
-
-        found_content = true;
-        line_bytes.push(byte[0]);
+    // Find the last non-empty line by scanning backward.
+    // Skip trailing newlines / whitespace at end of buffer.
+    let mut end = buf.len();
+    while end > 0 && (buf[end - 1] == b'\n' || buf[end - 1] == b'\r') {
+        end -= 1;
     }
-
-    if !found_content {
+    if end == 0 {
         return Ok((0, String::new()));
     }
 
-    // We built the line in reverse order; flip it back.
-    line_bytes.reverse();
+    // Find the newline that precedes the last line.
+    let start = match buf[..end].iter().rposition(|&b| b == b'\n') {
+        Some(pos) => pos + 1,
+        None => 0,
+    };
 
-    let line = String::from_utf8(line_bytes).map_err(|e| AuditError::Serialization {
+    let line = std::str::from_utf8(&buf[start..end]).map_err(|e| AuditError::Serialization {
         reason: format!("last audit log line is not valid UTF-8: {e}"),
     })?;
 
-    let signed: crate::models::audit::SignedAuditEntry = serde_json::from_str(line.trim())
-        .map_err(|e| AuditError::Serialization {
+    let signed: crate::models::audit::SignedAuditEntry =
+        serde_json::from_str(line.trim()).map_err(|e| AuditError::Serialization {
             reason: format!("failed to parse last audit log entry: {e}"),
         })?;
 
@@ -1540,5 +1598,225 @@ mod tests {
             result.is_err(),
             "single bit flip in signature must be detected"
         );
+    }
+
+    // -----------------------------------------------------------------------
+    // max_file_bytes / LogFull tests (spec-v3 §3.3)
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn log_full_rejects_when_entry_exceeds_limit() {
+        let (sign_sk, _) = make_keypair();
+        let mut buf = Vec::new();
+        let mut logger = AuditLogger::new(&mut buf, sign_sk, "test".into());
+
+        // Set a very small limit — first entry will exceed it.
+        logger.set_max_file_bytes(Some(10));
+
+        let cmd = make_simple_command();
+        let (verdict, _) = make_simple_signed_verdict();
+        let result = logger.log(&cmd, &verdict);
+
+        assert!(result.is_err(), "write must fail when it would exceed limit");
+        match result.unwrap_err() {
+            AuditError::LogFull {
+                current_bytes,
+                entry_bytes,
+                max_bytes,
+            } => {
+                assert_eq!(current_bytes, 0);
+                assert!(entry_bytes > 10);
+                assert_eq!(max_bytes, 10);
+            }
+            other => panic!("expected LogFull, got: {other}"),
+        }
+        // Buffer must remain empty — entry was NOT written.
+        assert!(buf.is_empty(), "no data must be written on LogFull");
+    }
+
+    #[test]
+    fn log_full_allows_entries_within_limit() {
+        let (sign_sk, sign_vk) = make_keypair();
+        let mut buf = Vec::new();
+        let mut logger = AuditLogger::new(&mut buf, sign_sk, "test".into());
+
+        // Set a generous limit.
+        logger.set_max_file_bytes(Some(1_000_000));
+
+        let cmd = make_simple_command();
+        let (verdict, _) = make_simple_signed_verdict();
+        let entry = logger.log(&cmd, &verdict);
+        assert!(entry.is_ok(), "entry within limit must succeed");
+        assert!(!buf.is_empty());
+
+        // Verify the log is valid.
+        let log_str = String::from_utf8(buf).unwrap();
+        assert!(verify_log(&log_str, &sign_vk).is_ok());
+    }
+
+    #[test]
+    fn log_full_triggers_after_multiple_entries() {
+        let (sign_sk, _) = make_keypair();
+        let cmd = make_simple_command();
+        let (verdict, _) = make_simple_signed_verdict();
+
+        // Write one entry to a scratch buffer to measure its size.
+        let entry_size = {
+            let mut scratch = Vec::new();
+            let mut scratch_logger =
+                AuditLogger::new(&mut scratch, sign_sk.clone(), "test".into());
+            scratch_logger.log(&cmd, &verdict).unwrap();
+            scratch.len() as u64
+        };
+
+        // Now create the real logger with a limit that fits 2 entries
+        // (add a small margin for timestamp/sequence variation).
+        let mut buf = Vec::new();
+        let mut logger = AuditLogger::new(&mut buf, sign_sk, "test".into());
+        logger.set_max_file_bytes(Some(entry_size * 2 + 256));
+
+        // First and second entries should fit.
+        assert!(logger.log(&cmd, &verdict).is_ok(), "first entry must fit");
+        assert!(logger.log(&cmd, &verdict).is_ok(), "second entry must fit");
+
+        // Third entry should be rejected.
+        let result = logger.log(&cmd, &verdict);
+        assert!(result.is_err(), "third entry must be rejected");
+        assert!(
+            matches!(result.unwrap_err(), AuditError::LogFull { .. }),
+            "error must be LogFull"
+        );
+    }
+
+    #[test]
+    fn log_full_disabled_by_default() {
+        let (sign_sk, _) = make_keypair();
+        let mut buf = Vec::new();
+        let mut logger = AuditLogger::new(&mut buf, sign_sk, "test".into());
+
+        let cmd = make_simple_command();
+        let (verdict, _) = make_simple_signed_verdict();
+
+        // Without max_file_bytes, writes should always succeed.
+        for _ in 0..100 {
+            assert!(logger.log(&cmd, &verdict).is_ok());
+        }
+    }
+
+    #[test]
+    fn set_initial_bytes_affects_limit_check() {
+        let (sign_sk, _) = make_keypair();
+        let mut buf = Vec::new();
+        let mut logger = AuditLogger::new(&mut buf, sign_sk, "test".into());
+
+        // Pretend the file already has 999,990 bytes.
+        logger.set_initial_bytes(999_990);
+        logger.set_max_file_bytes(Some(1_000_000));
+
+        let cmd = make_simple_command();
+        let (verdict, _) = make_simple_signed_verdict();
+
+        // A typical audit entry is far larger than 10 bytes, so this should fail.
+        let result = logger.log(&cmd, &verdict);
+        assert!(
+            matches!(result.unwrap_err(), AuditError::LogFull { .. }),
+            "entry must be rejected when initial_bytes + entry > max"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // read_last_line O(1) syscalls test (spec-v3 §5.2)
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn read_last_line_large_audit_log() {
+        // Write many entries to a temp file, then verify open_file recovers
+        // the correct chain state from the last entry using the O(1) reader.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("large_audit.jsonl");
+
+        let (sign_sk, _sign_vk) = make_keypair();
+        let cmd = make_simple_command();
+        let (verdict, _) = make_simple_signed_verdict();
+
+        // Write 200 entries (produces a file of roughly 0.5-1 MB).
+        let expected_sequence;
+        let expected_hash;
+        {
+            let mut logger =
+                AuditLogger::open_file(&path, sign_sk.clone(), "test".into()).unwrap();
+            for _ in 0..200 {
+                logger.log(&cmd, &verdict).unwrap();
+            }
+            expected_sequence = logger.sequence();
+            expected_hash = logger.previous_hash().to_string();
+        }
+
+        // Re-open and verify chain state is recovered correctly.
+        let start = std::time::Instant::now();
+        let logger = AuditLogger::open_file(&path, sign_sk, "test".into()).unwrap();
+        let elapsed = start.elapsed();
+
+        assert_eq!(
+            logger.sequence(),
+            expected_sequence,
+            "sequence must match after re-open"
+        );
+        assert_eq!(
+            logger.previous_hash(),
+            expected_hash,
+            "previous_hash must match after re-open"
+        );
+
+        // The O(1) reader should complete in well under 100ms even on slow
+        // CI disks. The old per-byte reader would take proportionally longer
+        // on large entries.
+        assert!(
+            elapsed.as_millis() < 500,
+            "read_last_line must be fast: took {}ms",
+            elapsed.as_millis()
+        );
+
+        // Verify the file is non-trivial in size.
+        let file_size = std::fs::metadata(&path).unwrap().len();
+        assert!(
+            file_size > 50_000,
+            "audit log must be substantial: {} bytes",
+            file_size
+        );
+    }
+
+    #[test]
+    fn read_last_line_with_trailing_newlines() {
+        // Audit logs end with a newline after each entry. Verify the reader
+        // handles trailing newlines correctly (doesn't return an empty line).
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("trailing.jsonl");
+
+        let (sign_sk, _) = make_keypair();
+        let cmd = make_simple_command();
+        let (verdict, _) = make_simple_signed_verdict();
+
+        {
+            let mut logger =
+                AuditLogger::open_file(&path, sign_sk.clone(), "test".into()).unwrap();
+            logger.log(&cmd, &verdict).unwrap();
+            logger.log(&cmd, &verdict).unwrap();
+        }
+
+        // Re-open — must resume at sequence 2.
+        let logger = AuditLogger::open_file(&path, sign_sk, "test".into()).unwrap();
+        assert_eq!(logger.sequence(), 2);
+    }
+
+    #[test]
+    fn read_last_line_empty_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("empty.jsonl");
+
+        let (sign_sk, _) = make_keypair();
+        let logger = AuditLogger::open_file(&path, sign_sk, "test".into()).unwrap();
+        assert_eq!(logger.sequence(), 0);
+        assert_eq!(logger.previous_hash(), "");
     }
 }

@@ -1,0 +1,40 @@
+# Mobile Manipulator (Spot + Arm) Stress Test Campaign
+#
+# Exercises the spot_with_arm profile — the most complex platform combining
+# locomotion, manipulation, exclusion zones, and environmental awareness.
+# Includes compound multi-step attacks and long-running stability checks.
+#
+# Usage:
+#   invariant campaign --config campaigns/mobile_manipulator_test.yaml --key keys.json --dry-run
+
+name: mobile_manipulator_test
+profile: spot_with_arm
+environments: 1
+episodes_per_env: 30000
+steps_per_episode: 200
+scenarios:
+  - scenario_type: baseline
+    weight: 0.30
+
+  - scenario_type: aggressive
+    weight: 0.20
+
+  - scenario_type: locomotion_runaway
+    weight: 0.10
+
+  - scenario_type: exclusion_zone
+    weight: 0.10
+
+  - scenario_type: environment_fault
+    weight: 0.10
+
+  - scenario_type: compound_authority_physics
+    weight: 0.10
+
+  - scenario_type: long_running_stability
+    weight: 0.10
+
+success_criteria:
+  min_legitimate_pass_rate: 0.0
+  max_violation_escape_rate: 0.0
+  max_false_rejection_rate: 1.0

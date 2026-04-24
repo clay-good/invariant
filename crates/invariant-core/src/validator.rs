@@ -11,7 +11,7 @@
 //   `previous_joints` are caller-supplied for testability.
 
 use std::collections::HashMap;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use base64::{engine::general_purpose::STANDARD, Engine};
 use chrono::{DateTime, Utc};
@@ -62,9 +62,13 @@ pub struct ValidatorConfig {
     profile: RobotProfile,
     trusted_keys: HashMap<String, VerifyingKey>,
     signing_key: SigningKey,
-    signer_kid: String,
-    /// Pre-computed SHA-256 hash of the canonical profile JSON.
-    profile_hash: String,
+    signer_kid: Arc<str>,
+    /// Pre-computed profile name, stored as `Arc<str>` so cloning on the
+    /// hot path is a reference-count bump instead of a heap allocation.
+    profile_name: Arc<str>,
+    /// Pre-computed SHA-256 hash of the canonical profile JSON, stored as
+    /// `Arc<str>` for the same reason.
+    profile_hash: Arc<str>,
     /// How to handle signed vs unsigned sensor data.
     sensor_policy: SensorTrustPolicy,
     /// Trusted sensor signing keys (kid -> VerifyingKey).
@@ -94,12 +98,14 @@ impl ValidatorConfig {
             serde_json::to_vec(&profile).map_err(|e| ValidatorError::Serialization {
                 reason: e.to_string(),
             })?;
-        let profile_hash = crate::util::sha256_hex(&profile_json);
+        let profile_hash: Arc<str> = crate::util::sha256_hex(&profile_json).into();
+        let profile_name: Arc<str> = profile.name.clone().into();
         Ok(Self {
             profile,
             trusted_keys,
             signing_key,
-            signer_kid,
+            signer_kid: signer_kid.into(),
+            profile_name,
             profile_hash,
             sensor_policy: SensorTrustPolicy::AcceptUnsigned,
             trusted_sensor_keys: HashMap::new(),
@@ -214,8 +220,8 @@ impl ValidatorConfig {
                 command_sequence: command.sequence,
                 timestamp: now,
                 checks: vec![rejection],
-                profile_name: self.profile.name.clone(),
-                profile_hash: self.profile_hash.clone(),
+                profile_name: self.profile_name.to_string(),
+                profile_hash: self.profile_hash.to_string(),
                 authority_summary: AuthoritySummary {
                     origin_principal: String::new(),
                     hop_count: 0,
@@ -236,12 +242,12 @@ impl ValidatorConfig {
             });
         }
 
-        // Compute command hash.
-        let command_json =
-            serde_json::to_vec(command).map_err(|e| ValidatorError::Serialization {
+        // Compute command hash by streaming JSON directly into SHA-256,
+        // avoiding the intermediate Vec<u8> allocation from serde_json::to_vec.
+        let command_hash =
+            crate::util::sha256_hex_json(command).map_err(|e| ValidatorError::Serialization {
                 reason: e.to_string(),
             })?;
-        let command_hash = crate::util::sha256_hex(&command_json);
 
         // Decode PCA chain and run authority verification.
         let (authority_result, verified_chain) = self.run_authority(
@@ -294,8 +300,8 @@ impl ValidatorConfig {
             command_sequence: command.sequence,
             timestamp: now,
             checks,
-            profile_name: self.profile.name.clone(),
-            profile_hash: self.profile_hash.clone(),
+            profile_name: self.profile_name.to_string(),
+            profile_hash: self.profile_hash.to_string(),
             authority_summary,
             threat_analysis,
         };
@@ -512,7 +518,7 @@ impl ValidatorConfig {
         Ok(SignedVerdict {
             verdict: verdict.clone(),
             verdict_signature: STANDARD.encode(signature.to_bytes()),
-            signer_kid: self.signer_kid.clone(),
+            signer_kid: self.signer_kid.to_string(),
         })
     }
 }

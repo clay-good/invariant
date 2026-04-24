@@ -7,7 +7,7 @@ description = "Simulation harness for Invariant (Isaac Lab integration and dry-r
 readme = "../../README.md"
 
 [dependencies]
-invariant-core = { package = "invariant-robotics-core", path = "../invariant-core", version = "0.0.2" }
+invariant-core = { package = "invariant-robotics-core", path = "../invariant-core", version = "0.0.3" }
 # Unix socket + async I/O for Isaac Lab IPC bridge; no HTTP client needed (P2-13).
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net", "io-util", "sync", "time"] }
 serde.workspace = true

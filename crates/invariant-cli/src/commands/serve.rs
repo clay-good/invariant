@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::net::SocketAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -10,6 +10,7 @@ use axum::error_handling::HandleErrorLayer;
 use axum::extract::State;
 use axum::http::{HeaderMap, StatusCode};
 use axum::routing::{get, post};
+use axum::response::IntoResponse;
 use axum::{BoxError, Json, Router};
 use chrono::Utc;
 use clap::Args;
@@ -98,6 +99,11 @@ pub struct ServeArgs {
     /// record. Production deployments should enable this flag.
     #[arg(long)]
     pub fail_on_audit_error: bool,
+    /// Maximum requests per second per client IP. 0 disables rate limiting
+    /// (default). When a client exceeds this limit, requests are rejected
+    /// with HTTP 429 Too Many Requests.
+    #[arg(long, default_value = "0")]
+    pub rate_limit: u64,
 }
 
 // ---------------------------------------------------------------------------
@@ -146,6 +152,11 @@ struct AppState {
     audit_errors: std::sync::atomic::AtomicU64,
     /// When true, return HTTP 503 on audit write failure (L1 enforcement).
     fail_on_audit_error: bool,
+    /// Per-IP rate limiter. When `rate_limit_rps > 0`, tracks request counts
+    /// per IP per one-second window. Key: IP address. Value: (window start, count).
+    rate_limiter: std::sync::Mutex<HashMap<IpAddr, (Instant, u64)>>,
+    /// Maximum requests per second per IP (0 = disabled).
+    rate_limit_rps: u64,
 }
 
 /// Wrapper holding the divergence detector and the last observed snapshot
@@ -315,6 +326,37 @@ fn check_auth(
 // ---------------------------------------------------------------------------
 // Handlers
 // ---------------------------------------------------------------------------
+
+/// Check per-IP rate limit. Returns `Err(429)` if the limit is exceeded.
+fn check_rate_limit(
+    state: &AppState,
+    client_ip: IpAddr,
+) -> Result<(), (StatusCode, Json<ErrorResponse>)> {
+    let now = Instant::now();
+    let mut limiter = state
+        .rate_limiter
+        .lock()
+        .unwrap_or_else(|p| p.into_inner());
+    let entry = limiter.entry(client_ip).or_insert((now, 0));
+    if now.duration_since(entry.0) >= Duration::from_secs(1) {
+        // New window — reset counter.
+        *entry = (now, 1);
+    } else {
+        entry.1 += 1;
+        if entry.1 > state.rate_limit_rps {
+            return Err((
+                StatusCode::TOO_MANY_REQUESTS,
+                Json(ErrorResponse {
+                    error: format!(
+                        "rate limit exceeded: {} requests/s (limit: {})",
+                        entry.1, state.rate_limit_rps
+                    ),
+                }),
+            ));
+        }
+    }
+    Ok(())
+}
 
 async fn handle_validate(
     State(state): State<Arc<AppState>>,
@@ -850,7 +892,27 @@ async fn run_server(args: &ServeArgs) -> i32 {
         previous_forces: std::sync::Mutex::new(None),
         audit_errors: std::sync::atomic::AtomicU64::new(0),
         fail_on_audit_error: args.fail_on_audit_error,
+        rate_limiter: std::sync::Mutex::new(HashMap::new()),
+        rate_limit_rps: args.rate_limit,
     });
+
+    // Spawn a background task to clean up stale rate-limiter entries every 60s.
+    if args.rate_limit > 0 {
+        let rl_state = Arc::clone(&state);
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(Duration::from_secs(60));
+            loop {
+                interval.tick().await;
+                let now = Instant::now();
+                let mut limiter = rl_state
+                    .rate_limiter
+                    .lock()
+                    .unwrap_or_else(|p| p.into_inner());
+                limiter.retain(|_, (window_start, _)| now.duration_since(*window_start) < Duration::from_secs(60));
+            }
+        });
+        eprintln!("info: rate limiting enabled ({} req/s per IP)", args.rate_limit);
+    }
 
     // Spawn a background task that periodically calls watchdog.check() so that
     // the timeout can trigger even when no heartbeat requests are in flight.
@@ -1015,10 +1077,34 @@ async fn run_server(args: &ServeArgs) -> i32 {
         tracing::info!("Isaac Lab bridge listening on {bridge_socket}");
     }
 
+    let rate_limit_state = Arc::clone(&state);
     let app = Router::new()
         .route("/validate", post(handle_validate))
         .route("/heartbeat", post(handle_heartbeat))
         .route("/health", get(handle_health))
+        .layer(axum::middleware::from_fn(move |req: axum::extract::Request, next: axum::middleware::Next| {
+            let rl_state = Arc::clone(&rate_limit_state);
+            async move {
+                if rl_state.rate_limit_rps > 0 {
+                    let client_ip = req
+                        .extensions()
+                        .get::<axum::extract::ConnectInfo<SocketAddr>>()
+                        .map(|ci| ci.0.ip())
+                        .unwrap_or(IpAddr::V4(std::net::Ipv4Addr::LOCALHOST));
+                    if let Err((status, json_body)) = check_rate_limit(&rl_state, client_ip) {
+                        let body = serde_json::to_string(&json_body.0).unwrap_or_default();
+                        return axum::http::Response::builder()
+                            .status(status)
+                            .header("content-type", "application/json")
+                            .header("retry-after", "1")
+                            .body(axum::body::Body::from(body))
+                            .unwrap()
+                            .into_response();
+                    }
+                }
+                next.run(req).await.into_response()
+            }
+        }))
         .layer(
             // HandleErrorLayer must wrap TimeoutLayer so the BoxError from a
             // timeout is converted to a well-formed HTTP 408 response before
@@ -1049,9 +1135,12 @@ async fn run_server(args: &ServeArgs) -> i32 {
         }
     };
 
-    if let Err(e) = axum::serve(listener, app)
-        .with_graceful_shutdown(shutdown_signal())
-        .await
+    if let Err(e) = axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .with_graceful_shutdown(shutdown_signal())
+    .await
     {
         eprintln!("error: server error: {e}");
         return 2;
@@ -1188,14 +1277,40 @@ mod tests {
             previous_forces: std::sync::Mutex::new(None),
             audit_errors: std::sync::atomic::AtomicU64::new(0),
             fail_on_audit_error: false,
+            rate_limiter: std::sync::Mutex::new(HashMap::new()),
+            rate_limit_rps: 0,
         })
     }
 
     fn make_app(state: Arc<AppState>) -> Router {
+        let rate_limit_state = Arc::clone(&state);
         Router::new()
             .route("/validate", post(handle_validate))
             .route("/heartbeat", post(handle_heartbeat))
             .route("/health", get(handle_health))
+            .layer(axum::middleware::from_fn(move |req: axum::extract::Request, next: axum::middleware::Next| {
+                let rl_state = Arc::clone(&rate_limit_state);
+                async move {
+                    if rl_state.rate_limit_rps > 0 {
+                        let client_ip = req
+                            .extensions()
+                            .get::<axum::extract::ConnectInfo<SocketAddr>>()
+                            .map(|ci| ci.0.ip())
+                            .unwrap_or(IpAddr::V4(std::net::Ipv4Addr::LOCALHOST));
+                        if let Err((status, json_body)) = check_rate_limit(&rl_state, client_ip) {
+                            let body = serde_json::to_string(&json_body.0).unwrap_or_default();
+                            return axum::http::Response::builder()
+                                .status(status)
+                                .header("content-type", "application/json")
+                                .header("retry-after", "1")
+                                .body(axum::body::Body::from(body))
+                                .unwrap()
+                                .into_response();
+                        }
+                    }
+                    next.run(req).await.into_response()
+                }
+            }))
             .with_state(state)
     }
 
@@ -1753,6 +1868,7 @@ mod tests {
             audit_log: None,
             digital_twin: false,
             fail_on_audit_error: false,
+            rate_limit: 0,
         };
         // No env var set; no file; CLI arg must win.
         // We must clear the env var in case it leaked from another test.
@@ -1785,6 +1901,7 @@ mod tests {
             audit_log: None,
             digital_twin: false,
             fail_on_audit_error: false,
+            rate_limit: 0,
         };
         std::env::remove_var("INVARIANT_AUTH_TOKEN");
         let result = resolve_auth_token(&args).unwrap();
@@ -1811,6 +1928,7 @@ mod tests {
             audit_log: None,
             digital_twin: false,
             fail_on_audit_error: false,
+            rate_limit: 0,
         };
         std::env::remove_var("INVARIANT_AUTH_TOKEN");
         let result = resolve_auth_token(&args);
@@ -1839,6 +1957,7 @@ mod tests {
             audit_log: None,
             digital_twin: false,
             fail_on_audit_error: false,
+            rate_limit: 0,
         };
         std::env::remove_var("INVARIANT_AUTH_TOKEN");
         let result = resolve_auth_token(&args).unwrap();
@@ -1888,6 +2007,7 @@ mod tests {
             audit_log: None,
             digital_twin: false,
             fail_on_audit_error: false,
+            rate_limit: 0,
         };
         assert_eq!(run(&args), 2);
     }
@@ -1918,6 +2038,7 @@ mod tests {
             audit_log: None,
             digital_twin: false,
             fail_on_audit_error: false,
+            rate_limit: 0,
         };
         assert_eq!(run(&args), 2);
     }
@@ -1946,6 +2067,7 @@ mod tests {
             audit_log: None,
             digital_twin: false,
             fail_on_audit_error: false,
+            rate_limit: 0,
         };
         assert_eq!(run(&args), 2);
     }
@@ -2009,6 +2131,8 @@ mod tests {
             previous_forces: std::sync::Mutex::new(None),
             audit_errors: std::sync::atomic::AtomicU64::new(0),
             fail_on_audit_error,
+            rate_limiter: std::sync::Mutex::new(HashMap::new()),
+            rate_limit_rps: 0,
         })
     }
 
@@ -2217,6 +2341,255 @@ mod tests {
                 "previous_joints must reflect the rejected command's joints"
             );
         }
+    }
+
+    // --- Rate limiting (spec-v3 §3.2) ---
+
+    fn make_test_state_with_rate_limit(rate_limit_rps: u64) -> Arc<AppState> {
+        let sk = SigningKey::generate(&mut OsRng);
+        let vk = sk.verifying_key();
+        let kid = "test-serve-kid".to_string();
+        let signing_key_bytes = sk.to_bytes();
+
+        let profile_json = invariant_core::profiles::list_builtins()
+            .first()
+            .map(|name| {
+                let p = invariant_core::profiles::load_builtin(name).unwrap();
+                serde_json::to_string(&p).unwrap()
+            })
+            .unwrap();
+        let profile = invariant_core::profiles::load_from_json(&profile_json).unwrap();
+
+        let mut trusted_keys = HashMap::new();
+        trusted_keys.insert(kid.clone(), vk);
+
+        let config = ValidatorConfig::new(profile, trusted_keys, sk, kid.clone()).unwrap();
+        let app_signing_key = SigningKey::from_bytes(&signing_key_bytes);
+
+        Arc::new(AppState {
+            config,
+            trust_plane: true,
+            signing_key: app_signing_key,
+            kid,
+            watchdog: None,
+            boot_instant: Instant::now(),
+            auth_token: None,
+            safe_stop_path: PathBuf::from("safe-stop.json"),
+            threat_scoring_enabled: false,
+            incident: None,
+            audit: None,
+            digital_twin: None,
+            last_sequence: std::sync::atomic::AtomicU64::new(0),
+            previous_joints: std::sync::Mutex::new(None),
+            previous_forces: std::sync::Mutex::new(None),
+            audit_errors: std::sync::atomic::AtomicU64::new(0),
+            fail_on_audit_error: false,
+            rate_limiter: std::sync::Mutex::new(HashMap::new()),
+            rate_limit_rps,
+        })
+    }
+
+    #[tokio::test]
+    async fn test_rate_limit_allows_within_limit() {
+        let state = make_test_state_with_rate_limit(5);
+
+        // Send 5 requests (at the limit) — all must succeed.
+        for seq in 1..=5u64 {
+            let mut cmd = make_test_command();
+            cmd.sequence = seq;
+            let body = serde_json::to_string(&ValidateRequest { command: cmd }).unwrap();
+            let app = make_app(Arc::clone(&state));
+            let resp = app
+                .oneshot(
+                    Request::builder()
+                        .method("POST")
+                        .uri("/validate")
+                        .header("content-type", "application/json")
+                        .body(Body::from(body))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(
+                resp.status(),
+                StatusCode::OK,
+                "request {seq} within rate limit must succeed"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_rate_limit_rejects_over_limit() {
+        let state = make_test_state_with_rate_limit(3);
+
+        // Send 4 requests — the 4th must be rejected with 429.
+        for seq in 1..=4u64 {
+            let mut cmd = make_test_command();
+            cmd.sequence = seq;
+            let body = serde_json::to_string(&ValidateRequest { command: cmd }).unwrap();
+            let app = make_app(Arc::clone(&state));
+            let resp = app
+                .oneshot(
+                    Request::builder()
+                        .method("POST")
+                        .uri("/validate")
+                        .header("content-type", "application/json")
+                        .body(Body::from(body))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            if seq <= 3 {
+                assert_eq!(
+                    resp.status(),
+                    StatusCode::OK,
+                    "request {seq} within limit must succeed"
+                );
+            } else {
+                assert_eq!(
+                    resp.status(),
+                    StatusCode::TOO_MANY_REQUESTS,
+                    "request {seq} over limit must get 429"
+                );
+                // Verify Retry-After header is present.
+                assert!(
+                    resp.headers().contains_key("retry-after"),
+                    "429 response must include Retry-After header"
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_rate_limit_resets_after_window() {
+        let state = make_test_state_with_rate_limit(2);
+
+        // Send 2 requests — both succeed.
+        for seq in 1..=2u64 {
+            let mut cmd = make_test_command();
+            cmd.sequence = seq;
+            let body = serde_json::to_string(&ValidateRequest { command: cmd }).unwrap();
+            let app = make_app(Arc::clone(&state));
+            let resp = app
+                .oneshot(
+                    Request::builder()
+                        .method("POST")
+                        .uri("/validate")
+                        .header("content-type", "application/json")
+                        .body(Body::from(body))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(resp.status(), StatusCode::OK);
+        }
+
+        // Wait for the window to expire.
+        tokio::time::sleep(Duration::from_secs(1)).await;
+
+        // Request after window reset must succeed.
+        let mut cmd = make_test_command();
+        cmd.sequence = 3;
+        let body = serde_json::to_string(&ValidateRequest { command: cmd }).unwrap();
+        let app = make_app(Arc::clone(&state));
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/validate")
+                    .header("content-type", "application/json")
+                    .body(Body::from(body))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            resp.status(),
+            StatusCode::OK,
+            "request after window reset must succeed"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_rate_limit_disabled_allows_all() {
+        // rate_limit_rps=0 means disabled.
+        let state = make_test_state_with_rate_limit(0);
+
+        // Send 20 requests rapidly — all must succeed.
+        for seq in 1..=20u64 {
+            let mut cmd = make_test_command();
+            cmd.sequence = seq;
+            let body = serde_json::to_string(&ValidateRequest { command: cmd }).unwrap();
+            let app = make_app(Arc::clone(&state));
+            let resp = app
+                .oneshot(
+                    Request::builder()
+                        .method("POST")
+                        .uri("/validate")
+                        .header("content-type", "application/json")
+                        .body(Body::from(body))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(
+                resp.status(),
+                StatusCode::OK,
+                "request {seq} must succeed with rate limiting disabled"
+            );
+        }
+    }
+
+    #[test]
+    fn test_check_rate_limit_unit() {
+        let state = AppState {
+            config: {
+                let sk = SigningKey::generate(&mut OsRng);
+                let vk = sk.verifying_key();
+                let kid = "test".to_string();
+                let profile = invariant_core::profiles::load_builtin(
+                    invariant_core::profiles::list_builtins().first().unwrap(),
+                )
+                .unwrap();
+                let mut keys = HashMap::new();
+                keys.insert(kid.clone(), vk);
+                ValidatorConfig::new(profile, keys, sk, kid.clone()).unwrap()
+            },
+            trust_plane: false,
+            signing_key: SigningKey::generate(&mut OsRng),
+            kid: "test".into(),
+            watchdog: None,
+            boot_instant: Instant::now(),
+            auth_token: None,
+            safe_stop_path: PathBuf::from("safe-stop.json"),
+            threat_scoring_enabled: false,
+            incident: None,
+            audit: None,
+            digital_twin: None,
+            last_sequence: std::sync::atomic::AtomicU64::new(0),
+            previous_joints: std::sync::Mutex::new(None),
+            previous_forces: std::sync::Mutex::new(None),
+            audit_errors: std::sync::atomic::AtomicU64::new(0),
+            fail_on_audit_error: false,
+            rate_limiter: std::sync::Mutex::new(HashMap::new()),
+            rate_limit_rps: 2,
+        };
+
+        let ip = IpAddr::V4(std::net::Ipv4Addr::new(10, 0, 0, 1));
+
+        // First 2 requests pass.
+        assert!(check_rate_limit(&state, ip).is_ok());
+        assert!(check_rate_limit(&state, ip).is_ok());
+
+        // Third request exceeds limit.
+        let err = check_rate_limit(&state, ip);
+        assert!(err.is_err());
+        let (status, _) = err.unwrap_err();
+        assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
+
+        // Different IP should still be allowed.
+        let ip2 = IpAddr::V4(std::net::Ipv4Addr::new(10, 0, 0, 2));
+        assert!(check_rate_limit(&state, ip2).is_ok());
     }
 }
 
