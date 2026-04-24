@@ -95,21 +95,37 @@ fn safe_command(profile: &RobotProfile, chain_b64: &str, ops: Vec<Operation>) ->
             [cx, cy, s.com_height_estimate]
         });
 
+    // Build force entries, setting grasp_force to min_grasp_force_n for
+    // profile-defined end-effectors so the P12 lower bound check passes.
+    let mut end_effector_forces: Vec<EndEffectorForce> = ee_positions
+        .iter()
+        .map(|ee| EndEffectorForce {
+            name: ee.name.clone(),
+            force: [0.0, 0.0, 0.0],
+            torque: [0.0, 0.0, 0.0],
+            grasp_force: Some(0.0),
+        })
+        .collect();
+    for ee_config in &profile.end_effectors {
+        if let Some(existing) = end_effector_forces.iter_mut().find(|f| f.name == ee_config.name) {
+            existing.grasp_force = Some(ee_config.min_grasp_force_n);
+        } else {
+            end_effector_forces.push(EndEffectorForce {
+                name: ee_config.name.clone(),
+                force: [0.0, 0.0, 0.0],
+                torque: [0.0, 0.0, 0.0],
+                grasp_force: Some(ee_config.min_grasp_force_n),
+            });
+        }
+    }
+
     Command {
         timestamp: Utc::now(),
         source: "integration-test".to_string(),
         sequence: 1,
         joint_states,
         delta_time: profile.max_delta_time * 0.5,
-        end_effector_forces: ee_positions
-            .iter()
-            .map(|ee| EndEffectorForce {
-                name: ee.name.clone(),
-                force: [0.0, 0.0, 0.0],
-                torque: [0.0, 0.0, 0.0],
-                grasp_force: Some(0.0),
-            })
-            .collect(),
+        end_effector_forces,
         end_effector_positions: ee_positions,
         center_of_mass,
         authority: CommandAuthority {

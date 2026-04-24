@@ -487,7 +487,11 @@ async fn handle_validate(
             // to detect drift over time.
             if let Some(ref dt_mutex) = state.digital_twin {
                 if let Some(ref audit_cmd) = cmd_for_audit {
-                    if let Ok(mut dt) = dt_mutex.lock() {
+                    {
+                    let mut dt = dt_mutex.lock().unwrap_or_else(|p| {
+                        eprintln!("digital-twin: mutex poisoned, recovering");
+                        p.into_inner()
+                    });
                         let current_joints = &audit_cmd.joint_states;
                         if let Some(prev_joints) = dt.previous_joints.take() {
                             let snapshot = dt.detector.observe(&prev_joints, current_joints);
@@ -615,7 +619,11 @@ async fn handle_health(State(state): State<Arc<AppState>>) -> Json<HealthRespons
     // Query digital twin state.
     let (dt_enabled, dt_level, dt_max_pos_err, dt_observations) =
         if let Some(ref dt_mutex) = state.digital_twin {
-            if let Ok(dt) = dt_mutex.lock() {
+            {
+                let dt = dt_mutex.lock().unwrap_or_else(|p| {
+                    eprintln!("digital-twin: mutex poisoned in health check, recovering");
+                    p.into_inner()
+                });
                 match &dt.last_snapshot {
                     Some(snap) => (
                         true,
@@ -625,8 +633,6 @@ async fn handle_health(State(state): State<Arc<AppState>>) -> Json<HealthRespons
                     ),
                     None => (true, Some("Normal".into()), None, Some(0)),
                 }
-            } else {
-                (true, None, None, None)
             }
         } else {
             (false, None, None, None)
@@ -1942,6 +1948,275 @@ mod tests {
             fail_on_audit_error: false,
         };
         assert_eq!(run(&args), 2);
+    }
+
+    // --- Integration tests for hardening fixes (spec-v3 §8.1) ---
+
+    /// Build an AppState with an audit logger backed by a read-only file
+    /// descriptor so that every write fails, letting us test the audit error
+    /// counter and --fail-on-audit-error behaviour.
+    fn make_test_state_with_failing_audit(fail_on_audit_error: bool) -> Arc<AppState> {
+        let sk = SigningKey::generate(&mut OsRng);
+        let vk = sk.verifying_key();
+        let kid = "test-serve-kid".to_string();
+        let signing_key_bytes = sk.to_bytes();
+
+        let profile_json = invariant_core::profiles::list_builtins()
+            .first()
+            .map(|name| {
+                let p = invariant_core::profiles::load_builtin(name).unwrap();
+                serde_json::to_string(&p).unwrap()
+            })
+            .unwrap();
+        let profile = invariant_core::profiles::load_from_json(&profile_json).unwrap();
+
+        let mut trusted_keys = HashMap::new();
+        trusted_keys.insert(kid.clone(), vk);
+
+        let config = ValidatorConfig::new(profile, trusted_keys, sk, kid.clone()).unwrap();
+        let app_signing_key = SigningKey::from_bytes(&signing_key_bytes);
+
+        // Create a temp file and open it READ-ONLY so writes fail.
+        let dir = TempDir::new().unwrap();
+        let audit_path = dir.path().join("audit.jsonl");
+        std::fs::write(&audit_path, "").unwrap();
+        let ro_file = std::fs::OpenOptions::new()
+            .read(true)
+            .open(&audit_path)
+            .unwrap();
+
+        let audit_sk = SigningKey::from_bytes(&signing_key_bytes);
+        let logger = invariant_core::audit::AuditLogger::new(ro_file, audit_sk, kid.clone());
+
+        // Leak the TempDir so it lives as long as AppState.
+        std::mem::forget(dir);
+
+        Arc::new(AppState {
+            config,
+            trust_plane: true, // auto-sign PCA
+            signing_key: app_signing_key,
+            kid,
+            watchdog: None,
+            boot_instant: Instant::now(),
+            auth_token: None,
+            safe_stop_path: PathBuf::from("safe-stop.json"),
+            threat_scoring_enabled: false,
+            incident: None,
+            audit: Some(std::sync::Mutex::new(logger)),
+            digital_twin: None,
+            last_sequence: std::sync::atomic::AtomicU64::new(0),
+            previous_joints: std::sync::Mutex::new(None),
+            previous_forces: std::sync::Mutex::new(None),
+            audit_errors: std::sync::atomic::AtomicU64::new(0),
+            fail_on_audit_error,
+        })
+    }
+
+    #[tokio::test]
+    async fn test_audit_write_failure_increments_counter() {
+        let state = make_test_state_with_failing_audit(false);
+
+        // Send a valid command (trust_plane auto-signs PCA).
+        let mut cmd = make_test_command();
+        cmd.sequence = 1;
+        let body = serde_json::to_string(&ValidateRequest { command: cmd }).unwrap();
+        let app = make_app(Arc::clone(&state));
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/validate")
+                    .header("content-type", "application/json")
+                    .body(Body::from(body))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        // With fail_on_audit_error=false, the verdict is still returned
+        // even though the audit write failed.
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        // Verify the counter was incremented.
+        let errors = state
+            .audit_errors
+            .load(std::sync::atomic::Ordering::Relaxed);
+        assert!(errors > 0, "audit_errors must be > 0 after write failure");
+
+        // Verify the health endpoint reports the counter.
+        let app2 = make_app(Arc::clone(&state));
+        let health_resp = app2
+            .oneshot(
+                Request::builder()
+                    .uri("/health")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let body = axum::body::to_bytes(health_resp.into_body(), 65536)
+            .await
+            .unwrap();
+        let health: HealthResponse = serde_json::from_slice(&body).unwrap();
+        assert!(
+            health.audit_errors > 0,
+            "/health must report audit_errors > 0"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_audit_write_failure_returns_503_when_fail_on_audit_error() {
+        let state = make_test_state_with_failing_audit(true);
+
+        let mut cmd = make_test_command();
+        cmd.sequence = 1;
+        let body = serde_json::to_string(&ValidateRequest { command: cmd }).unwrap();
+        let app = make_app(Arc::clone(&state));
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/validate")
+                    .header("content-type", "application/json")
+                    .body(Body::from(body))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        // With fail_on_audit_error=true, the server must return 503.
+        assert_eq!(
+            resp.status(),
+            StatusCode::SERVICE_UNAVAILABLE,
+            "must return 503 when audit write fails with --fail-on-audit-error"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_concurrent_same_sequence_rejected() {
+        let state = make_test_state(true, 0);
+        let app = make_app(Arc::clone(&state));
+
+        // Build 10 identical requests with sequence=1.
+        let mut handles = Vec::new();
+        for _ in 0..10 {
+            let state = Arc::clone(&state);
+            handles.push(tokio::spawn(async move {
+                let app = make_app(state);
+                let mut cmd = make_test_command();
+                cmd.sequence = 1;
+                let body = serde_json::to_string(&ValidateRequest { command: cmd }).unwrap();
+                let resp = app
+                    .oneshot(
+                        Request::builder()
+                            .method("POST")
+                            .uri("/validate")
+                            .header("content-type", "application/json")
+                            .body(Body::from(body))
+                            .unwrap(),
+                    )
+                    .await
+                    .unwrap();
+                resp.status()
+            }));
+        }
+        // Ensure the unused app variable doesn't hold resources.
+        drop(app);
+
+        let mut ok_count = 0u32;
+        let mut bad_request_count = 0u32;
+        for handle in handles {
+            match handle.await.unwrap() {
+                StatusCode::OK => ok_count += 1,
+                StatusCode::BAD_REQUEST => bad_request_count += 1,
+                other => panic!("unexpected status code: {other}"),
+            }
+        }
+
+        assert_eq!(ok_count, 1, "exactly 1 request must succeed");
+        assert_eq!(bad_request_count, 9, "exactly 9 requests must be rejected");
+    }
+
+    #[tokio::test]
+    async fn test_previous_joints_updated_on_rejection() {
+        // Use trust_plane so PCA is auto-signed, but send a command with
+        // out-of-range position that gets *rejected*. The previous_joints
+        // state must still be updated so the next command's P4 acceleration
+        // check has a valid baseline.
+        let state = make_test_state(true, 0);
+
+        // 1. Send a command with valid joints (will be approved).
+        let mut cmd1 = make_test_command();
+        cmd1.sequence = 1;
+        cmd1.joint_states = vec![JointState {
+            name: "joint_0".into(),
+            position: 0.0,
+            velocity: 0.0,
+            effort: 0.0,
+        }];
+        let body1 = serde_json::to_string(&ValidateRequest { command: cmd1 }).unwrap();
+        let app = make_app(Arc::clone(&state));
+        let resp1 = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/validate")
+                    .header("content-type", "application/json")
+                    .body(Body::from(body1))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp1.status(), StatusCode::OK, "first command must succeed");
+
+        // Verify previous_joints was set.
+        {
+            let prev = state.previous_joints.lock().unwrap();
+            assert!(
+                prev.is_some(),
+                "previous_joints must be set after first command"
+            );
+            assert_eq!(prev.as_ref().unwrap()[0].position, 0.0);
+        }
+
+        // 2. Send a command that gets rejected (out-of-range position).
+        let mut cmd2 = make_test_command();
+        cmd2.sequence = 2;
+        cmd2.joint_states = vec![JointState {
+            name: "joint_0".into(),
+            position: 999.0, // way out of range — will be rejected
+            velocity: 0.0,
+            effort: 0.0,
+        }];
+        let body2 = serde_json::to_string(&ValidateRequest { command: cmd2 }).unwrap();
+        let app2 = make_app(Arc::clone(&state));
+        let resp2 = app2
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/validate")
+                    .header("content-type", "application/json")
+                    .body(Body::from(body2))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp2.status(), StatusCode::OK); // 200 with approved=false
+
+        // 3. Verify previous_joints was updated to the rejected command's
+        // joints, so the next command's P4 acceleration check has a valid
+        // baseline. This prevents state drift on rejection.
+        {
+            let prev = state.previous_joints.lock().unwrap();
+            assert!(
+                prev.is_some(),
+                "previous_joints must still be set after rejected command"
+            );
+            assert_eq!(
+                prev.as_ref().unwrap()[0].position, 999.0,
+                "previous_joints must reflect the rejected command's joints"
+            );
+        }
     }
 }
 

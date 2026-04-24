@@ -109,15 +109,32 @@ fn safe_command(profile: &RobotProfile, chain_b64: &str, ops: Vec<Operation>) ->
 
     // Provide zero-force data for each EE so the ISO 15066 fail-closed check
     // does not reject commands with EEs inside human-critical proximity zones.
-    let end_effector_forces: Vec<invariant_core::models::command::EndEffectorForce> = ee_positions
-        .iter()
-        .map(|ee| invariant_core::models::command::EndEffectorForce {
-            name: ee.name.clone(),
-            force: [0.0, 0.0, 0.0],
-            torque: [0.0, 0.0, 0.0],
-            grasp_force: Some(0.0),
-        })
-        .collect();
+    let mut end_effector_forces: Vec<invariant_core::models::command::EndEffectorForce> =
+        ee_positions
+            .iter()
+            .map(|ee| invariant_core::models::command::EndEffectorForce {
+                name: ee.name.clone(),
+                force: [0.0, 0.0, 0.0],
+                torque: [0.0, 0.0, 0.0],
+                grasp_force: Some(0.0),
+            })
+            .collect();
+
+    // Ensure profile-defined end-effectors have valid grasp forces (P12).
+    // If an entry already exists (e.g. from collision pairs), update its
+    // grasp_force to the profile minimum; otherwise add a new entry.
+    for ee_config in &profile.end_effectors {
+        if let Some(existing) = end_effector_forces.iter_mut().find(|f| f.name == ee_config.name) {
+            existing.grasp_force = Some(ee_config.min_grasp_force_n);
+        } else {
+            end_effector_forces.push(invariant_core::models::command::EndEffectorForce {
+                name: ee_config.name.clone(),
+                force: [0.0, 0.0, 0.0],
+                torque: [0.0, 0.0, 0.0],
+                grasp_force: Some(ee_config.min_grasp_force_n),
+            });
+        }
+    }
 
     Command {
         timestamp: Utc::now(),
@@ -703,7 +720,7 @@ fn every_injection_type_produces_rejection() {
     let profile_has_environment = profile.environment.is_some();
 
     // Manipulation injections P11/P12/P13/P14 only trigger rejections when the
-    // profile has end_effectors config.  humanoid_28dof has none.
+    // profile has end_effectors config.
     let manipulation_injections = [
         InjectionType::ForceOverload,
         InjectionType::GraspForceViolation,
@@ -719,12 +736,15 @@ fn every_injection_type_produces_rejection() {
         let result = config.validate(&cmd, Utc::now(), None).unwrap();
 
         // Skip assertion for injections that need specific profile config
-        // to trigger rejections:
+        // or stateful tracking to trigger rejections:
         // - Locomotion injections: need profile.locomotion
         // - Environment injections P21-P24: need profile.environment
         // - Manipulation injections P11/P12/P13/P14: need profile.end_effectors
         // - ReplayAttack: sequence=0 doesn't fail without stateful tracking
+        // - ForceRateSpike: P13 force-rate check requires previous_forces
+        //   (passes trivially on the first command with no prior state)
         let exempt = inj_type == InjectionType::ReplayAttack
+            || inj_type == InjectionType::ForceRateSpike
             || (!profile_has_locomotion && locomotion_injections.contains(&inj_type))
             || (!profile_has_environment && env_config_injections.contains(&inj_type))
             || (!profile_has_end_effectors && manipulation_injections.contains(&inj_type));
