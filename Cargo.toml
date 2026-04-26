@@ -38,7 +38,7 @@ base64 = "0.22"
 rand = "0.8"
 regex = "1.11"
 thiserror = "2.0"
-quick-xml = "0.37"
+quick-xml = "0.39"
 
 # CLI & server
 clap = { version = "4.5", features = ["derive"] }
