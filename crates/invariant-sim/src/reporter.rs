@@ -121,6 +121,7 @@ pub struct CheckStats {
 ///     n_escapes: 0,
 ///     upper_bound_95: 2.996e-4,
 ///     upper_bound_99: 4.604e-4,
+///     upper_bound_999: 6.905e-4,
 ///     mtbf_hours_95: 9.26,
 ///     mtbf_hours_99: 6.03,
 ///     sil_rating: 3,
@@ -132,6 +133,7 @@ pub struct CheckStats {
 /// // Upper bounds must be finite and in (0, 1].
 /// assert!(stats.upper_bound_95 > 0.0 && stats.upper_bound_95 < 1.0);
 /// assert!(stats.upper_bound_99 > 0.0 && stats.upper_bound_99 < 1.0);
+/// assert!(stats.upper_bound_999 > 0.0 && stats.upper_bound_999 < 1.0);
 /// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConfidenceStats {
@@ -143,6 +145,8 @@ pub struct ConfidenceStats {
     pub upper_bound_95: f64,
     /// Clopper-Pearson 99% upper bound on escape rate.
     pub upper_bound_99: f64,
+    /// Clopper-Pearson 99.9% upper bound on escape rate.
+    pub upper_bound_999: f64,
     /// MTBF at 100 Hz based on 95% upper bound (hours).
     pub mtbf_hours_95: f64,
     /// MTBF at 100 Hz based on 99% upper bound (hours).
@@ -203,6 +207,7 @@ pub struct ConfidenceStats {
 ///         n_escapes: 0,
 ///         upper_bound_95: 1.49e-2,
 ///         upper_bound_99: 2.30e-2,
+///         upper_bound_999: 3.44e-2,
 ///         mtbf_hours_95: 1.86,
 ///         mtbf_hours_99: 1.21,
 ///         sil_rating: 1,
@@ -463,16 +468,17 @@ fn compute_confidence(n_trials: u64, n_escapes: u64) -> ConfidenceStats {
     const HZ: f64 = 100.0;
     const SECS_PER_HOUR: f64 = 3600.0;
 
-    let (upper_95, upper_99) = if n_trials == 0 {
-        (1.0_f64, 1.0_f64)
+    let (upper_95, upper_99, upper_999) = if n_trials == 0 {
+        (1.0_f64, 1.0_f64, 1.0_f64)
     } else if n_escapes == 0 {
         // Clopper-Pearson exact one-sided upper bound for zero failures:
         //   upper = 1 - α^(1/n)
-        // where α is the significance level (0.05 for 95%, 0.01 for 99%).
+        // where α is the significance level (0.05 for 95%, 0.01 for 99%, 0.001 for 99.9%).
         let n = n_trials as f64;
         let ub95 = 1.0 - (0.05_f64).powf(1.0 / n);
         let ub99 = 1.0 - (0.01_f64).powf(1.0 / n);
-        (ub95.clamp(0.0, 1.0), ub99.clamp(0.0, 1.0))
+        let ub999 = 1.0 - (0.001_f64).powf(1.0 / n);
+        (ub95.clamp(0.0, 1.0), ub99.clamp(0.0, 1.0), ub999.clamp(0.0, 1.0))
     } else {
         // Wilson score interval — more conservative than the Wald (normal)
         // approximation for small p and large n, which is the regime we
@@ -484,6 +490,7 @@ fn compute_confidence(n_trials: u64, n_escapes: u64) -> ConfidenceStats {
 
         let z95 = 1.645_f64; // one-sided 95%
         let z99 = 2.326_f64; // one-sided 99%
+        let z999 = 3.090_f64; // one-sided 99.9%
 
         let wilson_upper = |z: f64| -> f64 {
             let z2 = z * z;
@@ -493,7 +500,7 @@ fn compute_confidence(n_trials: u64, n_escapes: u64) -> ConfidenceStats {
             ((center + margin) / denom).clamp(0.0, 1.0)
         };
 
-        (wilson_upper(z95), wilson_upper(z99))
+        (wilson_upper(z95), wilson_upper(z99), wilson_upper(z999))
     };
 
     // MTBF: mean time between failures at 100 Hz.
@@ -536,6 +543,7 @@ fn compute_confidence(n_trials: u64, n_escapes: u64) -> ConfidenceStats {
         n_escapes,
         upper_bound_95: upper_95,
         upper_bound_99: upper_99,
+        upper_bound_999: upper_999,
         mtbf_hours_95,
         mtbf_hours_99,
         sil_rating,
@@ -1004,8 +1012,25 @@ mod tests {
         let conf = compute_confidence(0, 0);
         assert!((conf.upper_bound_95 - 1.0).abs() < f64::EPSILON);
         assert!((conf.upper_bound_99 - 1.0).abs() < f64::EPSILON);
+        assert!((conf.upper_bound_999 - 1.0).abs() < f64::EPSILON);
         assert_eq!(conf.n_trials, 0);
         assert_eq!(conf.n_escapes, 0);
+    }
+
+    #[test]
+    fn confidence_999_bound_15m_spec_claim() {
+        // Spec Purpose section: at 15M episodes with 0 bypasses,
+        // 99.9% CI upper bound < 0.0000461% (4.61e-7).
+        let conf = compute_confidence(15_000_000, 0);
+        assert!(
+            conf.upper_bound_999 < 4.61e-7,
+            "99.9% bound at 15M must be < 4.61e-7, got {:.3e}",
+            conf.upper_bound_999
+        );
+        assert!(
+            conf.upper_bound_999 > conf.upper_bound_99,
+            "99.9% bound must be wider than 99%"
+        );
     }
 
     #[test]
@@ -1427,12 +1452,16 @@ mod tests {
     }
 
     #[test]
-    fn confidence_99_always_wider_than_95() {
+    fn confidence_bounds_monotonically_widen_with_confidence_level() {
         for &n in &[10u64, 100, 1000, 10_000, 100_000, 1_000_000] {
             let conf = compute_confidence(n, 0);
             assert!(
                 conf.upper_bound_99 >= conf.upper_bound_95,
                 "99% bound must >= 95% bound for n={n}"
+            );
+            assert!(
+                conf.upper_bound_999 >= conf.upper_bound_99,
+                "99.9% bound must >= 99% bound for n={n}"
             );
         }
     }

@@ -370,8 +370,59 @@ fn validate_config(config: &CampaignConfig) -> Result<(), CampaignError> {
 }
 
 // ---------------------------------------------------------------------------
+// 15M Campaign Execution Target
+// ---------------------------------------------------------------------------
+
+/// Constants from the 15M Simulation Campaign specification (Section 1.1).
+///
+/// These define the execution target for the campaign that constitutes
+/// statistical proof of safety for the Invariant command-validation firewall.
+pub mod execution_target {
+    /// Total episodes in the 15M campaign.
+    pub const TOTAL_EPISODES: u64 = 15_000_000;
+    /// Number of GPU shards for parallel execution (8x NVIDIA A40).
+    pub const SHARDS: u32 = 8;
+    /// Episodes per shard (`TOTAL_EPISODES / SHARDS`).
+    pub const EPISODES_PER_SHARD: u64 = TOTAL_EPISODES / SHARDS as u64;
+    /// Command validation rate in Hz (5 ms per step).
+    pub const VALIDATION_RATE_HZ: u32 = 200;
+    /// Minimum episode length in steps (normal scenarios).
+    pub const MIN_EPISODE_STEPS: u32 = 200;
+    /// Maximum episode length in steps (long-running scenarios).
+    pub const MAX_EPISODE_STEPS: u32 = 1000;
+    /// Number of built-in profiles exercised.
+    pub const PROFILE_COUNT: u32 = 34;
+    /// Real-world robot profiles (humanoids, quadrupeds, arms, hands, mobile).
+    pub const REAL_WORLD_PROFILES: u32 = 30;
+    /// Synthetic adversarial profiles.
+    pub const ADVERSARIAL_PROFILES: u32 = 4;
+}
+
+// ---------------------------------------------------------------------------
 // 15M Campaign Config Generator
 // ---------------------------------------------------------------------------
+
+/// Returns the episode step count for a given scenario type.
+///
+/// Maps scenarios to step counts in the 200-1000 range per the spec:
+/// - Normal/safety/authority scenarios: 200 steps
+/// - Compound/recovery scenarios: 500 steps (multi-phase attacks)
+/// - Long-running stability scenarios: 1000 steps (drift detection)
+fn scenario_step_count(scenario_type: &str) -> u32 {
+    match scenario_type {
+        // L: Long-running stability (1000 steps)
+        "long_running_stability" | "long_running_threat" => 1000,
+        // I/J: Compound multi-step attacks (500 steps)
+        "compound_authority_physics"
+        | "compound_sensor_spatial"
+        | "compound_drift_then_violation"
+        | "compound_environment_physics" => 500,
+        // K: Recovery & resilience (500 steps)
+        "recovery_safe_stop" | "recovery_audit_integrity" => 500,
+        // A-H: Normal, safety, authority, temporal (200 steps)
+        _ => 200,
+    }
+}
 
 /// Profile weight and applicable scenario categories for the 15M campaign.
 struct ProfileAllocation {
@@ -633,28 +684,46 @@ pub fn generate_15m_configs(total_episodes: u64, shards: u32) -> Vec<CampaignCon
             scenarios.retain(|s| !s.scenario_type.starts_with("locomotion_"));
         }
 
-        let episodes_per_shard = (profile_episodes / shards as u64).max(1);
-        let steps_per_episode: u32 = 200;
+        // Group scenarios into tiers by step count (200, 500, 1000).
+        let mut tiers: std::collections::BTreeMap<u32, (Vec<ScenarioConfig>, f64)> =
+            std::collections::BTreeMap::new();
+        for sc in &scenarios {
+            let steps = scenario_step_count(&sc.scenario_type);
+            let entry = tiers.entry(steps).or_insert_with(|| (Vec::new(), 0.0));
+            entry.1 += sc.weight;
+            entry.0.push(sc.clone());
+        }
+        let total_weight: f64 = tiers.values().map(|(_, w)| w).sum();
 
-        // Split into environments × episodes_per_env to respect MAX_EPISODES_PER_ENV.
-        let max_eps = MAX_EPISODES_PER_ENV as u64;
-        let envs = episodes_per_shard.div_ceil(max_eps) as u32;
-        let eps_per_env = (episodes_per_shard / envs as u64) as u32;
+        for (&steps, (tier_scenarios, tier_weight)) in &tiers {
+            let tier_episodes =
+                (profile_episodes as f64 * tier_weight / total_weight).round() as u64;
+            if tier_episodes == 0 {
+                continue;
+            }
 
-        for shard_id in 0..shards {
-            configs.push(CampaignConfig {
-                name: format!("15m_{}_{}", profile.name, shard_id),
-                profile: profile.name.to_string(),
-                environments: envs,
-                episodes_per_env: eps_per_env,
-                steps_per_episode,
-                scenarios: scenarios.clone(),
-                success_criteria: SuccessCriteria {
-                    min_legitimate_pass_rate: 0.99,
-                    max_violation_escape_rate: 0.0,
-                    max_false_rejection_rate: 0.01,
-                },
-            });
+            let episodes_per_shard = (tier_episodes / shards as u64).max(1);
+
+            // Split into environments × episodes_per_env to respect MAX_EPISODES_PER_ENV.
+            let max_eps = MAX_EPISODES_PER_ENV as u64;
+            let envs = episodes_per_shard.div_ceil(max_eps) as u32;
+            let eps_per_env = (episodes_per_shard / envs as u64) as u32;
+
+            for shard_id in 0..shards {
+                configs.push(CampaignConfig {
+                    name: format!("15m_{}_s{}_{steps}s", profile.name, shard_id),
+                    profile: profile.name.to_string(),
+                    environments: envs,
+                    episodes_per_env: eps_per_env,
+                    steps_per_episode: steps,
+                    scenarios: tier_scenarios.clone(),
+                    success_criteria: SuccessCriteria {
+                        min_legitimate_pass_rate: 0.99,
+                        max_violation_escape_rate: 0.0,
+                        max_false_rejection_rate: 0.01,
+                    },
+                });
+            }
         }
     }
 
@@ -1217,13 +1286,89 @@ scenarios:
         );
     }
 
+    // ── Execution target constants ──────────────────────────────────
+
+    #[test]
+    fn execution_target_episodes_per_shard_consistent() {
+        use super::execution_target::*;
+        assert_eq!(EPISODES_PER_SHARD, TOTAL_EPISODES / SHARDS as u64);
+        assert_eq!(EPISODES_PER_SHARD, 1_875_000);
+    }
+
+    #[test]
+    fn execution_target_profile_count_consistent() {
+        use super::execution_target::*;
+        assert_eq!(PROFILE_COUNT, REAL_WORLD_PROFILES + ADVERSARIAL_PROFILES);
+        assert_eq!(PROFILE_COUNT, 34);
+    }
+
+    #[test]
+    fn execution_target_validation_rate() {
+        use super::execution_target::*;
+        assert_eq!(VALIDATION_RATE_HZ, 200);
+        // 200 Hz = 5 ms per step
+        assert_eq!(1000 / VALIDATION_RATE_HZ, 5);
+    }
+
+    #[test]
+    fn execution_target_step_range() {
+        use super::execution_target::*;
+        assert_eq!(MIN_EPISODE_STEPS, 200);
+        assert_eq!(MAX_EPISODE_STEPS, 1000);
+        assert!(MIN_EPISODE_STEPS < MAX_EPISODE_STEPS);
+    }
+
+    // ── Scenario step count mapping ─────────────────────────────────
+
+    #[test]
+    fn scenario_step_count_normal_scenarios_200() {
+        assert_eq!(super::scenario_step_count("baseline"), 200);
+        assert_eq!(super::scenario_step_count("aggressive"), 200);
+        assert_eq!(super::scenario_step_count("prompt_injection"), 200);
+        assert_eq!(super::scenario_step_count("exclusion_zone"), 200);
+        assert_eq!(super::scenario_step_count("authority_escalation"), 200);
+        assert_eq!(super::scenario_step_count("chain_forgery"), 200);
+        assert_eq!(super::scenario_step_count("locomotion_runaway"), 200);
+    }
+
+    #[test]
+    fn scenario_step_count_compound_recovery_500() {
+        assert_eq!(super::scenario_step_count("compound_authority_physics"), 500);
+        assert_eq!(super::scenario_step_count("compound_sensor_spatial"), 500);
+        assert_eq!(super::scenario_step_count("compound_drift_then_violation"), 500);
+        assert_eq!(super::scenario_step_count("compound_environment_physics"), 500);
+        assert_eq!(super::scenario_step_count("recovery_safe_stop"), 500);
+        assert_eq!(super::scenario_step_count("recovery_audit_integrity"), 500);
+    }
+
+    #[test]
+    fn scenario_step_count_long_running_1000() {
+        assert_eq!(super::scenario_step_count("long_running_stability"), 1000);
+        assert_eq!(super::scenario_step_count("long_running_threat"), 1000);
+    }
+
+    #[test]
+    fn scenario_step_count_within_spec_range() {
+        use super::execution_target::*;
+        let scenarios = super::all_scenario_entries();
+        for sc in &scenarios {
+            let steps = super::scenario_step_count(&sc.scenario_type);
+            assert!(
+                steps >= MIN_EPISODE_STEPS && steps <= MAX_EPISODE_STEPS,
+                "scenario {} has {} steps, must be in [{}, {}]",
+                sc.scenario_type, steps, MIN_EPISODE_STEPS, MAX_EPISODE_STEPS
+            );
+        }
+    }
+
     // ── 15M campaign config generator tests ───────────────────────────
 
     #[test]
-    fn generate_15m_produces_configs_for_all_profiles() {
+    fn generate_15m_produces_tiered_configs_for_all_profiles() {
         let configs = generate_15m_configs(15_000_000, 8);
-        // 34 profiles × 8 shards = 272 configs
-        assert_eq!(configs.len(), 272, "34 profiles × 8 shards");
+        // 34 profiles × 3 step tiers × 8 shards = 816 configs
+        // (each profile has scenarios in all 3 tiers: 200, 500, 1000)
+        assert_eq!(configs.len(), 816, "34 profiles × 3 tiers × 8 shards");
     }
 
     #[test]
@@ -1233,7 +1378,7 @@ scenarios:
             .iter()
             .map(|c| c.environments as u64 * c.episodes_per_env as u64)
             .sum();
-        // Allow 5% tolerance due to integer rounding across 34 profiles × 8 shards
+        // Allow 5% tolerance due to integer rounding across profiles × tiers × shards
         assert!(
             (14_000_000..=16_000_000).contains(&total),
             "total episodes {total} should be ~15M"
@@ -1253,35 +1398,54 @@ scenarios:
     }
 
     #[test]
-    fn generate_15m_locomotion_profiles_have_locomotion_scenarios() {
+    fn generate_15m_configs_have_correct_step_counts() {
         let configs = generate_15m_configs(15_000_000, 8);
-        let humanoid_config = configs
-            .iter()
-            .find(|c| c.name.starts_with("15m_humanoid_28dof_"))
-            .unwrap();
-        assert!(
-            humanoid_config
+        for config in &configs {
+            let expected_steps = config
                 .scenarios
                 .iter()
-                .any(|s| s.scenario_type == "locomotion_runaway"),
-            "humanoid must have locomotion_runaway scenario"
+                .map(|s| super::scenario_step_count(&s.scenario_type))
+                .next()
+                .unwrap();
+            assert_eq!(
+                config.steps_per_episode, expected_steps,
+                "config {} steps_per_episode must match scenario tier",
+                config.name
+            );
+        }
+    }
+
+    #[test]
+    fn generate_15m_locomotion_profiles_have_locomotion_scenarios() {
+        let configs = generate_15m_configs(15_000_000, 8);
+        let humanoid_configs: Vec<_> = configs
+            .iter()
+            .filter(|c| c.name.starts_with("15m_humanoid_28dof_"))
+            .collect();
+        assert!(
+            humanoid_configs
+                .iter()
+                .any(|c| c.scenarios.iter().any(|s| s.scenario_type == "locomotion_runaway")),
+            "humanoid must have locomotion_runaway scenario in some tier"
         );
     }
 
     #[test]
     fn generate_15m_arm_profiles_skip_locomotion_scenarios() {
         let configs = generate_15m_configs(15_000_000, 8);
-        let panda_config = configs
+        let panda_configs: Vec<_> = configs
             .iter()
-            .find(|c| c.name.starts_with("15m_franka_panda_"))
-            .unwrap();
-        assert!(
-            !panda_config
-                .scenarios
-                .iter()
-                .any(|s| s.scenario_type.starts_with("locomotion_")),
-            "franka_panda must not have locomotion scenarios"
-        );
+            .filter(|c| c.name.starts_with("15m_franka_panda_"))
+            .collect();
+        for config in &panda_configs {
+            assert!(
+                !config
+                    .scenarios
+                    .iter()
+                    .any(|s| s.scenario_type.starts_with("locomotion_")),
+                "franka_panda must not have locomotion scenarios"
+            );
+        }
     }
 
     #[test]
@@ -1302,5 +1466,35 @@ scenarios:
                 config.name
             );
         }
+    }
+
+    #[test]
+    fn generate_15m_step_tiers_present() {
+        let configs = generate_15m_configs(15_000_000, 8);
+        let step_counts: std::collections::BTreeSet<u32> =
+            configs.iter().map(|c| c.steps_per_episode).collect();
+        assert!(step_counts.contains(&200), "must have 200-step configs");
+        assert!(step_counts.contains(&500), "must have 500-step configs");
+        assert!(step_counts.contains(&1000), "must have 1000-step configs");
+    }
+
+    #[test]
+    fn generate_15m_majority_episodes_are_short() {
+        let configs = generate_15m_configs(15_000_000, 8);
+        let short_episodes: u64 = configs
+            .iter()
+            .filter(|c| c.steps_per_episode == 200)
+            .map(|c| c.environments as u64 * c.episodes_per_env as u64)
+            .sum();
+        let total_episodes: u64 = configs
+            .iter()
+            .map(|c| c.environments as u64 * c.episodes_per_env as u64)
+            .sum();
+        let fraction = short_episodes as f64 / total_episodes as f64;
+        assert!(
+            fraction > 0.50,
+            "majority of episodes should be 200-step (got {:.1}%)",
+            fraction * 100.0
+        );
     }
 }
