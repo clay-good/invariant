@@ -744,7 +744,7 @@ pub mod scenario_categories {
     pub const CATEGORY_COUNT: usize = 14;
 
     /// Total distinct scenarios across all categories.
-    pub const TOTAL_SCENARIOS: u32 = 104;
+    pub const TOTAL_SCENARIOS: u32 = 106;
 
     /// Total episodes across all categories (must equal 15M).
     pub const TOTAL_EPISODES: u64 = 15_000_000;
@@ -760,7 +760,7 @@ pub mod scenario_categories {
     ///
     /// let cat = ScenarioCategory::NormalOperation;
     /// assert_eq!(cat.letter(), 'A');
-    /// assert_eq!(cat.scenarios(), 6);
+    /// assert_eq!(cat.scenarios(), 8);
     /// assert_eq!(cat.episodes(), 3_000_000);
     /// ```
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -863,7 +863,7 @@ pub mod scenario_categories {
         pub fn scenarios(&self) -> u32 {
             use ScenarioCategory::*;
             match self {
-                NormalOperation => 6,
+                NormalOperation => 8,
                 JointSafety => 8,
                 SpatialSafety => 6,
                 StabilityLocomotion => 10,
@@ -1098,6 +1098,8 @@ fn scenario_step_count(scenario_type: &str) -> u32 {
     match scenario_type {
         // L: Long-running stability (1000 steps)
         "long_running_stability" | "long_running_threat" => 1000,
+        // A-04: Walking gait cycle (1000 steps)
+        "walking_gait" => 1000,
         // I/J: Compound multi-step attacks (500 steps)
         "compound_authority_physics"
         | "compound_sensor_spatial"
@@ -1105,7 +1107,19 @@ fn scenario_step_count(scenario_type: &str) -> u32 {
         | "compound_environment_physics" => 500,
         // K: Recovery & resilience (500 steps)
         "recovery_safe_stop" | "recovery_audit_integrity" => 500,
-        // A-H: Normal, safety, authority, temporal (200 steps)
+        // A-02: Full-speed nominal trajectory (500 steps)
+        "aggressive" => 500,
+        // A-05: Human-proximate collaborative work (500 steps)
+        "collaborative_work" => 500,
+        // A-08: Multi-robot coordinated task (500 steps)
+        "multi_robot_coordinated" => 500,
+        // A-06: CNC tending full cycle (400 steps)
+        "cnc_tending_full_cycle" => 400,
+        // A-03: Pick-and-place cycle (300 steps)
+        "pick_and_place" => 300,
+        // A-07: Dexterous manipulation (300 steps)
+        "dexterous_manipulation" => 300,
+        // A-01: Baseline (200), other safety/authority/temporal scenarios (200 steps)
         _ => 200,
     }
 }
@@ -1117,6 +1131,10 @@ struct ProfileAllocation {
     weight: f64,
     /// Whether this profile has locomotion config (enables D-category scenarios).
     has_locomotion: bool,
+    /// Whether this profile is a CNC tending variant (enables A-06).
+    is_cnc: bool,
+    /// Whether this is a dexterous hand or arm profile (enables A-03, A-07).
+    is_arm_or_hand: bool,
 }
 
 /// All 22 scenario types with their category weight.
@@ -1125,6 +1143,12 @@ fn all_scenario_entries() -> Vec<ScenarioConfig> {
         // A: Normal operation
         ("baseline", 3.0),
         ("aggressive", 2.0),
+        ("pick_and_place", 2.0),
+        ("walking_gait", 2.0),
+        ("collaborative_work", 2.0),
+        ("cnc_tending_full_cycle", 1.5),
+        ("dexterous_manipulation", 1.5),
+        ("multi_robot_coordinated", 1.5),
         // B: Joint safety
         ("prompt_injection", 2.0),
         // C: Spatial safety
@@ -1183,176 +1207,244 @@ pub fn generate_15m_configs(total_episodes: u64, shards: u32) -> Vec<CampaignCon
             name: "humanoid_28dof",
             weight: 0.06,
             has_locomotion: true,
+            is_cnc: false,
+            is_arm_or_hand: true,
         },
         ProfileAllocation {
             name: "unitree_h1",
             weight: 0.05,
             has_locomotion: true,
+            is_cnc: false,
+            is_arm_or_hand: true,
         },
         ProfileAllocation {
             name: "unitree_g1",
             weight: 0.04,
             has_locomotion: true,
+            is_cnc: false,
+            is_arm_or_hand: true,
         },
         ProfileAllocation {
             name: "fourier_gr1",
             weight: 0.04,
             has_locomotion: true,
+            is_cnc: false,
+            is_arm_or_hand: true,
         },
         ProfileAllocation {
             name: "tesla_optimus",
             weight: 0.04,
             has_locomotion: true,
+            is_cnc: false,
+            is_arm_or_hand: true,
         },
         ProfileAllocation {
             name: "figure_02",
             weight: 0.04,
             has_locomotion: true,
+            is_cnc: false,
+            is_arm_or_hand: true,
         },
         ProfileAllocation {
             name: "bd_atlas",
             weight: 0.04,
             has_locomotion: true,
+            is_cnc: false,
+            is_arm_or_hand: true,
         },
         ProfileAllocation {
             name: "agility_digit",
             weight: 0.03,
             has_locomotion: true,
+            is_cnc: false,
+            is_arm_or_hand: true,
         },
         ProfileAllocation {
             name: "sanctuary_phoenix",
             weight: 0.03,
             has_locomotion: true,
+            is_cnc: false,
+            is_arm_or_hand: true,
         },
         ProfileAllocation {
             name: "onex_neo",
             weight: 0.03,
             has_locomotion: true,
+            is_cnc: false,
+            is_arm_or_hand: true,
         },
         ProfileAllocation {
             name: "apptronik_apollo",
             weight: 0.03,
             has_locomotion: true,
+            is_cnc: false,
+            is_arm_or_hand: true,
         },
         // ── Quadrupeds (5) ──────────────────────────────────────────
         ProfileAllocation {
             name: "quadruped_12dof",
             weight: 0.03,
             has_locomotion: true,
+            is_cnc: false,
+            is_arm_or_hand: false,
         },
         ProfileAllocation {
             name: "spot",
             weight: 0.04,
             has_locomotion: true,
+            is_cnc: false,
+            is_arm_or_hand: false,
         },
         ProfileAllocation {
             name: "unitree_go2",
             weight: 0.03,
             has_locomotion: true,
+            is_cnc: false,
+            is_arm_or_hand: false,
         },
         ProfileAllocation {
             name: "unitree_a1",
             weight: 0.02,
             has_locomotion: true,
+            is_cnc: false,
+            is_arm_or_hand: false,
         },
         ProfileAllocation {
             name: "anybotics_anymal",
             weight: 0.02,
             has_locomotion: true,
+            is_cnc: false,
+            is_arm_or_hand: false,
         },
         // ── Arms (7) ───────────────────────────────────────────────
         ProfileAllocation {
             name: "franka_panda",
             weight: 0.04,
             has_locomotion: false,
+            is_cnc: false,
+            is_arm_or_hand: true,
         },
         ProfileAllocation {
             name: "ur10",
             weight: 0.03,
             has_locomotion: false,
+            is_cnc: false,
+            is_arm_or_hand: true,
         },
         ProfileAllocation {
             name: "ur10e_haas_cell",
             weight: 0.04,
             has_locomotion: false,
+            is_cnc: true,
+            is_arm_or_hand: true,
         },
         ProfileAllocation {
             name: "ur10e_cnc_tending",
             weight: 0.04,
             has_locomotion: false,
+            is_cnc: true,
+            is_arm_or_hand: true,
         },
         ProfileAllocation {
             name: "kuka_iiwa14",
             weight: 0.03,
             has_locomotion: false,
+            is_cnc: false,
+            is_arm_or_hand: true,
         },
         ProfileAllocation {
             name: "kinova_gen3",
             weight: 0.02,
             has_locomotion: false,
+            is_cnc: false,
+            is_arm_or_hand: true,
         },
         ProfileAllocation {
             name: "abb_gofa",
             weight: 0.02,
             has_locomotion: false,
+            is_cnc: false,
+            is_arm_or_hand: true,
         },
         // ── Dexterous Hands (4) ────────────────────────────────────
         ProfileAllocation {
             name: "shadow_hand",
             weight: 0.02,
             has_locomotion: false,
+            is_cnc: false,
+            is_arm_or_hand: true,
         },
         ProfileAllocation {
             name: "allegro_hand",
             weight: 0.02,
             has_locomotion: false,
+            is_cnc: false,
+            is_arm_or_hand: true,
         },
         ProfileAllocation {
             name: "leap_hand",
             weight: 0.01,
             has_locomotion: false,
+            is_cnc: false,
+            is_arm_or_hand: true,
         },
         ProfileAllocation {
             name: "psyonic_ability",
             weight: 0.01,
             has_locomotion: false,
+            is_cnc: false,
+            is_arm_or_hand: true,
         },
         // ── Mobile Manipulators (3) ────────────────────────────────
         ProfileAllocation {
             name: "spot_with_arm",
             weight: 0.03,
             has_locomotion: true,
+            is_cnc: false,
+            is_arm_or_hand: true,
         },
         ProfileAllocation {
             name: "hello_stretch",
             weight: 0.02,
             has_locomotion: true,
+            is_cnc: false,
+            is_arm_or_hand: true,
         },
         ProfileAllocation {
             name: "pal_tiago",
             weight: 0.02,
             has_locomotion: true,
+            is_cnc: false,
+            is_arm_or_hand: true,
         },
         // ── Adversarial (4) ────────────────────────────────────────
         ProfileAllocation {
             name: "adversarial_zero_margin",
             weight: 0.02,
             has_locomotion: false,
+            is_cnc: false,
+            is_arm_or_hand: true,
         },
         ProfileAllocation {
             name: "adversarial_max_workspace",
             weight: 0.02,
             has_locomotion: false,
+            is_cnc: false,
+            is_arm_or_hand: true,
         },
         ProfileAllocation {
             name: "adversarial_single_joint",
             weight: 0.02,
             has_locomotion: false,
+            is_cnc: false,
+            is_arm_or_hand: true,
         },
         ProfileAllocation {
             name: "adversarial_max_joints",
             weight: 0.02,
             has_locomotion: false,
+            is_cnc: false,
+            is_arm_or_hand: true,
         },
     ];
 
@@ -1367,7 +1459,18 @@ pub fn generate_15m_configs(total_episodes: u64, shards: u32) -> Vec<CampaignCon
         // Filter scenarios to those applicable to this profile.
         let mut scenarios = all_scenario_entries();
         if !profile.has_locomotion {
-            scenarios.retain(|s| !s.scenario_type.starts_with("locomotion_"));
+            scenarios.retain(|s| {
+                !s.scenario_type.starts_with("locomotion_") && s.scenario_type != "walking_gait"
+            });
+        }
+        if !profile.is_cnc {
+            scenarios.retain(|s| s.scenario_type != "cnc_tending_full_cycle");
+        }
+        if !profile.is_arm_or_hand {
+            scenarios.retain(|s| {
+                s.scenario_type != "pick_and_place"
+                    && s.scenario_type != "dexterous_manipulation"
+            });
         }
 
         // Group scenarios into tiers by step count (200, 500, 1000).
@@ -2063,7 +2166,7 @@ scenarios:
         use super::scenario_categories::*;
         let sum: u32 = ScenarioCategory::all().iter().map(|c| c.scenarios()).sum();
         assert_eq!(sum, TOTAL_SCENARIOS);
-        assert_eq!(TOTAL_SCENARIOS, 104);
+        assert_eq!(TOTAL_SCENARIOS, 106);
     }
 
     #[test]
