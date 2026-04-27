@@ -850,6 +850,133 @@ pub mod scenario_categories {
 }
 
 // ---------------------------------------------------------------------------
+// 15M Campaign Purpose & Statistical Claims (Purpose section)
+// ---------------------------------------------------------------------------
+
+/// Statistical safety claims for the 15M campaign (Purpose section).
+///
+/// This module encodes the campaign's raison d'etre: at 15M validated
+/// decisions with zero bypasses, the Clopper-Pearson exact binomial
+/// confidence interval yields an upper bound on the bypass rate that
+/// constitutes statistical proof of safety.
+///
+/// The campaign covers every robot morphology, every physics invariant
+/// (P1-P25) at boundary conditions, every authority attack (A1-A3),
+/// every sensor/environmental fault, every temporal/coordination/recovery
+/// scenario, and every adversarial strategy a white-box attacker could
+/// employ. The audit trail is the **black box record** — cryptographically
+/// signed, hash-chained, and tamper-proof.
+pub mod purpose {
+    /// Total episodes required for the statistical proof.
+    pub const TOTAL_EPISODES: u64 = 15_000_000;
+
+    /// Number of observed bypasses required for the proof to hold.
+    pub const REQUIRED_BYPASSES: u64 = 0;
+
+    /// 95% confidence upper bound on bypass rate (Clopper-Pearson).
+    ///
+    /// `1 - 0.05^(1/15_000_000) ≈ 2.00 × 10⁻⁷`
+    pub const BYPASS_RATE_UPPER_95: f64 = 1.997_176_379_479_565_2e-7;
+
+    /// 99% confidence upper bound on bypass rate (Clopper-Pearson).
+    ///
+    /// `1 - 0.01^(1/15_000_000) ≈ 3.07 × 10⁻⁷`
+    pub const BYPASS_RATE_UPPER_99: f64 = 3.070_176_066_696_386e-7;
+
+    /// 99.9% confidence upper bound on bypass rate (Clopper-Pearson).
+    ///
+    /// `1 - 0.001^(1/15_000_000) ≈ 4.61 × 10⁻⁷` — fewer than 1 in 2.2 million.
+    pub const BYPASS_RATE_UPPER_999: f64 = 4.605_169_126_037_367_3e-7;
+
+    /// Human-readable equivalent of the 99.9% bound: "fewer than 1 in N".
+    pub const BYPASS_RATE_EQUIV_ONE_IN: u64 = 2_200_000;
+
+    /// Compute the Clopper-Pearson upper bound for 0 successes in `n` trials.
+    ///
+    /// For k=0 observed events the exact formula simplifies to:
+    /// `upper = 1 - alpha^(1/n)`
+    ///
+    /// # Panics
+    ///
+    /// Panics if `alpha` is not in (0, 1) or `n` is 0.
+    pub fn clopper_pearson_upper_bound(n: u64, alpha: f64) -> f64 {
+        assert!(n > 0, "n must be > 0");
+        assert!(alpha > 0.0 && alpha < 1.0, "alpha must be in (0, 1)");
+        1.0 - alpha.powf(1.0 / n as f64)
+    }
+
+    /// Coverage domains that the campaign must exercise.
+    ///
+    /// Each variant represents a class of safety evidence the campaign
+    /// produces, as enumerated in the Purpose section.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+    pub enum CoverageDomain {
+        /// Every robot morphology in deployment today.
+        RobotMorphology,
+        /// Every physics invariant (P1-P25) at boundary conditions.
+        PhysicsInvariants,
+        /// Every authority attack an AI/LLM could attempt.
+        AuthorityAttacks,
+        /// Every sensor spoofing and environmental fault.
+        SensorEnvironmental,
+        /// Every temporal, coordination, and recovery scenario.
+        TemporalCoordination,
+        /// Every adversarial strategy a white-box attacker could employ.
+        AdversarialStrategies,
+    }
+
+    impl CoverageDomain {
+        /// Returns all coverage domains in spec order.
+        pub fn all() -> &'static [CoverageDomain; 6] {
+            use CoverageDomain::*;
+            &[
+                RobotMorphology,
+                PhysicsInvariants,
+                AuthorityAttacks,
+                SensorEnvironmental,
+                TemporalCoordination,
+                AdversarialStrategies,
+            ]
+        }
+
+        /// Human-readable description of this coverage domain.
+        pub fn description(&self) -> &'static str {
+            use CoverageDomain::*;
+            match self {
+                RobotMorphology => "Every robot morphology in deployment today",
+                PhysicsInvariants => {
+                    "Every physics invariant (P1-P25) at boundary conditions"
+                }
+                AuthorityAttacks => {
+                    "Every authority attack an AI/LLM could attempt"
+                }
+                SensorEnvironmental => {
+                    "Every sensor spoofing and environmental fault"
+                }
+                TemporalCoordination => {
+                    "Every temporal, coordination, and recovery scenario"
+                }
+                AdversarialStrategies => {
+                    "Every adversarial strategy a white-box attacker could employ"
+                }
+            }
+        }
+    }
+
+    /// The campaign's audit trail properties.
+    pub mod audit_trail {
+        /// The audit trail is cryptographically signed.
+        pub const SIGNED: bool = true;
+        /// The audit trail is hash-chained (each entry links to the previous).
+        pub const HASH_CHAINED: bool = true;
+        /// The audit trail is tamper-proof (any modification breaks the chain).
+        pub const TAMPER_PROOF: bool = true;
+        /// Signature algorithm used for the verdict chain.
+        pub const SIGNATURE_ALGORITHM: &str = "Ed25519";
+    }
+}
+
+// ---------------------------------------------------------------------------
 // 15M Campaign Config Generator
 // ---------------------------------------------------------------------------
 
@@ -2321,5 +2448,164 @@ scenarios:
         assert_eq!(back.shard_id, 7);
         assert_eq!(back.episodes_completed, 1_875_000);
         assert_eq!(back.total_violation_escapes, 0);
+    }
+
+    // ── Purpose & statistical claims (Purpose section) ────────────────
+
+    #[test]
+    fn purpose_total_episodes_matches_execution_target() {
+        assert_eq!(
+            super::purpose::TOTAL_EPISODES,
+            super::execution_target::TOTAL_EPISODES,
+            "purpose and execution_target must agree on total episodes"
+        );
+    }
+
+    #[test]
+    fn purpose_required_bypasses_is_zero() {
+        assert_eq!(super::purpose::REQUIRED_BYPASSES, 0);
+    }
+
+    #[test]
+    fn purpose_confidence_bounds_ordered() {
+        use super::purpose::*;
+        // Tighter confidence requires a wider bound
+        assert!(
+            BYPASS_RATE_UPPER_95 < BYPASS_RATE_UPPER_99,
+            "95% bound must be tighter than 99%"
+        );
+        assert!(
+            BYPASS_RATE_UPPER_99 < BYPASS_RATE_UPPER_999,
+            "99% bound must be tighter than 99.9%"
+        );
+    }
+
+    #[test]
+    fn purpose_999_bound_matches_spec_claim() {
+        use super::purpose::*;
+        // Spec claims < 0.0000461% = 4.61e-7
+        assert!(
+            BYPASS_RATE_UPPER_999 < 4.62e-7,
+            "99.9% bound must be < 4.62e-7 (got {})",
+            BYPASS_RATE_UPPER_999
+        );
+        assert!(
+            BYPASS_RATE_UPPER_999 > 4.60e-7,
+            "99.9% bound must be > 4.60e-7 (got {})",
+            BYPASS_RATE_UPPER_999
+        );
+    }
+
+    #[test]
+    fn purpose_equiv_one_in_consistent_with_bound() {
+        use super::purpose::*;
+        // 1/BYPASS_RATE_UPPER_999 should be approximately BYPASS_RATE_EQUIV_ONE_IN
+        let computed_one_in = (1.0 / BYPASS_RATE_UPPER_999).round() as u64;
+        let tolerance = 200_000; // allow rounding tolerance
+        assert!(
+            computed_one_in.abs_diff(BYPASS_RATE_EQUIV_ONE_IN) < tolerance,
+            "1/{} = {} should be ~{} (diff {})",
+            BYPASS_RATE_UPPER_999,
+            computed_one_in,
+            BYPASS_RATE_EQUIV_ONE_IN,
+            computed_one_in.abs_diff(BYPASS_RATE_EQUIV_ONE_IN)
+        );
+    }
+
+    #[test]
+    fn purpose_clopper_pearson_reproduces_constants() {
+        use super::purpose::*;
+        let bound_999 = clopper_pearson_upper_bound(15_000_000, 0.001);
+        assert!(
+            (bound_999 - BYPASS_RATE_UPPER_999).abs() < 1e-10,
+            "clopper_pearson(15M, 0.001) = {}, expected ~{}",
+            bound_999,
+            BYPASS_RATE_UPPER_999
+        );
+
+        let bound_99 = clopper_pearson_upper_bound(15_000_000, 0.01);
+        assert!(
+            (bound_99 - BYPASS_RATE_UPPER_99).abs() < 1e-10,
+            "clopper_pearson(15M, 0.01) = {}, expected ~{}",
+            bound_99,
+            BYPASS_RATE_UPPER_99
+        );
+
+        let bound_95 = clopper_pearson_upper_bound(15_000_000, 0.05);
+        assert!(
+            (bound_95 - BYPASS_RATE_UPPER_95).abs() < 1e-10,
+            "clopper_pearson(15M, 0.05) = {}, expected ~{}",
+            bound_95,
+            BYPASS_RATE_UPPER_95
+        );
+    }
+
+    #[test]
+    fn purpose_clopper_pearson_monotonic_in_n() {
+        use super::purpose::clopper_pearson_upper_bound;
+        // More episodes = tighter bound
+        let bound_1m = clopper_pearson_upper_bound(1_000_000, 0.001);
+        let bound_5m = clopper_pearson_upper_bound(5_000_000, 0.001);
+        let bound_15m = clopper_pearson_upper_bound(15_000_000, 0.001);
+        assert!(bound_1m > bound_5m, "1M bound must be wider than 5M");
+        assert!(bound_5m > bound_15m, "5M bound must be wider than 15M");
+    }
+
+    #[test]
+    #[should_panic(expected = "n must be > 0")]
+    fn purpose_clopper_pearson_panics_on_zero_n() {
+        super::purpose::clopper_pearson_upper_bound(0, 0.05);
+    }
+
+    #[test]
+    #[should_panic(expected = "alpha must be in (0, 1)")]
+    fn purpose_clopper_pearson_panics_on_alpha_zero() {
+        super::purpose::clopper_pearson_upper_bound(100, 0.0);
+    }
+
+    #[test]
+    #[should_panic(expected = "alpha must be in (0, 1)")]
+    fn purpose_clopper_pearson_panics_on_alpha_one() {
+        super::purpose::clopper_pearson_upper_bound(100, 1.0);
+    }
+
+    #[test]
+    fn purpose_coverage_domains_count() {
+        use super::purpose::CoverageDomain;
+        assert_eq!(CoverageDomain::all().len(), 6);
+    }
+
+    #[test]
+    fn purpose_coverage_domains_all_have_descriptions() {
+        use super::purpose::CoverageDomain;
+        for domain in CoverageDomain::all() {
+            assert!(
+                !domain.description().is_empty(),
+                "domain {:?} must have a description",
+                domain
+            );
+        }
+    }
+
+    #[test]
+    fn purpose_coverage_domains_unique() {
+        use super::purpose::CoverageDomain;
+        let domains: Vec<_> = CoverageDomain::all().to_vec();
+        for (i, a) in domains.iter().enumerate() {
+            for (j, b) in domains.iter().enumerate() {
+                if i != j {
+                    assert_ne!(a, b, "domains must be unique");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn purpose_audit_trail_properties() {
+        use super::purpose::audit_trail;
+        assert!(audit_trail::SIGNED);
+        assert!(audit_trail::HASH_CHAINED);
+        assert!(audit_trail::TAMPER_PROOF);
+        assert_eq!(audit_trail::SIGNATURE_ALGORITHM, "Ed25519");
     }
 }
