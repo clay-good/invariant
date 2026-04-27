@@ -616,6 +616,114 @@ pub mod data_outputs {
             self.completed_at.signed_duration_since(self.started_at)
         }
     }
+
+    /// Campaign-level manifest aggregating all shard outputs.
+    ///
+    /// This is the top-level data output record for the entire 15M campaign.
+    /// It combines per-shard summaries into a single verifiable artifact that
+    /// proves the campaign ran to completion with the claimed results.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use chrono::Utc;
+    /// use invariant_robotics_sim::campaign::data_outputs::{CampaignOutputManifest, ShardOutputSummary};
+    ///
+    /// let shards: Vec<ShardOutputSummary> = (0..8u32).map(|i| ShardOutputSummary {
+    ///     shard_id: i,
+    ///     episodes_completed: 100,
+    ///     total_steps: 20_000,
+    ///     total_commands_approved: 19_000,
+    ///     total_commands_rejected: 1_000,
+    ///     total_violation_escapes: 0,
+    ///     total_false_rejections: 5,
+    ///     started_at: Utc::now(),
+    ///     completed_at: Utc::now(),
+    ///     output_size_bytes: 1_000_000,
+    ///     final_chain_hash: format!("sha256:shard{i}"),
+    /// }).collect();
+    ///
+    /// let manifest = CampaignOutputManifest::from_shards(shards);
+    /// assert_eq!(manifest.total_episodes, 800);
+    /// assert_eq!(manifest.total_steps, 160_000);
+    /// assert_eq!(manifest.total_violation_escapes, 0);
+    /// assert!(manifest.is_clean());
+    /// assert_eq!(manifest.shard_count, 8);
+    /// ```
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct CampaignOutputManifest {
+        /// Number of shards that contributed to this campaign.
+        pub shard_count: u32,
+        /// Total episodes completed across all shards.
+        pub total_episodes: u64,
+        /// Total steps executed across all shards.
+        pub total_steps: u64,
+        /// Total commands approved across all shards.
+        pub total_commands_approved: u64,
+        /// Total commands rejected across all shards.
+        pub total_commands_rejected: u64,
+        /// Total violation escapes across all shards (must be 0 for proof).
+        pub total_violation_escapes: u64,
+        /// Total false rejections across all shards.
+        pub total_false_rejections: u64,
+        /// Total compressed output size in bytes across all shards.
+        pub total_output_size_bytes: u64,
+        /// Per-shard final chain hashes, ordered by shard_id.
+        pub shard_chain_hashes: Vec<String>,
+        /// Per-shard summaries, ordered by shard_id.
+        pub shards: Vec<ShardOutputSummary>,
+    }
+
+    impl CampaignOutputManifest {
+        /// Aggregate a set of shard summaries into a campaign manifest.
+        ///
+        /// Shards are sorted by `shard_id` in the output.
+        pub fn from_shards(mut shards: Vec<ShardOutputSummary>) -> Self {
+            shards.sort_by_key(|s| s.shard_id);
+
+            let shard_count = shards.len() as u32;
+            let total_episodes = shards.iter().map(|s| s.episodes_completed).sum();
+            let total_steps = shards.iter().map(|s| s.total_steps).sum();
+            let total_commands_approved = shards.iter().map(|s| s.total_commands_approved).sum();
+            let total_commands_rejected = shards.iter().map(|s| s.total_commands_rejected).sum();
+            let total_violation_escapes = shards.iter().map(|s| s.total_violation_escapes).sum();
+            let total_false_rejections = shards.iter().map(|s| s.total_false_rejections).sum();
+            let total_output_size_bytes = shards.iter().map(|s| s.output_size_bytes).sum();
+            let shard_chain_hashes = shards.iter().map(|s| s.final_chain_hash.clone()).collect();
+
+            CampaignOutputManifest {
+                shard_count,
+                total_episodes,
+                total_steps,
+                total_commands_approved,
+                total_commands_rejected,
+                total_violation_escapes,
+                total_false_rejections,
+                total_output_size_bytes,
+                shard_chain_hashes,
+                shards,
+            }
+        }
+
+        /// Returns `true` if the entire campaign had zero violation escapes.
+        pub fn is_clean(&self) -> bool {
+            self.total_violation_escapes == 0
+        }
+
+        /// Returns the campaign-wide approval rate.
+        pub fn approval_rate(&self) -> f64 {
+            let total = self.total_commands_approved + self.total_commands_rejected;
+            if total == 0 {
+                return 0.0;
+            }
+            self.total_commands_approved as f64 / total as f64
+        }
+
+        /// Returns the estimated output size in gigabytes.
+        pub fn output_size_gb(&self) -> f64 {
+            self.total_output_size_bytes as f64 / (1024.0 * 1024.0 * 1024.0)
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -2448,6 +2556,112 @@ scenarios:
         assert_eq!(back.shard_id, 7);
         assert_eq!(back.episodes_completed, 1_875_000);
         assert_eq!(back.total_violation_escapes, 0);
+    }
+
+    // ── CampaignOutputManifest tests ─────────────────────────────────
+
+    fn make_shard_summary(shard_id: u32, episodes: u64, escapes: u64) -> super::data_outputs::ShardOutputSummary {
+        super::data_outputs::ShardOutputSummary {
+            shard_id,
+            episodes_completed: episodes,
+            total_steps: episodes * 200,
+            total_commands_approved: episodes * 195,
+            total_commands_rejected: episodes * 5,
+            total_violation_escapes: escapes,
+            total_false_rejections: 0,
+            started_at: chrono::Utc::now(),
+            completed_at: chrono::Utc::now(),
+            output_size_bytes: episodes * 12_000,
+            final_chain_hash: format!("sha256:shard{shard_id}"),
+        }
+    }
+
+    #[test]
+    fn campaign_manifest_from_shards_aggregates_totals() {
+        use super::data_outputs::CampaignOutputManifest;
+        let shards: Vec<_> = (0..8u32).map(|i| make_shard_summary(i, 1_875_000, 0)).collect();
+        let manifest = CampaignOutputManifest::from_shards(shards);
+        assert_eq!(manifest.shard_count, 8);
+        assert_eq!(manifest.total_episodes, 15_000_000);
+        assert_eq!(manifest.total_steps, 15_000_000 * 200);
+        assert_eq!(manifest.total_violation_escapes, 0);
+        assert!(manifest.is_clean());
+    }
+
+    #[test]
+    fn campaign_manifest_not_clean_when_any_shard_has_escapes() {
+        use super::data_outputs::CampaignOutputManifest;
+        let mut shards: Vec<_> = (0..8u32).map(|i| make_shard_summary(i, 100, 0)).collect();
+        shards[3].total_violation_escapes = 1;
+        let manifest = CampaignOutputManifest::from_shards(shards);
+        assert_eq!(manifest.total_violation_escapes, 1);
+        assert!(!manifest.is_clean());
+    }
+
+    #[test]
+    fn campaign_manifest_shards_sorted_by_id() {
+        use super::data_outputs::CampaignOutputManifest;
+        // Supply shards out of order
+        let shards = vec![
+            make_shard_summary(7, 100, 0),
+            make_shard_summary(0, 100, 0),
+            make_shard_summary(3, 100, 0),
+        ];
+        let manifest = CampaignOutputManifest::from_shards(shards);
+        assert_eq!(manifest.shards[0].shard_id, 0);
+        assert_eq!(manifest.shards[1].shard_id, 3);
+        assert_eq!(manifest.shards[2].shard_id, 7);
+    }
+
+    #[test]
+    fn campaign_manifest_chain_hashes_match_shard_order() {
+        use super::data_outputs::CampaignOutputManifest;
+        let shards: Vec<_> = (0..4u32).map(|i| make_shard_summary(i, 50, 0)).collect();
+        let manifest = CampaignOutputManifest::from_shards(shards);
+        for (i, hash) in manifest.shard_chain_hashes.iter().enumerate() {
+            assert_eq!(hash, &format!("sha256:shard{i}"));
+        }
+    }
+
+    #[test]
+    fn campaign_manifest_approval_rate() {
+        use super::data_outputs::CampaignOutputManifest;
+        let shards = vec![make_shard_summary(0, 1000, 0)];
+        let manifest = CampaignOutputManifest::from_shards(shards);
+        // 195_000 approved / 200_000 total = 0.975
+        assert!((manifest.approval_rate() - 0.975).abs() < 1e-10);
+    }
+
+    #[test]
+    fn campaign_manifest_approval_rate_zero_steps() {
+        use super::data_outputs::CampaignOutputManifest;
+        let manifest = CampaignOutputManifest::from_shards(vec![]);
+        assert!((manifest.approval_rate()).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn campaign_manifest_output_size_gb() {
+        use super::data_outputs::CampaignOutputManifest;
+        let shards: Vec<_> = (0..8u32).map(|i| {
+            let mut s = make_shard_summary(i, 100, 0);
+            s.output_size_bytes = 20 * 1024 * 1024 * 1024; // 20 GB each
+            s
+        }).collect();
+        let manifest = CampaignOutputManifest::from_shards(shards);
+        assert!((manifest.output_size_gb() - 160.0).abs() < 0.1);
+    }
+
+    #[test]
+    fn campaign_manifest_serialization_round_trip() {
+        use super::data_outputs::CampaignOutputManifest;
+        let shards: Vec<_> = (0..2u32).map(|i| make_shard_summary(i, 500, 0)).collect();
+        let manifest = CampaignOutputManifest::from_shards(shards);
+        let json = serde_json::to_string(&manifest).expect("must serialize");
+        let back: CampaignOutputManifest = serde_json::from_str(&json).expect("must deserialize");
+        assert_eq!(back.shard_count, 2);
+        assert_eq!(back.total_episodes, 1000);
+        assert_eq!(back.total_violation_escapes, 0);
+        assert_eq!(back.shard_chain_hashes.len(), 2);
     }
 
     // ── Purpose & statistical claims (Purpose section) ────────────────
