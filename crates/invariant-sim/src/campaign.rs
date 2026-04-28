@@ -1137,7 +1137,7 @@ struct ProfileAllocation {
     is_arm_or_hand: bool,
 }
 
-/// All 22 scenario types with their category weight.
+/// All 30 scenario types with their category weight.
 fn all_scenario_entries() -> Vec<ScenarioConfig> {
     let entries = [
         // A: Normal operation
@@ -1150,6 +1150,14 @@ fn all_scenario_entries() -> Vec<ScenarioConfig> {
         ("dexterous_manipulation", 1.5),
         ("multi_robot_coordinated", 1.5),
         // B: Joint safety
+        ("joint_position_boundary", 1.5),
+        ("joint_velocity_boundary", 1.5),
+        ("joint_torque_boundary", 1.5),
+        ("joint_acceleration_ramp", 1.5),
+        ("joint_coordinated_violation", 1.0),
+        ("joint_direction_reversal", 1.0),
+        ("joint_ieee754_special", 1.5),
+        ("joint_gradual_drift", 1.5),
         ("prompt_injection", 2.0),
         // C: Spatial safety
         ("exclusion_zone", 1.5),

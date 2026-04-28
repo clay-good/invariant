@@ -537,6 +537,16 @@ fn is_expected_reject(scenario: ScenarioType) -> bool {
             | ScenarioType::RecoverySafeStop
             | ScenarioType::RecoveryAuditIntegrity
             | ScenarioType::LongRunningThreat
+            // Category B: Joint safety scenarios produce MIXED pass/fail patterns
+            // (boundary values alternate between valid and invalid), except B-08
+            // (gradual drift) which is pure reject.
+            | ScenarioType::JointPositionBoundary
+            | ScenarioType::JointVelocityBoundary
+            | ScenarioType::JointTorqueBoundary
+            | ScenarioType::JointAccelerationRamp
+            | ScenarioType::JointCoordinatedViolation
+            | ScenarioType::JointDirectionReversal
+            | ScenarioType::JointIeee754Special
     )
 }
 
@@ -829,6 +839,16 @@ mod tests {
         assert!(!is_expected_reject(ScenarioType::RecoverySafeStop));
         assert!(!is_expected_reject(ScenarioType::RecoveryAuditIntegrity));
         assert!(!is_expected_reject(ScenarioType::LongRunningThreat));
+        // Category B: Joint safety mixed scenarios (boundary pass/fail).
+        assert!(!is_expected_reject(ScenarioType::JointPositionBoundary));
+        assert!(!is_expected_reject(ScenarioType::JointVelocityBoundary));
+        assert!(!is_expected_reject(ScenarioType::JointTorqueBoundary));
+        assert!(!is_expected_reject(ScenarioType::JointAccelerationRamp));
+        assert!(!is_expected_reject(ScenarioType::JointCoordinatedViolation));
+        assert!(!is_expected_reject(ScenarioType::JointDirectionReversal));
+        assert!(!is_expected_reject(ScenarioType::JointIeee754Special));
+        // Category B: Pure reject (all commands exceed limits).
+        assert!(is_expected_reject(ScenarioType::JointGradualDrift));
         // Pure adversarial scenarios: all commands violate invariants.
         assert!(is_expected_reject(ScenarioType::ExclusionZone));
         assert!(is_expected_reject(ScenarioType::AuthorityEscalation));
@@ -3738,7 +3758,7 @@ mod tests {
     }
 
     // =========================================================================
-    // 15M Campaign dry-run validation — all 22 scenarios × key profiles
+    // 15M Campaign dry-run validation — all 30 scenarios × key profiles
     // =========================================================================
 
     /// Run every scenario against a representative profile and verify:
@@ -3765,6 +3785,14 @@ mod tests {
             "recovery_audit_integrity",
             "long_running_stability",
             "long_running_threat",
+            "joint_position_boundary",
+            "joint_velocity_boundary",
+            "joint_torque_boundary",
+            "joint_acceleration_ramp",
+            "joint_coordinated_violation",
+            "joint_direction_reversal",
+            "joint_ieee754_special",
+            "joint_gradual_drift",
         ];
         // Skip: locomotion_* (no locomotion config), environment_fault (no env config),
         // compound_environment_physics (needs env config for battery derating).
