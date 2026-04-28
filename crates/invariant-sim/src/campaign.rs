@@ -2120,12 +2120,31 @@ scenarios:
     #[test]
     fn scenario_step_count_normal_scenarios_200() {
         assert_eq!(super::scenario_step_count("baseline"), 200);
-        assert_eq!(super::scenario_step_count("aggressive"), 200);
         assert_eq!(super::scenario_step_count("prompt_injection"), 200);
         assert_eq!(super::scenario_step_count("exclusion_zone"), 200);
         assert_eq!(super::scenario_step_count("authority_escalation"), 200);
         assert_eq!(super::scenario_step_count("chain_forgery"), 200);
         assert_eq!(super::scenario_step_count("locomotion_runaway"), 200);
+        // Joint safety scenarios are 200 steps
+        assert_eq!(super::scenario_step_count("joint_position_boundary"), 200);
+        assert_eq!(super::scenario_step_count("joint_velocity_boundary"), 200);
+        assert_eq!(super::scenario_step_count("joint_torque_boundary"), 200);
+        assert_eq!(super::scenario_step_count("joint_acceleration_ramp"), 200);
+        assert_eq!(super::scenario_step_count("joint_coordinated_violation"), 200);
+        assert_eq!(super::scenario_step_count("joint_direction_reversal"), 200);
+        assert_eq!(super::scenario_step_count("joint_ieee754_special"), 200);
+        assert_eq!(super::scenario_step_count("joint_gradual_drift"), 200);
+    }
+
+    #[test]
+    fn scenario_step_count_category_a_varied() {
+        assert_eq!(super::scenario_step_count("aggressive"), 500);
+        assert_eq!(super::scenario_step_count("collaborative_work"), 500);
+        assert_eq!(super::scenario_step_count("multi_robot_coordinated"), 500);
+        assert_eq!(super::scenario_step_count("cnc_tending_full_cycle"), 400);
+        assert_eq!(super::scenario_step_count("pick_and_place"), 300);
+        assert_eq!(super::scenario_step_count("dexterous_manipulation"), 300);
+        assert_eq!(super::scenario_step_count("walking_gait"), 1000);
     }
 
     #[test]
@@ -2309,9 +2328,19 @@ scenarios:
     #[test]
     fn generate_15m_produces_tiered_configs_for_all_profiles() {
         let configs = generate_15m_configs(15_000_000, 8);
-        // 34 profiles × 3 step tiers × 8 shards = 816 configs
-        // (each profile has scenarios in all 3 tiers: 200, 500, 1000)
-        assert_eq!(configs.len(), 816, "34 profiles × 3 tiers × 8 shards");
+        // Each profile gets configs for each step tier it has scenarios in.
+        // Step tiers: 200, 300, 400, 500, 1000 (not all profiles use all tiers).
+        // Minimum: 34 profiles × 3 tiers × 8 shards = 816
+        // With A-category varied step counts, some profiles get 4-5 tiers.
+        assert!(
+            configs.len() >= 816,
+            "must have at least 34 profiles × 3 tiers × 8 shards, got {}",
+            configs.len()
+        );
+        // All 34 profiles must be represented
+        let profiles: std::collections::HashSet<_> =
+            configs.iter().map(|c| c.profile.as_str()).collect();
+        assert_eq!(profiles.len(), 34, "all 34 profiles must be present");
     }
 
     #[test]
