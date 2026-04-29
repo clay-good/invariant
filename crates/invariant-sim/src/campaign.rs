@@ -1176,6 +1176,186 @@ pub mod purpose {
 }
 
 // ---------------------------------------------------------------------------
+// Category C: Spatial Safety (Section 2.2.C)
+// ---------------------------------------------------------------------------
+
+/// Scenario specifications for Category C: Spatial Safety (1,000,000 episodes).
+///
+/// Every exclusion zone shape, workspace boundary, and collision pair.
+/// Exercises physics invariants P5 (workspace bounds), P6 (exclusion zones),
+/// and P7 (self-collision distance).
+pub mod spatial_safety {
+    use serde::{Deserialize, Serialize};
+
+    /// Total episodes allocated to Category C.
+    pub const TOTAL_EPISODES: u64 = 1_000_000;
+
+    /// Number of distinct scenarios in Category C (C-01 through C-06).
+    pub const SCENARIO_COUNT: u32 = 6;
+
+    /// Physics invariants exercised by this category.
+    pub const INVARIANTS: &[&str] = &["P5", "P6", "P7"];
+
+    /// A spatial safety scenario in the 15M campaign.
+    ///
+    /// Each variant maps to one row in the Category C table.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use invariant_robotics_sim::campaign::spatial_safety::SpatialScenario;
+    ///
+    /// let scenario = SpatialScenario::WorkspaceBoundarySweep;
+    /// assert_eq!(scenario.id(), "C-01");
+    /// assert_eq!(scenario.episodes(), 200_000);
+    /// ```
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+    pub enum SpatialScenario {
+        /// C-01: EE at every face, edge, corner of AABB +/- 1mm.
+        WorkspaceBoundarySweep,
+        /// C-02: EE approaching each exclusion zone from 6 directions.
+        ExclusionZonePenetration,
+        /// C-03: Enable/disable zones during CNC cycle, test each transition.
+        ConditionalZoneStateMachine,
+        /// C-04: Collision pairs converging from safe distance to contact.
+        SelfCollisionApproach,
+        /// C-05: EE at intersection of multiple overlapping zones.
+        OverlappingZoneBoundaries,
+        /// C-06: NaN/Inf in zone bounds, EE positions, workspace corners.
+        CorruptSpatialData,
+    }
+
+    impl SpatialScenario {
+        /// Returns all 6 scenarios in spec order.
+        pub fn all() -> &'static [SpatialScenario; 6] {
+            use SpatialScenario::*;
+            &[
+                WorkspaceBoundarySweep,
+                ExclusionZonePenetration,
+                ConditionalZoneStateMachine,
+                SelfCollisionApproach,
+                OverlappingZoneBoundaries,
+                CorruptSpatialData,
+            ]
+        }
+
+        /// Scenario identifier (e.g. "C-01").
+        pub fn id(&self) -> &'static str {
+            use SpatialScenario::*;
+            match self {
+                WorkspaceBoundarySweep => "C-01",
+                ExclusionZonePenetration => "C-02",
+                ConditionalZoneStateMachine => "C-03",
+                SelfCollisionApproach => "C-04",
+                OverlappingZoneBoundaries => "C-05",
+                CorruptSpatialData => "C-06",
+            }
+        }
+
+        /// Human-readable scenario name.
+        pub fn name(&self) -> &'static str {
+            use SpatialScenario::*;
+            match self {
+                WorkspaceBoundarySweep => "Workspace boundary sweep",
+                ExclusionZonePenetration => "Exclusion zone penetration",
+                ConditionalZoneStateMachine => "Conditional zone state machine",
+                SelfCollisionApproach => "Self-collision approach",
+                OverlappingZoneBoundaries => "Overlapping zone boundaries",
+                CorruptSpatialData => "Corrupt spatial data",
+            }
+        }
+
+        /// Number of episodes allocated to this scenario.
+        pub fn episodes(&self) -> u64 {
+            use SpatialScenario::*;
+            match self {
+                WorkspaceBoundarySweep => 200_000,
+                ExclusionZonePenetration => 200_000,
+                ConditionalZoneStateMachine => 100_000,
+                SelfCollisionApproach => 200_000,
+                OverlappingZoneBoundaries => 100_000,
+                CorruptSpatialData => 200_000,
+            }
+        }
+
+        /// Expected verdict for this scenario.
+        pub fn expected_verdict(&self) -> ExpectedVerdict {
+            use SpatialScenario::*;
+            match self {
+                WorkspaceBoundarySweep => ExpectedVerdict::Mixed,
+                ExclusionZonePenetration => ExpectedVerdict::Reject,
+                ConditionalZoneStateMachine => ExpectedVerdict::Mixed,
+                SelfCollisionApproach => ExpectedVerdict::Reject,
+                OverlappingZoneBoundaries => ExpectedVerdict::Mixed,
+                CorruptSpatialData => ExpectedVerdict::Reject,
+            }
+        }
+
+        /// Detailed description of what this scenario tests.
+        pub fn description(&self) -> &'static str {
+            use SpatialScenario::*;
+            match self {
+                WorkspaceBoundarySweep => {
+                    "EE at every face, edge, corner of AABB +/- 1mm. \
+                     PASS inside, REJECT outside."
+                }
+                ExclusionZonePenetration => {
+                    "EE approaching each exclusion zone from 6 directions. \
+                     REJECT on entry."
+                }
+                ConditionalZoneStateMachine => {
+                    "Enable/disable zones during CNC cycle, test each transition. \
+                     Mixed pass/reject depending on zone state."
+                }
+                SelfCollisionApproach => {
+                    "Collision pairs converging from safe distance to contact. \
+                     REJECT at min_distance."
+                }
+                OverlappingZoneBoundaries => {
+                    "EE at intersection of multiple zones. \
+                     Correct zone identified."
+                }
+                CorruptSpatialData => {
+                    "NaN/Inf in zone bounds, EE positions, workspace corners. \
+                     REJECT (fail-closed)."
+                }
+            }
+        }
+
+        /// Fraction of Category C episodes allocated to this scenario.
+        pub fn weight(&self) -> f64 {
+            self.episodes() as f64 / TOTAL_EPISODES as f64
+        }
+    }
+
+    impl std::fmt::Display for SpatialScenario {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "{}: {}", self.id(), self.name())
+        }
+    }
+
+    /// Expected verdict classification for a scenario.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+    pub enum ExpectedVerdict {
+        /// All commands should be approved.
+        Pass,
+        /// All commands should be rejected.
+        Reject,
+        /// Some commands pass, some are rejected (scenario-dependent).
+        Mixed,
+    }
+
+    impl ExpectedVerdict {
+        /// Whether this verdict requires zero violation escapes.
+        pub fn requires_zero_escapes(&self) -> bool {
+            // All scenarios require zero escapes — a violation that slips
+            // through is always a campaign failure.
+            true
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // 15M Campaign Config Generator
 // ---------------------------------------------------------------------------
 
@@ -2842,6 +3022,193 @@ scenarios:
         assert_eq!(back.total_episodes, 1000);
         assert_eq!(back.total_violation_escapes, 0);
         assert_eq!(back.shard_chain_hashes.len(), 2);
+    }
+
+    // ── Category C: Spatial Safety ───────────────────────────────────
+
+    #[test]
+    fn spatial_safety_scenario_count() {
+        use super::spatial_safety::*;
+        assert_eq!(SpatialScenario::all().len(), SCENARIO_COUNT as usize);
+        assert_eq!(SCENARIO_COUNT, 6);
+    }
+
+    #[test]
+    fn spatial_safety_total_episodes() {
+        use super::spatial_safety::*;
+        let sum: u64 = SpatialScenario::all().iter().map(|s| s.episodes()).sum();
+        assert_eq!(sum, TOTAL_EPISODES);
+        assert_eq!(TOTAL_EPISODES, 1_000_000);
+    }
+
+    #[test]
+    fn spatial_safety_total_matches_category() {
+        use super::scenario_categories::ScenarioCategory;
+        use super::spatial_safety;
+        assert_eq!(
+            spatial_safety::TOTAL_EPISODES,
+            ScenarioCategory::SpatialSafety.episodes(),
+            "spatial_safety total must match ScenarioCategory::SpatialSafety"
+        );
+    }
+
+    #[test]
+    fn spatial_safety_scenario_count_matches_category() {
+        use super::scenario_categories::ScenarioCategory;
+        use super::spatial_safety;
+        assert_eq!(
+            spatial_safety::SCENARIO_COUNT,
+            ScenarioCategory::SpatialSafety.scenarios(),
+            "spatial_safety scenario count must match ScenarioCategory::SpatialSafety"
+        );
+    }
+
+    #[test]
+    fn spatial_safety_ids_sequential() {
+        use super::spatial_safety::SpatialScenario;
+        let ids: Vec<&str> = SpatialScenario::all().iter().map(|s| s.id()).collect();
+        assert_eq!(ids, vec!["C-01", "C-02", "C-03", "C-04", "C-05", "C-06"]);
+    }
+
+    #[test]
+    fn spatial_safety_all_have_nonzero_episodes() {
+        use super::spatial_safety::SpatialScenario;
+        for scenario in SpatialScenario::all() {
+            assert!(
+                scenario.episodes() > 0,
+                "scenario {} must have > 0 episodes",
+                scenario.id()
+            );
+        }
+    }
+
+    #[test]
+    fn spatial_safety_names_nonempty() {
+        use super::spatial_safety::SpatialScenario;
+        for scenario in SpatialScenario::all() {
+            assert!(
+                !scenario.name().is_empty(),
+                "scenario {} must have a name",
+                scenario.id()
+            );
+        }
+    }
+
+    #[test]
+    fn spatial_safety_descriptions_nonempty() {
+        use super::spatial_safety::SpatialScenario;
+        for scenario in SpatialScenario::all() {
+            assert!(
+                !scenario.description().is_empty(),
+                "scenario {} must have a description",
+                scenario.id()
+            );
+        }
+    }
+
+    #[test]
+    fn spatial_safety_weights_sum_to_one() {
+        use super::spatial_safety::SpatialScenario;
+        let sum: f64 = SpatialScenario::all().iter().map(|s| s.weight()).sum();
+        assert!(
+            (sum - 1.0).abs() < 1e-10,
+            "spatial safety weights must sum to 1.0, got {sum}"
+        );
+    }
+
+    #[test]
+    fn spatial_safety_expected_verdicts_correct() {
+        use super::spatial_safety::{ExpectedVerdict, SpatialScenario};
+        // C-01: Mixed (PASS inside, REJECT outside)
+        assert_eq!(
+            SpatialScenario::WorkspaceBoundarySweep.expected_verdict(),
+            ExpectedVerdict::Mixed
+        );
+        // C-02: REJECT on entry
+        assert_eq!(
+            SpatialScenario::ExclusionZonePenetration.expected_verdict(),
+            ExpectedVerdict::Reject
+        );
+        // C-03: Mixed (depends on zone state)
+        assert_eq!(
+            SpatialScenario::ConditionalZoneStateMachine.expected_verdict(),
+            ExpectedVerdict::Mixed
+        );
+        // C-04: REJECT at min_distance
+        assert_eq!(
+            SpatialScenario::SelfCollisionApproach.expected_verdict(),
+            ExpectedVerdict::Reject
+        );
+        // C-05: Mixed (correct zone identified)
+        assert_eq!(
+            SpatialScenario::OverlappingZoneBoundaries.expected_verdict(),
+            ExpectedVerdict::Mixed
+        );
+        // C-06: REJECT (fail-closed)
+        assert_eq!(
+            SpatialScenario::CorruptSpatialData.expected_verdict(),
+            ExpectedVerdict::Reject
+        );
+    }
+
+    #[test]
+    fn spatial_safety_all_require_zero_escapes() {
+        use super::spatial_safety::SpatialScenario;
+        for scenario in SpatialScenario::all() {
+            assert!(
+                scenario.expected_verdict().requires_zero_escapes(),
+                "scenario {} must require zero violation escapes",
+                scenario.id()
+            );
+        }
+    }
+
+    #[test]
+    fn spatial_safety_invariants_cover_p5_p6_p7() {
+        use super::spatial_safety::INVARIANTS;
+        assert!(INVARIANTS.contains(&"P5"), "must exercise P5 (workspace bounds)");
+        assert!(INVARIANTS.contains(&"P6"), "must exercise P6 (exclusion zones)");
+        assert!(INVARIANTS.contains(&"P7"), "must exercise P7 (self-collision)");
+    }
+
+    #[test]
+    fn spatial_safety_display_format() {
+        use super::spatial_safety::SpatialScenario;
+        let display = format!("{}", SpatialScenario::WorkspaceBoundarySweep);
+        assert_eq!(display, "C-01: Workspace boundary sweep");
+        let display = format!("{}", SpatialScenario::CorruptSpatialData);
+        assert_eq!(display, "C-06: Corrupt spatial data");
+    }
+
+    #[test]
+    fn spatial_safety_serialization_round_trip() {
+        use super::spatial_safety::SpatialScenario;
+        let scenario = SpatialScenario::SelfCollisionApproach;
+        let json = serde_json::to_string(&scenario).expect("must serialize");
+        let back: SpatialScenario = serde_json::from_str(&json).expect("must deserialize");
+        assert_eq!(back, scenario);
+    }
+
+    #[test]
+    fn spatial_safety_episode_distribution() {
+        use super::spatial_safety::SpatialScenario;
+        // Verify specific episode counts from the spec table
+        assert_eq!(SpatialScenario::WorkspaceBoundarySweep.episodes(), 200_000);
+        assert_eq!(SpatialScenario::ExclusionZonePenetration.episodes(), 200_000);
+        assert_eq!(SpatialScenario::ConditionalZoneStateMachine.episodes(), 100_000);
+        assert_eq!(SpatialScenario::SelfCollisionApproach.episodes(), 200_000);
+        assert_eq!(SpatialScenario::OverlappingZoneBoundaries.episodes(), 100_000);
+        assert_eq!(SpatialScenario::CorruptSpatialData.episodes(), 200_000);
+    }
+
+    #[test]
+    fn spatial_safety_expected_verdict_serialization() {
+        use super::spatial_safety::ExpectedVerdict;
+        for verdict in [ExpectedVerdict::Pass, ExpectedVerdict::Reject, ExpectedVerdict::Mixed] {
+            let json = serde_json::to_string(&verdict).expect("must serialize");
+            let back: ExpectedVerdict = serde_json::from_str(&json).expect("must deserialize");
+            assert_eq!(back, verdict);
+        }
     }
 
     // ── Purpose & statistical claims (Purpose section) ────────────────
