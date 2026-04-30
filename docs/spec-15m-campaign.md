@@ -89,6 +89,222 @@ These prove Invariant does not over-reject. False positives are as dangerous as 
 
 **Success criteria:** 100% approval rate (zero false rejections for valid commands).
 
+#### A-01: Baseline Safe Operation (200 steps × 500,000 episodes, all 34 profiles)
+
+The simplest possible valid command stream. Every field is set to the most
+conservative safe value — the firewall has no plausible reason to reject any
+command. This exercises the happy path across the full profile catalogue.
+
+**Command generation:**
+- Joint positions: midpoint of each joint's `[min, max]` range: `(min + max) / 2`
+- Joint velocities: `0.0 rad/s`
+- Joint efforts: `0.0 N·m`
+- End-effector positions: workspace centre of the AABB, plus one safe position
+  per collision-pair link (spaced `20 × min_collision_distance` apart along X)
+- Center of mass: centroid of the support polygon (`valid_com`)
+- `delta_time`: `0.5 × max_delta_time`
+- Locomotion state: absent (`None`)
+- End-effector forces: empty
+- Payload: absent (`None`)
+- Zone overrides: empty map
+
+**Invariants exercised (pass path):** P1, P2, P3, P4, P5, P7, P8; A1, A2, A3
+
+**Profile distribution:** episodes divided equally across all 34 profiles (≈ 14,700 per profile).
+
+---
+
+#### A-02: Full-Speed Nominal Trajectory (500 steps × 400,000 episodes, all 34 profiles)
+
+Commands approach every limit simultaneously without crossing any. The purpose
+is to prove that operating at 95–100% of capacity does not produce spurious
+rejections — a firewall that trips at 99% capacity is operationally useless.
+
+**Command generation:**
+- Joints alternate between `near-min` and `near-max` per command step (`i + j` parity):
+  - `near-max`: `eff_max − 0.05 × eff_range`
+  - `near-min`: `eff_min + 0.05 × eff_range`
+  - where `eff_min = min + range × pos_margin`, `eff_max = max − range × pos_margin`
+- Joint velocities: `0.97 × max_velocity × global_velocity_scale × (1 − vel_margin) × proximity_scale`
+- Joint efforts: `0.97 × max_torque × (1 − torque_margin)`
+- `delta_time`: `0.98 × max_delta_time`
+- End-effector positions: safe workspace positions (same as A-01)
+- Proximity scale (`proximity_scale`): the minimum `velocity_scale` of any
+  proximity zone that contains the end-effector; `1.0` when EE is outside all zones
+
+**Why 97%?** Leaves a 3% numerical gap so floating-point rounding cannot
+accidentally breach a limit. The 0.98 × max_delta_time likewise stays clear of
+the P8 stale-command threshold.
+
+**Invariants exercised (pass path):** P1, P2, P3, P4, P5, P8; A1, A2, A3
+
+---
+
+#### A-03: Pick-and-Place Cycle (300 steps × 400,000 episodes, arms + humanoids)
+
+A repeating 6-phase manipulation cycle (approach → grasp → lift → transport →
+place → retract) with a light payload. Designed to exercise the full kinematic
+range of arm and humanoid profiles during realistic task execution.
+
+**Profile subset:** 9 profiles — `franka_panda`, `kuka_iiwa14`, `kinova_gen3`,
+`abb_gofa`, `ur10`, `ur10e_haas_cell`, `ur10e_cnc_tending`, `humanoid_28dof`,
+`unitree_h1` (and `unitree_g1`).
+
+**Command generation (per step `i` of `count`):**
+- Phase variable: `φ = (i / count) × 2π`
+- Blend factor: `b = (sin(φ) + 1) / 2`  (0 → 1 → 0 → … continuously)
+- Rest joints: midpoint of each joint's range
+- Extended joints: `min + range × 0.7` for each joint
+- Interpolated position: `rest + (extended − rest) × b`
+- Velocity: `max_velocity × global_velocity_scale × 0.5 × |cos(φ)|`
+- Effort: `max_torque × 0.3`
+- `delta_time`: `0.5 × max_delta_time`
+- Payload: `1.0 kg` (light pick-and-place load)
+
+**Invariants exercised (pass path):** P1, P2, P3, P4, P5, P11, P13, P14; A1, A2, A3
+
+---
+
+#### A-04: Walking Gait Cycle (1000 steps × 400,000 episodes, legged profiles)
+
+A full walking gait cycle exercising the locomotion invariants P9 and P15–P20
+in the pass direction. The episode runs 4 complete gait cycles (left–right
+alternation) at conservative parameters.
+
+**Profile subset:** 5 profiles — `spot`, `quadruped_12dof`, `unitree_h1`,
+`unitree_g1`, `humanoid_28dof`.
+
+**Command generation (per step `i` of `count`):**
+- Gait phase: `φ_gait = (i / count) × 8π`  (4 full cycles)
+- Left foot is in swing when `sin(φ_gait) > 0`
+- Base velocity: `[max_locomotion_velocity × 0.5, 0, 0]` (forward only)
+- Heading rate: `max_heading_rate × 0.1`
+- Step length: `max_step_length × 0.6`
+- Swing foot clearance: `(min_foot_clearance + max_step_height) / 2`
+- Stance foot contact: `true`; swing foot contact: `false`
+- Ground reaction force (stance foot): normal = `max_GRF × 0.5`, tangential = `normal × μ × 0.3`
+- Ground reaction force (swing foot): absent (`None`)
+- `delta_time`: `0.5 × max_delta_time`
+
+**Why conservative parameters?** Velocity at 50%, step length at 60%, and
+heading rate at 10% of limits ensures none of P15–P20 are close to violation,
+proving the firewall does not false-positive on routine gait.
+
+**Invariants exercised (pass path):** P9, P15, P16, P17, P18, P19, P20; A1, A2, A3
+
+---
+
+#### A-05: Human-Proximate Collaborative Work (500 steps × 400,000 episodes, cobots)
+
+The robot operates in a shared workspace near a human. ISO/TS 15066
+power-and-force limiting reduces allowable velocity based on proximity. This
+scenario proves the firewall correctly accepts derated commands — commands that
+look "too slow" to a naive checker are valid when proximity derating is applied.
+
+**Profile subset:** 8 collaborative profiles — `franka_panda`, `kinova_gen3`,
+`abb_gofa`, `kuka_iiwa14`, `ur10`, `ur10e_haas_cell`, `shadow_hand`, and one
+humanoid.
+
+**Command generation:**
+- `proximity_scale`: minimum `velocity_scale` from any proximity zone
+  containing the end-effector position
+- Effective velocity limit: `max_velocity × global_velocity_scale × (1 − vel_margin) × proximity_scale`
+- Joint velocities: `effective_velocity_limit × 0.5`
+- Joint efforts: `max_torque × (1 − torque_margin) × 0.3`
+- Joint positions: midpoint of each joint's range
+- `delta_time`: `0.5 × max_delta_time`
+
+**What is being proved:** a firewall that did not apply proximity derating would
+reject these commands as "too fast for the effective limit"; a firewall that
+did not model proximity zones would accept commands that should be rejected.
+A-05 confirms the correct model.
+
+**Invariants exercised (pass path):** P1, P2, P3, P5; A1, A2, A3
+
+---
+
+#### A-06: CNC Tending Full Production Cycle (400 steps × 400,000 episodes, UR10e profiles)
+
+CNC tending requires the robot to enter the machine spindle zone during part
+loading (when the spindle is off and the zone is disabled) but stay clear during
+cutting (when the zone is active). This scenario exercises conditional exclusion
+zones in their correct enabled/disabled states.
+
+**Profile subset:** 2 profiles — `ur10e_haas_cell`, `ur10e_cnc_tending`.
+
+**Command generation — 4 equal phases (each `count / 4` steps):**
+
+| Phase | EE position | Zone override | Expected |
+|-------|------------|---------------|---------|
+| 1 — Approach | Safe workspace position | None | PASS |
+| 2 — Load | Inside conditional zone | `{zone_name: true}` (zone enabled=disabled override) | PASS — zone is overridden off |
+| 3 — Cutting | Safe workspace position | None | PASS — zone active but EE is clear |
+| 4 — Retract | Safe workspace position | None | PASS |
+
+During Phase 2 the `zone_overrides` map sets the conditional zone to `true`
+(disabled/inactive), allowing the EE to enter it legally. During Phase 3 the
+zone is active (no override) but the EE is at a safe position outside it.
+
+**Why this matters:** if Phase 2 were run without the override (zone active, EE
+inside), it would be a Category C violation. A-06 proves the conditional zone
+protocol passes the firewall when used correctly.
+
+**Invariants exercised (pass path):** P5, P6, C3 conditional zone state machine; A1, A2, A3
+
+---
+
+#### A-07: Dexterous Manipulation (300 steps × 300,000 episodes, Shadow Hand / Kinova / Franka)
+
+High-DOF dexterous manipulation with independent per-finger sinusoidal sweeps
+covering nearly the full joint range. Tests that the firewall handles many
+joints moving at different phases simultaneously without false positives.
+
+**Profile subset:** 3 profiles — `shadow_hand`, `kinova_gen3`, `franka_panda`.
+
+**Command generation (per joint `j`, per step `i` of `count`):**
+- Phase frequency: `f_j = 1.0 + j × 0.3`
+- Phase angle: `φ_j = (i / count) × 2π × f_j`
+- Effective range (margin-tightened): `[min + range × pos_margin, max − range × pos_margin]`
+- Position: `mid + half_range × 0.85 × sin(φ_j)`  — uses 85% of the effective range
+- Velocity: `max_velocity × global_velocity_scale × (1 − vel_margin) × proximity_scale × 0.7 × |cos(φ_j)|`
+- Effort: `max_torque × (1 − torque_margin) × 0.4`
+- `delta_time`: `0.5 × max_delta_time`
+
+Each joint runs at a distinct frequency so the command stream exercises all
+possible inter-joint phase relationships. The 85% amplitude keeps positions
+inside effective limits even with floating-point rounding.
+
+**Invariants exercised (pass path):** P1, P2, P3, P4, P5; A1, A2, A3
+
+---
+
+#### A-08: Multi-Robot Coordinated Task (500 steps × 300,000 episodes, all profile pairs)
+
+Two cognitive agents (`coord_agent_alpha` and `coord_agent_beta`) share a single
+global sequence counter and alternate issuing commands. This exercises the
+sequence-monotonicity check (P8 / H-01) with multiple sources.
+
+**Profile subset:** all profile pairs. For a pair `(P_a, P_b)`, each agent
+controls one robot; the episode issues interleaved commands where agent alpha
+handles steps `i = 0, 2, 4, …` and beta handles `i = 1, 3, 5, …`.
+
+**Command generation:**
+- Source: `"coord_agent_alpha"` when `i % 2 == 0`, else `"coord_agent_beta"`
+- Sequence: global monotonic counter `i` (not per-agent — shared across sources)
+- Joint states: baseline midpoint positions (same as A-01)
+- EE positions: safe workspace positions
+- `delta_time`: `0.5 × max_delta_time`
+
+**Why global sequencing?** The validator tracks sequence monotonicity per source
+(i.e., sequence numbers must be monotonically increasing within each source's
+stream). Using a shared counter ensures both sources' sequences increase
+monotonically, which is the valid case. The adversarial case (non-monotonic
+interleaving) is covered in H-01/H-02.
+
+**Invariants exercised (pass path):** P8, H-01 (pass side); A1, A2, A3
+
+---
+
 ### Category B: Joint Safety (1,500,000 episodes)
 
 Every P1-P4 boundary must be hit from both sides across every joint of every profile.
@@ -103,6 +319,237 @@ Every P1-P4 boundary must be hit from both sides across every joint of every pro
 | B-06 | **Rapid direction reversal** — max positive velocity immediately to max negative | Test P4 acceleration | 150,000 |
 | B-07 | **IEEE 754 special values** — NaN, ±Inf, ±0.0, subnormals, 1e308 in every numeric field | REJECT all non-finite | 200,000 |
 | B-08 | **Gradual drift attack** — 0.0001 rad/step beyond limit, detect first rejection | REJECT on first violation | 200,000 |
+
+**Success criteria:** 100% rejection rate for every command that exceeds any P1-P4 limit; 100% approval rate for commands at the exact boundary.
+
+#### B-01: Position Boundary Sweep (200,000 episodes, all profiles)
+
+For each joint of each profile, commands are generated at exactly four positions:
+`min`, `max`, `min − ε`, and `max + ε`. The firewall must PASS the exact boundary
+values and REJECT anything beyond them.
+
+**ε definition:**
+- `ε_pos = max(1e-6, pos_margin × range)` — at least 1 µrad to avoid floating-point
+  degeneracy; scales with range so large joints get proportionally larger ε.
+
+**Command generation (per step `i` of 4, cycling over all joints):**
+- Target joint `j = (episode_seed + i) % num_joints`
+- Tested value cycles: `[min_j, max_j, min_j − ε_pos, max_j + ε_pos]`
+- All other joints: midpoint of their `[min, max]` range
+- Joint velocities: `0.0 rad/s`
+- Joint efforts: `0.0 N·m`
+- `delta_time`: `0.5 × max_delta_time`
+
+**Expected verdicts per step:**
+- Step positions `min_j` and `max_j`: **PASS** (exactly at limit)
+- Step positions `min_j − ε_pos` and `max_j + ε_pos`: **REJECT** (P1 violation)
+
+**Profile distribution:** all 34 profiles equally weighted, with joints exercised
+in round-robin order so every joint of every profile is hit at least once per
+episode.
+
+**Invariants exercised:** P1 (fail path); P2, P3 in pass direction (all-zero velocity/effort)
+
+---
+
+#### B-02: Velocity Boundary Sweep (200,000 episodes, all profiles)
+
+Each joint is commanded at exactly `max_vel`, `max_vel + ε_vel`, and `2 × max_vel`
+to prove P2 fires precisely at the limit and not before.
+
+**ε definition:**
+- `ε_vel = max(1e-4, vel_margin × max_velocity)` — scales proportionally.
+
+**Command generation (per step `i`, target joint `j = i % num_joints`):**
+- Joint position: midpoint of joint `j`'s range; all others at midpoint
+- Target velocity levels: `[max_vel_j, max_vel_j + ε_vel, 2.0 × max_vel_j]`
+- Episode selects the level deterministically: `level = episode_index % 3`
+- All other joints: velocity `0.0 rad/s`
+- Joint efforts: `0.0 N·m`
+- `delta_time`: `0.5 × max_delta_time`
+
+**Expected verdicts:**
+- Level 0 (`max_vel_j`): **PASS** (at limit, effective velocity ≤ derated limit after margin)
+  - Note: effective limit = `max_velocity × global_velocity_scale × (1 − vel_margin)`; for
+    episodes using the exact raw `max_velocity`, the derated check may still REJECT if margin > 0.
+    The test uses the effective limit `max_vel_effective` as level 0.
+- Levels 1 and 2: **REJECT** (P2 violation)
+
+**Invariants exercised:** P2 (fail path); P1 in pass direction (positions at midpoint)
+
+---
+
+#### B-03: Torque Boundary Sweep (200,000 episodes, all profiles)
+
+Proves P3 catches every torque exceedance. Three levels per joint:
+`max_torque_effective − ε_torq`, `max_torque_effective`, and `max_torque_effective + ε_torq`.
+
+**ε definition:**
+- `ε_torq = max(0.01, torque_margin × max_torque)` — at least 10 mN·m.
+- Effective limit: `max_torque × (1 − torque_margin)`.
+
+**Command generation:**
+- Joint positions: midpoint of each joint's range
+- Joint velocities: `0.0 rad/s`
+- Target joint `j = episode_index % num_joints`
+- Effort for joint `j`: one of the three levels (episode-deterministic)
+- All other joints: effort `0.0 N·m`
+- `delta_time`: `0.5 × max_delta_time`
+
+**Expected verdicts:**
+- `max_torque_effective − ε_torq`: **PASS**
+- `max_torque_effective`: **PASS** (at limit)
+- `max_torque_effective + ε_torq`: **REJECT** (P3 violation)
+
+**Invariants exercised:** P3 (fail path); P1, P2 in pass direction
+
+---
+
+#### B-04: Acceleration Ramp (200,000 episodes, all profiles)
+
+Ramps velocity from `0.0` to `3 × max_velocity` over 300 steps, recording the
+exact step at which P4 first fires. Proves the acceleration invariant rejects at
+the correct threshold and not before.
+
+**Command generation (per step `i` of `count = 300`):**
+- Ramp fraction: `r = i / (count − 1)`
+- Target velocity for joint `j_target`: `r × 3.0 × max_velocity_j`
+- All other joints: velocity `0.0 rad/s`
+- Joint positions: midpoints throughout
+- `delta_time`: `0.5 × max_delta_time`  (fixed, so `Δv / Δt` grows linearly)
+- `j_target = episode_seed % num_joints`
+
+**Derived acceleration at step `i`:**
+`a_i = (v_i − v_{i−1}) / delta_time`
+
+**Expected behavior:**
+- Steps while `a_i ≤ max_acceleration_j`: **PASS**
+- First step where `a_i > max_acceleration_j`: **REJECT** (P4 violation); all subsequent steps also REJECT.
+- Rejection must occur no later than step 100 (at 3× max_vel, the limit is crossed before the midpoint of the ramp).
+
+**Invariants exercised:** P4 (fail path); P1, P2, P3 in pass direction (early ramp)
+
+---
+
+#### B-05: Multi-Joint Coordinated Violation (150,000 episodes, all profiles)
+
+All joints are commanded simultaneously at 99% of their effective limits (PASS),
+then all at 101% of their effective limits (REJECT). Proves the firewall handles
+joint-parallel evaluation correctly — one joint over-limit is sufficient to
+reject the whole command.
+
+**Command generation — two-phase episode:**
+
+*Phase 1 (first `count / 2` steps): 99% level*
+- Position for joint `j`: `eff_min_j + 0.99 × eff_range_j`
+  where `eff_min = min + range × pos_margin`, `eff_range = range × (1 − 2 × pos_margin)`
+- Velocity for joint `j`: `0.99 × max_velocity_j × global_velocity_scale × (1 − vel_margin)`
+- Effort for joint `j`: `0.99 × max_torque_j × (1 − torque_margin)`
+- `delta_time`: `0.5 × max_delta_time`
+
+*Phase 2 (second `count / 2` steps): 101% level*
+- Position for joint `j`: `eff_min_j + 1.01 × eff_range_j` (beyond effective max)
+- Velocity for joint `j`: `1.01 × max_velocity_j × global_velocity_scale × (1 − vel_margin)`
+- Effort for joint `j`: `1.01 × max_torque_j × (1 − torque_margin)`
+- `delta_time`: `0.5 × max_delta_time`
+
+**Expected verdicts:** Phase 1 → **PASS**; Phase 2 → **REJECT** (P1 and/or P2 and/or P3)
+
+**Why this matters:** a bug where the validator checks joints sequentially and
+short-circuits before checking all joints might miss the violation. This scenario
+ensures the validator evaluates all joints.
+
+**Invariants exercised:** P1, P2, P3 (both pass and fail paths in same episode)
+
+---
+
+#### B-06: Rapid Direction Reversal (150,000 episodes, all profiles)
+
+Step 0: all joints at `+max_velocity_effective`. Step 1: all joints at
+`−max_velocity_effective`. The velocity delta in one timestep equals
+`2 × max_velocity_effective / delta_time`, which far exceeds `max_acceleration`.
+Proves P4 catches instantaneous sign flips.
+
+**Command generation (2-step episode, repeated `count / 2` times):**
+- Even steps: velocity `+v_eff_j` for all joints
+- Odd steps: velocity `−v_eff_j` for all joints
+- `v_eff_j = max_velocity_j × global_velocity_scale × (1 − vel_margin) × 0.95`
+- Joint positions: midpoints throughout
+- Joint efforts: `0.0 N·m`
+- `delta_time`: `0.5 × max_delta_time`
+
+**Expected verdicts:**
+- Step 0: **PASS** (no prior velocity to compare against — acceleration check requires Δv)
+- Step 1 onward (each direction reversal): **REJECT** (P4 — `|Δv / Δt| > max_acceleration_j`)
+
+**Note on step 0:** some profiles omit the acceleration check on the very first
+command (no prior state). The test asserts PASS on step 0, and REJECT on all
+subsequent reversal steps.
+
+**Invariants exercised:** P4 (fail path); P1, P2, P3 in pass direction (position/effort safe)
+
+---
+
+#### B-07: IEEE 754 Special Values (200,000 episodes, all profiles)
+
+Every numeric field in the command is replaced with a special IEEE 754 value in
+rotation. The firewall must REJECT all non-finite inputs — the fail-closed
+principle requires that a command with any non-finite value never produces a
+signed actuation.
+
+**Special value corpus (8 values):**
+1. `NaN` (canonical)
+2. `+Infinity`
+3. `−Infinity`
+4. `+0.0` (safe for positions, but used in velocity/effort fields to verify zero handling is correct — this is PASS)
+5. `−0.0`
+6. Smallest positive subnormal (`5e-324` in f64)
+7. `1e308` (near MAX_F64, above any valid robot limit)
+8. `−1e308`
+
+**Command generation (per episode, 8 steps cycling through values):**
+- Step `i` injects value `corpus[i % 8]` into field `field[i % num_fields]`
+- Fields cycled: joint positions (all joints), joint velocities (all joints), joint efforts (all joints), `delta_time`, EE position coordinates (x, y, z)
+- All non-injected fields: safe baseline values (midpoints, zero velocities, zero efforts, `0.5 × max_delta_time`)
+
+**Expected verdicts:**
+- Injected value is `±0.0`: **PASS** (finite, zero is valid in velocity/effort fields; for position, `0.0` is within range for most joints)
+- All other special values (`NaN`, `±Inf`, subnormals, `±1e308`): **REJECT** (non-finite or out-of-range)
+- Exception: `delta_time = +0.0` or `delta_time = −0.0` → **REJECT** (P8 requires `dt > 0`)
+
+**Invariants exercised:** P1, P2, P3, P8 (NaN/Inf paths); validates fail-closed behavior
+
+---
+
+#### B-08: Gradual Drift Attack (200,000 episodes, all profiles)
+
+An adversary nudges one joint 0.0001 rad per step beyond its position limit,
+hoping the validator has a tolerance band or delayed rejection. The firewall
+must REJECT on the very first step that violates P1 — no grace steps.
+
+**Command generation (per step `i`):**
+- Target joint `j_target = episode_seed % num_joints`
+- Position of `j_target`: `max_j + i × drift_step`
+  where `drift_step = 0.0001` rad (approximately 0.006°)
+- All other joints: midpoints
+- Joint velocities: `0.0 rad/s`
+- Joint efforts: `0.0 N·m`
+- `delta_time`: `0.5 × max_delta_time`
+
+**Expected behavior:**
+- Step 0 (`position = max_j + 0.0`): **PASS** (at exact limit)
+- Step 1 (`position = max_j + 0.0001`): **REJECT** (P1 — exceeds effective max by drift_step)
+- All subsequent steps: **REJECT**
+- Validation assertion: first REJECT must occur at step index `≤ 1`
+
+**Why this is adversarially interesting:** a firewall with a hysteresis band or
+rolling-average check could let the first several drift steps through. The
+specification requires zero-tolerance — the limit is a hard boundary, not a
+soft threshold.
+
+**Invariants exercised:** P1 (fail path, immediate); P2, P3, P8 in pass direction
+
+---
 
 ### Category C: Spatial Safety (1,000,000 episodes)
 
