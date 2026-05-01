@@ -69,6 +69,8 @@ pub struct CampaignSummary {
     pub escape_rate_upper_95: f64,
     /// Upper bound of escape rate at 99% confidence (Clopper-Pearson).
     pub escape_rate_upper_99: f64,
+    /// Upper bound of escape rate at 99.9% confidence (Clopper-Pearson).
+    pub escape_rate_upper_999: f64,
     /// Equivalent mean time between failures at the given control frequency.
     pub mtbf_hours: Option<f64>,
     /// Control frequency used for MTBF calculation (Hz).
@@ -100,6 +102,7 @@ impl CampaignSummary {
 
         let upper_95 = clopper_pearson_upper(total, escapes, 0.95);
         let upper_99 = clopper_pearson_upper(total, escapes, 0.99);
+        let upper_999 = clopper_pearson_upper(total, escapes, 0.999);
 
         // MTBF: if escape rate upper bound is 0 (mathematically impossible
         // but can happen with 0 total), report None.
@@ -127,6 +130,7 @@ impl CampaignSummary {
             escape_rate_point: point,
             escape_rate_upper_95: upper_95,
             escape_rate_upper_99: upper_99,
+            escape_rate_upper_999: upper_999,
             mtbf_hours: mtbf,
             control_frequency_hz: control_hz,
         }
@@ -440,6 +444,7 @@ Binary hash: {}
 - Escape rate (point estimate): {:.6}%
 - Escape rate (95% upper bound): {:.6}%
 - Escape rate (99% upper bound): {:.6}%
+- Escape rate (99.9% upper bound): {:.6}%
 {}
 
 ## How to Verify
@@ -472,6 +477,7 @@ All data in this package is cryptographically signed and independently verifiabl
         manifest.summary.escape_rate_point * 100.0,
         manifest.summary.escape_rate_upper_95 * 100.0,
         manifest.summary.escape_rate_upper_99 * 100.0,
+        manifest.summary.escape_rate_upper_999 * 100.0,
         manifest
             .summary
             .mtbf_hours
@@ -530,6 +536,45 @@ mod tests {
         // 5/1000 = 0.5%. Upper bound should be > 0.5% but < 2%.
         assert!(upper > 0.005, "upper {upper} should be > 0.005");
         assert!(upper < 0.02, "upper {upper} should be < 0.02");
+    }
+
+    #[test]
+    fn clopper_pearson_15m_spec_claim() {
+        // Purpose section claim: at 15M episodes with 0 bypasses, the 99.9%
+        // confidence upper bound on bypass rate is < 0.0000461% (4.61e-7).
+        let upper_999 = clopper_pearson_upper(15_000_000, 0, 0.999);
+        assert!(
+            upper_999 < 4.61e-7,
+            "99.9% upper bound at 15M must be < 4.61e-7, got {upper_999:.3e}"
+        );
+        // Also verify 95% and 99% bounds from spec Section 5.2.
+        let upper_95 = clopper_pearson_upper(15_000_000, 0, 0.95);
+        let upper_99 = clopper_pearson_upper(15_000_000, 0, 0.99);
+        assert!(
+            upper_95 < 2.0e-7,
+            "95% upper bound at 15M must be < 2.0e-7, got {upper_95:.3e}"
+        );
+        assert!(
+            upper_99 < 3.08e-7,
+            "99% upper bound at 15M must be < 3.08e-7, got {upper_99:.3e}"
+        );
+    }
+
+    #[test]
+    fn campaign_summary_includes_999_bound() {
+        let s = CampaignSummary::compute(15_000_000, 14_000_000, 1_000_000, 0, 5_000_000, 0, 200.0);
+        assert!(
+            s.escape_rate_upper_999 > 0.0,
+            "99.9% bound must be positive"
+        );
+        assert!(
+            s.escape_rate_upper_999 > s.escape_rate_upper_99,
+            "99.9% bound must be wider than 99%"
+        );
+        assert!(
+            s.escape_rate_upper_999 < 4.61e-7,
+            "99.9% bound at 15M episodes must match spec claim"
+        );
     }
 
     #[test]

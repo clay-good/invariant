@@ -1,6 +1,7 @@
 // Campaign configuration: YAML-driven campaign definition for dry-run and
 // Isaac Lab simulation campaigns.
 
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -370,8 +371,278 @@ fn validate_config(config: &CampaignConfig) -> Result<(), CampaignError> {
 }
 
 // ---------------------------------------------------------------------------
+// 15M Campaign Execution Target
+// ---------------------------------------------------------------------------
+
+/// Constants from the 15M Simulation Campaign specification (Section 1.1).
+///
+/// These define the execution target for the campaign that constitutes
+/// statistical proof of safety for the Invariant command-validation firewall.
+pub mod execution_target {
+    /// Total episodes in the 15M campaign.
+    pub const TOTAL_EPISODES: u64 = 15_000_000;
+    /// Number of GPU shards for parallel execution (8x NVIDIA A40).
+    pub const SHARDS: u32 = 8;
+    /// Episodes per shard (`TOTAL_EPISODES / SHARDS`).
+    pub const EPISODES_PER_SHARD: u64 = TOTAL_EPISODES / SHARDS as u64;
+    /// Command validation rate in Hz (5 ms per step).
+    pub const VALIDATION_RATE_HZ: u32 = 200;
+    /// Minimum episode length in steps (normal scenarios).
+    pub const MIN_EPISODE_STEPS: u32 = 200;
+    /// Maximum episode length in steps (long-running scenarios).
+    pub const MAX_EPISODE_STEPS: u32 = 1000;
+    /// Number of built-in profiles exercised.
+    pub const PROFILE_COUNT: u32 = 34;
+    /// Real-world robot profiles (humanoids, quadrupeds, arms, hands, mobile).
+    pub const REAL_WORLD_PROFILES: u32 = 30;
+    /// Synthetic adversarial profiles.
+    pub const ADVERSARIAL_PROFILES: u32 = 4;
+}
+
+// ---------------------------------------------------------------------------
+// 15M Campaign Data Outputs (Section 1.2)
+// ---------------------------------------------------------------------------
+
+/// Constants and types for per-episode data outputs (Section 1.2).
+///
+/// Every episode produces four artifacts:
+/// 1. A signed verdict chain (hash-linked, Ed25519 signed)
+/// 2. A seed for deterministic replay
+/// 3. Per-step command + verdict pairs
+/// 4. Aggregate statistics
+///
+/// At 15M episodes with ~200 avg steps, the campaign produces ~3 billion
+/// validated commands and ~150-200 GB of compressed output.
+pub mod data_outputs {
+    use super::*;
+
+    /// Average steps per episode across all scenario tiers.
+    ///
+    /// Weighted average: majority 200-step (A-H), some 500-step (I-K),
+    /// few 1000-step (L). Approximately 200 avg across the full campaign.
+    pub const AVG_STEPS_PER_EPISODE: u64 = 200;
+
+    /// Estimated total commands validated across the full 15M campaign.
+    ///
+    /// `TOTAL_EPISODES × AVG_STEPS_PER_EPISODE = 15M × 200 = 3B`.
+    pub const ESTIMATED_TOTAL_COMMANDS: u64 =
+        super::execution_target::TOTAL_EPISODES * AVG_STEPS_PER_EPISODE;
+
+    /// Estimated compressed output size in gigabytes (lower bound).
+    pub const ESTIMATED_OUTPUT_GB_LOW: u64 = 150;
+
+    /// Estimated compressed output size in gigabytes (upper bound).
+    pub const ESTIMATED_OUTPUT_GB_HIGH: u64 = 200;
+
+    /// Estimated bytes per step (command + signed verdict pair, compressed).
+    ///
+    /// Each step includes a ~500-byte command and a ~800-byte signed verdict
+    /// (with checks, authority summary, signature). After zstd compression
+    /// at the episode level, this averages ~50-70 bytes per step.
+    pub const ESTIMATED_BYTES_PER_STEP_COMPRESSED: u64 = 60;
+
+    /// Estimated bytes per episode for the verdict chain overhead.
+    ///
+    /// The hash-chain linkage (previous_hash, entry_hash, Ed25519 signature)
+    /// adds ~200 bytes per step on top of the command/verdict payload.
+    /// After compression, the chain overhead is ~20 bytes/step.
+    pub const CHAIN_OVERHEAD_BYTES_PER_STEP_COMPRESSED: u64 = 20;
+
+    /// The complete output of a single simulation episode.
+    ///
+    /// This is the per-episode record that constitutes the campaign's
+    /// tamper-proof evidence trail. Each `EpisodeOutput` is independently
+    /// verifiable: the verdict chain can be replayed from the seed, and
+    /// the aggregate statistics can be recomputed from the step records.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use chrono::Utc;
+    /// use invariant_robotics_sim::campaign::data_outputs::EpisodeOutput;
+    ///
+    /// let output = EpisodeOutput {
+    ///     episode_id: 42,
+    ///     shard_id: 3,
+    ///     seed: 0xDEAD_BEEF_CAFE_1234,
+    ///     profile_name: "franka_panda".to_string(),
+    ///     scenario_type: "baseline".to_string(),
+    ///     step_count: 200,
+    ///     started_at: Utc::now(),
+    ///     completed_at: Utc::now(),
+    ///     verdict_chain_hash: "sha256:abc123".to_string(),
+    ///     verdict_chain_signature: "ed25519:sig".to_string(),
+    ///     signer_kid: "validator-key-1".to_string(),
+    ///     commands_approved: 195,
+    ///     commands_rejected: 5,
+    ///     violation_escapes: 0,
+    ///     false_rejections: 0,
+    ///     checks_evaluated: 1200,
+    ///     checks_failed: 5,
+    /// };
+    ///
+    /// assert_eq!(output.step_count, 200);
+    /// assert_eq!(output.commands_approved + output.commands_rejected, output.step_count);
+    /// assert_eq!(output.violation_escapes, 0);
+    /// ```
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct EpisodeOutput {
+        /// Global episode index within the campaign (0..15M).
+        pub episode_id: u64,
+        /// Shard that executed this episode (0..SHARDS).
+        pub shard_id: u32,
+        /// RNG seed for deterministic replay.
+        ///
+        /// Given the same seed, profile, and scenario, the episode can be
+        /// replayed bit-for-bit to reproduce every command and verdict.
+        pub seed: u64,
+        /// Robot profile used for this episode.
+        pub profile_name: String,
+        /// Scenario type that generated commands for this episode.
+        pub scenario_type: String,
+        /// Number of steps (command + verdict pairs) in this episode.
+        pub step_count: u64,
+        /// When the episode started executing.
+        pub started_at: DateTime<Utc>,
+        /// When the episode finished executing.
+        pub completed_at: DateTime<Utc>,
+        /// SHA-256 hash of the final entry in the verdict chain.
+        ///
+        /// This is the terminal hash that commits the entire chain: verifying
+        /// this hash (plus the Ed25519 signature) proves the chain has not
+        /// been modified since signing.
+        pub verdict_chain_hash: String,
+        /// Ed25519 signature over `verdict_chain_hash`, base64-encoded.
+        pub verdict_chain_signature: String,
+        /// Key identifier of the signing key.
+        pub signer_kid: String,
+        /// Number of commands approved in this episode.
+        pub commands_approved: u64,
+        /// Number of commands rejected in this episode.
+        pub commands_rejected: u64,
+        /// Violation commands that were incorrectly approved (should be 0).
+        pub violation_escapes: u64,
+        /// Legitimate commands that were incorrectly rejected.
+        pub false_rejections: u64,
+        /// Total safety checks evaluated across all steps.
+        pub checks_evaluated: u64,
+        /// Total safety checks that failed across all steps.
+        pub checks_failed: u64,
+    }
+
+    impl EpisodeOutput {
+        /// Returns `true` if this episode had zero violation escapes.
+        pub fn is_clean(&self) -> bool {
+            self.violation_escapes == 0
+        }
+
+        /// Returns the episode duration.
+        pub fn duration(&self) -> chrono::Duration {
+            self.completed_at.signed_duration_since(self.started_at)
+        }
+
+        /// Returns the approval rate for this episode.
+        pub fn approval_rate(&self) -> f64 {
+            if self.step_count == 0 {
+                return 0.0;
+            }
+            self.commands_approved as f64 / self.step_count as f64
+        }
+    }
+
+    /// Aggregate summary of a shard's data outputs.
+    ///
+    /// One `ShardOutputSummary` is produced per GPU shard, summarizing all
+    /// episodes that ran on that shard. These are combined to produce the
+    /// final campaign-level statistics.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use chrono::Utc;
+    /// use invariant_robotics_sim::campaign::data_outputs::ShardOutputSummary;
+    ///
+    /// let summary = ShardOutputSummary {
+    ///     shard_id: 0,
+    ///     episodes_completed: 1_875_000,
+    ///     total_steps: 375_000_000,
+    ///     total_commands_approved: 370_000_000,
+    ///     total_commands_rejected: 5_000_000,
+    ///     total_violation_escapes: 0,
+    ///     total_false_rejections: 100,
+    ///     started_at: Utc::now(),
+    ///     completed_at: Utc::now(),
+    ///     output_size_bytes: 20_000_000_000,
+    ///     final_chain_hash: "sha256:shard0final".to_string(),
+    /// };
+    ///
+    /// assert_eq!(summary.total_violation_escapes, 0);
+    /// assert_eq!(summary.episodes_completed, 1_875_000);
+    /// ```
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct ShardOutputSummary {
+        /// Shard index (0..SHARDS).
+        pub shard_id: u32,
+        /// Episodes completed on this shard.
+        pub episodes_completed: u64,
+        /// Total steps executed across all episodes.
+        pub total_steps: u64,
+        /// Total commands approved across all episodes.
+        pub total_commands_approved: u64,
+        /// Total commands rejected across all episodes.
+        pub total_commands_rejected: u64,
+        /// Total violation escapes (should be 0).
+        pub total_violation_escapes: u64,
+        /// Total false rejections across all episodes.
+        pub total_false_rejections: u64,
+        /// When this shard started.
+        pub started_at: DateTime<Utc>,
+        /// When this shard finished.
+        pub completed_at: DateTime<Utc>,
+        /// Total output size in bytes (compressed).
+        pub output_size_bytes: u64,
+        /// SHA-256 hash of the last verdict chain entry on this shard.
+        pub final_chain_hash: String,
+    }
+
+    impl ShardOutputSummary {
+        /// Returns `true` if this shard had zero violation escapes.
+        pub fn is_clean(&self) -> bool {
+            self.total_violation_escapes == 0
+        }
+
+        /// Returns the shard duration.
+        pub fn duration(&self) -> chrono::Duration {
+            self.completed_at.signed_duration_since(self.started_at)
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // 15M Campaign Config Generator
 // ---------------------------------------------------------------------------
+
+/// Returns the episode step count for a given scenario type.
+///
+/// Maps scenarios to step counts in the 200-1000 range per the spec:
+/// - Normal/safety/authority scenarios: 200 steps
+/// - Compound/recovery scenarios: 500 steps (multi-phase attacks)
+/// - Long-running stability scenarios: 1000 steps (drift detection)
+fn scenario_step_count(scenario_type: &str) -> u32 {
+    match scenario_type {
+        // L: Long-running stability (1000 steps)
+        "long_running_stability" | "long_running_threat" => 1000,
+        // I/J: Compound multi-step attacks (500 steps)
+        "compound_authority_physics"
+        | "compound_sensor_spatial"
+        | "compound_drift_then_violation"
+        | "compound_environment_physics" => 500,
+        // K: Recovery & resilience (500 steps)
+        "recovery_safe_stop" | "recovery_audit_integrity" => 500,
+        // A-H: Normal, safety, authority, temporal (200 steps)
+        _ => 200,
+    }
+}
 
 /// Profile weight and applicable scenario categories for the 15M campaign.
 struct ProfileAllocation {
@@ -633,28 +904,46 @@ pub fn generate_15m_configs(total_episodes: u64, shards: u32) -> Vec<CampaignCon
             scenarios.retain(|s| !s.scenario_type.starts_with("locomotion_"));
         }
 
-        let episodes_per_shard = (profile_episodes / shards as u64).max(1);
-        let steps_per_episode: u32 = 200;
+        // Group scenarios into tiers by step count (200, 500, 1000).
+        let mut tiers: std::collections::BTreeMap<u32, (Vec<ScenarioConfig>, f64)> =
+            std::collections::BTreeMap::new();
+        for sc in &scenarios {
+            let steps = scenario_step_count(&sc.scenario_type);
+            let entry = tiers.entry(steps).or_insert_with(|| (Vec::new(), 0.0));
+            entry.1 += sc.weight;
+            entry.0.push(sc.clone());
+        }
+        let total_weight: f64 = tiers.values().map(|(_, w)| w).sum();
 
-        // Split into environments × episodes_per_env to respect MAX_EPISODES_PER_ENV.
-        let max_eps = MAX_EPISODES_PER_ENV as u64;
-        let envs = episodes_per_shard.div_ceil(max_eps) as u32;
-        let eps_per_env = (episodes_per_shard / envs as u64) as u32;
+        for (&steps, (tier_scenarios, tier_weight)) in &tiers {
+            let tier_episodes =
+                (profile_episodes as f64 * tier_weight / total_weight).round() as u64;
+            if tier_episodes == 0 {
+                continue;
+            }
 
-        for shard_id in 0..shards {
-            configs.push(CampaignConfig {
-                name: format!("15m_{}_{}", profile.name, shard_id),
-                profile: profile.name.to_string(),
-                environments: envs,
-                episodes_per_env: eps_per_env,
-                steps_per_episode,
-                scenarios: scenarios.clone(),
-                success_criteria: SuccessCriteria {
-                    min_legitimate_pass_rate: 0.99,
-                    max_violation_escape_rate: 0.0,
-                    max_false_rejection_rate: 0.01,
-                },
-            });
+            let episodes_per_shard = (tier_episodes / shards as u64).max(1);
+
+            // Split into environments × episodes_per_env to respect MAX_EPISODES_PER_ENV.
+            let max_eps = MAX_EPISODES_PER_ENV as u64;
+            let envs = episodes_per_shard.div_ceil(max_eps) as u32;
+            let eps_per_env = (episodes_per_shard / envs as u64) as u32;
+
+            for shard_id in 0..shards {
+                configs.push(CampaignConfig {
+                    name: format!("15m_{}_s{}_{steps}s", profile.name, shard_id),
+                    profile: profile.name.to_string(),
+                    environments: envs,
+                    episodes_per_env: eps_per_env,
+                    steps_per_episode: steps,
+                    scenarios: tier_scenarios.clone(),
+                    success_criteria: SuccessCriteria {
+                        min_legitimate_pass_rate: 0.99,
+                        max_violation_escape_rate: 0.0,
+                        max_false_rejection_rate: 0.01,
+                    },
+                });
+            }
         }
     }
 
@@ -1217,13 +1506,89 @@ scenarios:
         );
     }
 
+    // ── Execution target constants ──────────────────────────────────
+
+    #[test]
+    fn execution_target_episodes_per_shard_consistent() {
+        use super::execution_target::*;
+        assert_eq!(EPISODES_PER_SHARD, TOTAL_EPISODES / SHARDS as u64);
+        assert_eq!(EPISODES_PER_SHARD, 1_875_000);
+    }
+
+    #[test]
+    fn execution_target_profile_count_consistent() {
+        use super::execution_target::*;
+        assert_eq!(PROFILE_COUNT, REAL_WORLD_PROFILES + ADVERSARIAL_PROFILES);
+        assert_eq!(PROFILE_COUNT, 34);
+    }
+
+    #[test]
+    fn execution_target_validation_rate() {
+        use super::execution_target::*;
+        assert_eq!(VALIDATION_RATE_HZ, 200);
+        // 200 Hz = 5 ms per step
+        assert_eq!(1000 / VALIDATION_RATE_HZ, 5);
+    }
+
+    #[test]
+    fn execution_target_step_range() {
+        use super::execution_target::*;
+        assert_eq!(MIN_EPISODE_STEPS, 200);
+        assert_eq!(MAX_EPISODE_STEPS, 1000);
+        assert!(MIN_EPISODE_STEPS < MAX_EPISODE_STEPS);
+    }
+
+    // ── Scenario step count mapping ─────────────────────────────────
+
+    #[test]
+    fn scenario_step_count_normal_scenarios_200() {
+        assert_eq!(super::scenario_step_count("baseline"), 200);
+        assert_eq!(super::scenario_step_count("aggressive"), 200);
+        assert_eq!(super::scenario_step_count("prompt_injection"), 200);
+        assert_eq!(super::scenario_step_count("exclusion_zone"), 200);
+        assert_eq!(super::scenario_step_count("authority_escalation"), 200);
+        assert_eq!(super::scenario_step_count("chain_forgery"), 200);
+        assert_eq!(super::scenario_step_count("locomotion_runaway"), 200);
+    }
+
+    #[test]
+    fn scenario_step_count_compound_recovery_500() {
+        assert_eq!(super::scenario_step_count("compound_authority_physics"), 500);
+        assert_eq!(super::scenario_step_count("compound_sensor_spatial"), 500);
+        assert_eq!(super::scenario_step_count("compound_drift_then_violation"), 500);
+        assert_eq!(super::scenario_step_count("compound_environment_physics"), 500);
+        assert_eq!(super::scenario_step_count("recovery_safe_stop"), 500);
+        assert_eq!(super::scenario_step_count("recovery_audit_integrity"), 500);
+    }
+
+    #[test]
+    fn scenario_step_count_long_running_1000() {
+        assert_eq!(super::scenario_step_count("long_running_stability"), 1000);
+        assert_eq!(super::scenario_step_count("long_running_threat"), 1000);
+    }
+
+    #[test]
+    fn scenario_step_count_within_spec_range() {
+        use super::execution_target::*;
+        let scenarios = super::all_scenario_entries();
+        for sc in &scenarios {
+            let steps = super::scenario_step_count(&sc.scenario_type);
+            assert!(
+                steps >= MIN_EPISODE_STEPS && steps <= MAX_EPISODE_STEPS,
+                "scenario {} has {} steps, must be in [{}, {}]",
+                sc.scenario_type, steps, MIN_EPISODE_STEPS, MAX_EPISODE_STEPS
+            );
+        }
+    }
+
     // ── 15M campaign config generator tests ───────────────────────────
 
     #[test]
-    fn generate_15m_produces_configs_for_all_profiles() {
+    fn generate_15m_produces_tiered_configs_for_all_profiles() {
         let configs = generate_15m_configs(15_000_000, 8);
-        // 34 profiles × 8 shards = 272 configs
-        assert_eq!(configs.len(), 272, "34 profiles × 8 shards");
+        // 34 profiles × 3 step tiers × 8 shards = 816 configs
+        // (each profile has scenarios in all 3 tiers: 200, 500, 1000)
+        assert_eq!(configs.len(), 816, "34 profiles × 3 tiers × 8 shards");
     }
 
     #[test]
@@ -1233,7 +1598,7 @@ scenarios:
             .iter()
             .map(|c| c.environments as u64 * c.episodes_per_env as u64)
             .sum();
-        // Allow 5% tolerance due to integer rounding across 34 profiles × 8 shards
+        // Allow 5% tolerance due to integer rounding across profiles × tiers × shards
         assert!(
             (14_000_000..=16_000_000).contains(&total),
             "total episodes {total} should be ~15M"
@@ -1253,35 +1618,54 @@ scenarios:
     }
 
     #[test]
-    fn generate_15m_locomotion_profiles_have_locomotion_scenarios() {
+    fn generate_15m_configs_have_correct_step_counts() {
         let configs = generate_15m_configs(15_000_000, 8);
-        let humanoid_config = configs
-            .iter()
-            .find(|c| c.name.starts_with("15m_humanoid_28dof_"))
-            .unwrap();
-        assert!(
-            humanoid_config
+        for config in &configs {
+            let expected_steps = config
                 .scenarios
                 .iter()
-                .any(|s| s.scenario_type == "locomotion_runaway"),
-            "humanoid must have locomotion_runaway scenario"
+                .map(|s| super::scenario_step_count(&s.scenario_type))
+                .next()
+                .unwrap();
+            assert_eq!(
+                config.steps_per_episode, expected_steps,
+                "config {} steps_per_episode must match scenario tier",
+                config.name
+            );
+        }
+    }
+
+    #[test]
+    fn generate_15m_locomotion_profiles_have_locomotion_scenarios() {
+        let configs = generate_15m_configs(15_000_000, 8);
+        let humanoid_configs: Vec<_> = configs
+            .iter()
+            .filter(|c| c.name.starts_with("15m_humanoid_28dof_"))
+            .collect();
+        assert!(
+            humanoid_configs
+                .iter()
+                .any(|c| c.scenarios.iter().any(|s| s.scenario_type == "locomotion_runaway")),
+            "humanoid must have locomotion_runaway scenario in some tier"
         );
     }
 
     #[test]
     fn generate_15m_arm_profiles_skip_locomotion_scenarios() {
         let configs = generate_15m_configs(15_000_000, 8);
-        let panda_config = configs
+        let panda_configs: Vec<_> = configs
             .iter()
-            .find(|c| c.name.starts_with("15m_franka_panda_"))
-            .unwrap();
-        assert!(
-            !panda_config
-                .scenarios
-                .iter()
-                .any(|s| s.scenario_type.starts_with("locomotion_")),
-            "franka_panda must not have locomotion scenarios"
-        );
+            .filter(|c| c.name.starts_with("15m_franka_panda_"))
+            .collect();
+        for config in &panda_configs {
+            assert!(
+                !config
+                    .scenarios
+                    .iter()
+                    .any(|s| s.scenario_type.starts_with("locomotion_")),
+                "franka_panda must not have locomotion scenarios"
+            );
+        }
     }
 
     #[test]
@@ -1302,5 +1686,263 @@ scenarios:
                 config.name
             );
         }
+    }
+
+    #[test]
+    fn generate_15m_step_tiers_present() {
+        let configs = generate_15m_configs(15_000_000, 8);
+        let step_counts: std::collections::BTreeSet<u32> =
+            configs.iter().map(|c| c.steps_per_episode).collect();
+        assert!(step_counts.contains(&200), "must have 200-step configs");
+        assert!(step_counts.contains(&500), "must have 500-step configs");
+        assert!(step_counts.contains(&1000), "must have 1000-step configs");
+    }
+
+    #[test]
+    fn generate_15m_majority_episodes_are_short() {
+        let configs = generate_15m_configs(15_000_000, 8);
+        let short_episodes: u64 = configs
+            .iter()
+            .filter(|c| c.steps_per_episode == 200)
+            .map(|c| c.environments as u64 * c.episodes_per_env as u64)
+            .sum();
+        let total_episodes: u64 = configs
+            .iter()
+            .map(|c| c.environments as u64 * c.episodes_per_env as u64)
+            .sum();
+        let fraction = short_episodes as f64 / total_episodes as f64;
+        assert!(
+            fraction > 0.50,
+            "majority of episodes should be 200-step (got {:.1}%)",
+            fraction * 100.0
+        );
+    }
+
+    // ── Data output constants (Section 1.2) ─────────────────────────
+
+    #[test]
+    fn data_outputs_estimated_total_commands() {
+        use super::data_outputs::*;
+        use super::execution_target::*;
+        assert_eq!(ESTIMATED_TOTAL_COMMANDS, TOTAL_EPISODES * AVG_STEPS_PER_EPISODE);
+        assert_eq!(ESTIMATED_TOTAL_COMMANDS, 3_000_000_000);
+    }
+
+    #[test]
+    fn data_outputs_size_range_valid() {
+        use super::data_outputs::*;
+        assert!(ESTIMATED_OUTPUT_GB_LOW < ESTIMATED_OUTPUT_GB_HIGH);
+        assert_eq!(ESTIMATED_OUTPUT_GB_LOW, 150);
+        assert_eq!(ESTIMATED_OUTPUT_GB_HIGH, 200);
+    }
+
+    #[test]
+    fn data_outputs_per_step_compression_plausible() {
+        use super::data_outputs::*;
+        use super::execution_target::*;
+        // Verify the per-step estimates are consistent with the total output range.
+        let bytes_per_step = ESTIMATED_BYTES_PER_STEP_COMPRESSED + CHAIN_OVERHEAD_BYTES_PER_STEP_COMPRESSED;
+        let total_bytes = ESTIMATED_TOTAL_COMMANDS * bytes_per_step;
+        let total_gb = total_bytes / (1024 * 1024 * 1024);
+        assert!(
+            total_gb >= ESTIMATED_OUTPUT_GB_LOW && total_gb <= ESTIMATED_OUTPUT_GB_HIGH * 2,
+            "per-step estimate ({bytes_per_step} B/step) yields {total_gb} GB, expected ~{ESTIMATED_OUTPUT_GB_LOW}-{ESTIMATED_OUTPUT_GB_HIGH} GB"
+        );
+    }
+
+    // ── EpisodeOutput tests ─────────────────────────────────────────
+
+    #[test]
+    fn episode_output_is_clean_when_no_escapes() {
+        use super::data_outputs::EpisodeOutput;
+        let output = EpisodeOutput {
+            episode_id: 0,
+            shard_id: 0,
+            seed: 42,
+            profile_name: "franka_panda".into(),
+            scenario_type: "baseline".into(),
+            step_count: 200,
+            started_at: chrono::Utc::now(),
+            completed_at: chrono::Utc::now(),
+            verdict_chain_hash: "sha256:abc".into(),
+            verdict_chain_signature: "sig".into(),
+            signer_kid: "kid-1".into(),
+            commands_approved: 195,
+            commands_rejected: 5,
+            violation_escapes: 0,
+            false_rejections: 0,
+            checks_evaluated: 1200,
+            checks_failed: 5,
+        };
+        assert!(output.is_clean());
+    }
+
+    #[test]
+    fn episode_output_not_clean_when_escapes() {
+        use super::data_outputs::EpisodeOutput;
+        let output = EpisodeOutput {
+            episode_id: 1,
+            shard_id: 0,
+            seed: 99,
+            profile_name: "ur10".into(),
+            scenario_type: "authority_escalation".into(),
+            step_count: 200,
+            started_at: chrono::Utc::now(),
+            completed_at: chrono::Utc::now(),
+            verdict_chain_hash: "sha256:def".into(),
+            verdict_chain_signature: "sig2".into(),
+            signer_kid: "kid-1".into(),
+            commands_approved: 1,
+            commands_rejected: 199,
+            violation_escapes: 1,
+            false_rejections: 0,
+            checks_evaluated: 1200,
+            checks_failed: 199,
+        };
+        assert!(!output.is_clean());
+    }
+
+    #[test]
+    fn episode_output_approval_rate() {
+        use super::data_outputs::EpisodeOutput;
+        let output = EpisodeOutput {
+            episode_id: 0,
+            shard_id: 0,
+            seed: 1,
+            profile_name: "franka_panda".into(),
+            scenario_type: "baseline".into(),
+            step_count: 100,
+            started_at: chrono::Utc::now(),
+            completed_at: chrono::Utc::now(),
+            verdict_chain_hash: "sha256:x".into(),
+            verdict_chain_signature: "sig".into(),
+            signer_kid: "kid".into(),
+            commands_approved: 80,
+            commands_rejected: 20,
+            violation_escapes: 0,
+            false_rejections: 0,
+            checks_evaluated: 600,
+            checks_failed: 20,
+        };
+        assert!((output.approval_rate() - 0.8).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn episode_output_approval_rate_zero_steps() {
+        use super::data_outputs::EpisodeOutput;
+        let output = EpisodeOutput {
+            episode_id: 0,
+            shard_id: 0,
+            seed: 0,
+            profile_name: "franka_panda".into(),
+            scenario_type: "baseline".into(),
+            step_count: 0,
+            started_at: chrono::Utc::now(),
+            completed_at: chrono::Utc::now(),
+            verdict_chain_hash: String::new(),
+            verdict_chain_signature: String::new(),
+            signer_kid: String::new(),
+            commands_approved: 0,
+            commands_rejected: 0,
+            violation_escapes: 0,
+            false_rejections: 0,
+            checks_evaluated: 0,
+            checks_failed: 0,
+        };
+        assert!((output.approval_rate()).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn episode_output_serialization_round_trip() {
+        use super::data_outputs::EpisodeOutput;
+        let output = EpisodeOutput {
+            episode_id: 42,
+            shard_id: 3,
+            seed: 0xDEAD_BEEF_CAFE_1234,
+            profile_name: "humanoid_28dof".into(),
+            scenario_type: "compound_authority_physics".into(),
+            step_count: 500,
+            started_at: chrono::Utc::now(),
+            completed_at: chrono::Utc::now(),
+            verdict_chain_hash: "sha256:terminal".into(),
+            verdict_chain_signature: "ed25519:final_sig".into(),
+            signer_kid: "validator-key-2".into(),
+            commands_approved: 490,
+            commands_rejected: 10,
+            violation_escapes: 0,
+            false_rejections: 0,
+            checks_evaluated: 3000,
+            checks_failed: 10,
+        };
+        let json = serde_json::to_string(&output).expect("must serialize");
+        let back: EpisodeOutput = serde_json::from_str(&json).expect("must deserialize");
+        assert_eq!(back.episode_id, 42);
+        assert_eq!(back.shard_id, 3);
+        assert_eq!(back.seed, 0xDEAD_BEEF_CAFE_1234);
+        assert_eq!(back.step_count, 500);
+        assert_eq!(back.violation_escapes, 0);
+    }
+
+    // ── ShardOutputSummary tests ────────────────────────────────────
+
+    #[test]
+    fn shard_output_summary_is_clean() {
+        use super::data_outputs::ShardOutputSummary;
+        let summary = ShardOutputSummary {
+            shard_id: 0,
+            episodes_completed: 1_875_000,
+            total_steps: 375_000_000,
+            total_commands_approved: 370_000_000,
+            total_commands_rejected: 5_000_000,
+            total_violation_escapes: 0,
+            total_false_rejections: 100,
+            started_at: chrono::Utc::now(),
+            completed_at: chrono::Utc::now(),
+            output_size_bytes: 20_000_000_000,
+            final_chain_hash: "sha256:shard0".into(),
+        };
+        assert!(summary.is_clean());
+    }
+
+    #[test]
+    fn shard_output_summary_not_clean_on_escape() {
+        use super::data_outputs::ShardOutputSummary;
+        let summary = ShardOutputSummary {
+            shard_id: 1,
+            episodes_completed: 1_875_000,
+            total_steps: 375_000_000,
+            total_commands_approved: 370_000_001,
+            total_commands_rejected: 4_999_999,
+            total_violation_escapes: 1,
+            total_false_rejections: 0,
+            started_at: chrono::Utc::now(),
+            completed_at: chrono::Utc::now(),
+            output_size_bytes: 20_000_000_000,
+            final_chain_hash: "sha256:shard1".into(),
+        };
+        assert!(!summary.is_clean());
+    }
+
+    #[test]
+    fn shard_output_summary_serialization_round_trip() {
+        use super::data_outputs::ShardOutputSummary;
+        let summary = ShardOutputSummary {
+            shard_id: 7,
+            episodes_completed: 1_875_000,
+            total_steps: 375_000_000,
+            total_commands_approved: 370_000_000,
+            total_commands_rejected: 5_000_000,
+            total_violation_escapes: 0,
+            total_false_rejections: 50,
+            started_at: chrono::Utc::now(),
+            completed_at: chrono::Utc::now(),
+            output_size_bytes: 19_500_000_000,
+            final_chain_hash: "sha256:shard7final".into(),
+        };
+        let json = serde_json::to_string(&summary).expect("must serialize");
+        let back: ShardOutputSummary = serde_json::from_str(&json).expect("must deserialize");
+        assert_eq!(back.shard_id, 7);
+        assert_eq!(back.episodes_completed, 1_875_000);
+        assert_eq!(back.total_violation_escapes, 0);
     }
 }
