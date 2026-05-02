@@ -35,7 +35,7 @@ chrono = { version = "0.4", features = ["serde"] }
 base64 = "0.22"
 
 # Core utilities
-rand = "0.8"
+rand = "0.10"
 regex = "1.11"
 thiserror = "2.0"
 quick-xml = "0.39"
