@@ -42,7 +42,7 @@ quick-xml = "0.39"
 
 # CLI & server
 clap = { version = "4.5", features = ["derive"] }
-tokio = { version = "1.0" }
+tokio = { version = "1.52" }
 axum = "0.8"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
