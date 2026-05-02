@@ -521,8 +521,15 @@ fn parse_injection_type(name: &str) -> Result<InjectionType, DryRunError> {
 fn is_expected_reject(scenario: ScenarioType) -> bool {
     !matches!(
         scenario,
+        // Category A: Normal operation — all commands should be APPROVED.
         ScenarioType::Baseline
             | ScenarioType::Aggressive
+            | ScenarioType::PickAndPlace
+            | ScenarioType::WalkingGait
+            | ScenarioType::CollaborativeWork
+            | ScenarioType::CncTendingFullCycle
+            | ScenarioType::DexterousManipulation
+            | ScenarioType::MultiRobotCoordinated
             | ScenarioType::MultiAgentHandoff
             | ScenarioType::CncTending
             | ScenarioType::LongRunningStability
@@ -811,9 +818,16 @@ mod tests {
 
     #[test]
     fn expected_reject_classification() {
-        // Legitimate scenarios: commands are valid, should NOT be rejected.
+        // Category A: Normal operation — all commands should be APPROVED.
         assert!(!is_expected_reject(ScenarioType::Baseline));
         assert!(!is_expected_reject(ScenarioType::Aggressive));
+        assert!(!is_expected_reject(ScenarioType::PickAndPlace));
+        assert!(!is_expected_reject(ScenarioType::WalkingGait));
+        assert!(!is_expected_reject(ScenarioType::CollaborativeWork));
+        assert!(!is_expected_reject(ScenarioType::CncTendingFullCycle));
+        assert!(!is_expected_reject(ScenarioType::DexterousManipulation));
+        assert!(!is_expected_reject(ScenarioType::MultiRobotCoordinated));
+        // Other non-reject scenarios.
         assert!(!is_expected_reject(ScenarioType::MultiAgentHandoff));
         assert!(!is_expected_reject(ScenarioType::CncTending));
         assert!(!is_expected_reject(ScenarioType::LongRunningStability));
