@@ -371,6 +371,210 @@ fn validate_config(config: &CampaignConfig) -> Result<(), CampaignError> {
 }
 
 // ---------------------------------------------------------------------------
+// 15M Campaign — Proof of Safety (Purpose)
+// ---------------------------------------------------------------------------
+
+/// Statistical proof of safety constants from the campaign specification (Purpose).
+///
+/// At 15M validated decisions with zero bypasses, the 99.9% confidence upper
+/// bound on the bypass rate is < 0.0000461% — fewer than 1 in 2.2 million.
+///
+/// The math: for a Bernoulli process with `n` trials and 0 observed failures,
+/// the one-sided Clopper-Pearson upper bound at confidence level `c` is:
+///
+///   p_upper = 1 - (1 - c)^(1/n)
+///
+/// With n = 15,000,000 and c = 0.999:
+///
+///   p_upper = 1 - 0.001^(1/15_000_000) ≈ 4.605e-7 ≈ 0.0000461%
+pub mod proof_of_safety {
+    /// Confidence level for the statistical proof (99.9%).
+    pub const CONFIDENCE_LEVEL: f64 = 0.999;
+
+    /// Total episodes required for the statistical proof.
+    pub const REQUIRED_EPISODES: u64 = 15_000_000;
+
+    /// Upper bound on bypass rate at 99.9% confidence with zero failures
+    /// across 15M episodes (as a fraction, not percentage).
+    ///
+    /// `1 - (1 - 0.999)^(1/15_000_000) ≈ 4.605e-7`
+    pub const BYPASS_RATE_UPPER_BOUND: f64 = 4.605e-7;
+
+    /// The reciprocal of the bypass rate upper bound: one bypass per this
+    /// many decisions at most (≈ 2.17 million).
+    pub const ONE_IN_N_DECISIONS: u64 = 2_171_472;
+
+    /// Compute the one-sided Clopper-Pearson upper bound on failure rate
+    /// given `n` trials, 0 observed failures, and confidence level `c`.
+    ///
+    /// Returns `1 - (1 - c)^(1/n)`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use invariant_robotics_sim::campaign::proof_of_safety::clopper_pearson_upper;
+    ///
+    /// let bound = clopper_pearson_upper(15_000_000, 0.999);
+    /// assert!((bound - 4.605e-7).abs() < 1e-9);
+    /// ```
+    pub fn clopper_pearson_upper(n: u64, confidence: f64) -> f64 {
+        1.0 - (1.0 - confidence).powf(1.0 / n as f64)
+    }
+
+    /// Returns `true` if the campaign results constitute statistical proof
+    /// of safety: the required number of episodes were completed and zero
+    /// violation escapes were observed.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use invariant_robotics_sim::campaign::proof_of_safety::is_proof_of_safety;
+    ///
+    /// assert!(is_proof_of_safety(15_000_000, 0));
+    /// assert!(!is_proof_of_safety(14_999_999, 0));
+    /// assert!(!is_proof_of_safety(15_000_000, 1));
+    /// ```
+    pub fn is_proof_of_safety(episodes_completed: u64, violation_escapes: u64) -> bool {
+        episodes_completed >= REQUIRED_EPISODES && violation_escapes == 0
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 15M Campaign — Scenario Categories (Section 2.1)
+// ---------------------------------------------------------------------------
+
+/// Scenario category definitions from the campaign specification (Section 2.1).
+///
+/// The 15M campaign is divided into 11 categories (A-K), each targeting a
+/// specific class of safety invariant or attack surface.
+pub mod scenario_categories {
+    use serde::{Deserialize, Serialize};
+
+    /// A scenario category in the 15M campaign.
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct ScenarioCategory {
+        /// Single-letter category identifier (A-K).
+        pub id: char,
+        /// Human-readable category name.
+        pub name: &'static str,
+        /// Number of distinct scenarios in this category.
+        pub scenario_count: u32,
+        /// Total episodes allocated to this category.
+        pub episodes: u64,
+        /// What the category proves.
+        pub purpose: &'static str,
+    }
+
+    /// All 11 scenario categories from the campaign specification.
+    pub const CATEGORIES: [ScenarioCategory; 11] = [
+        ScenarioCategory {
+            id: 'A',
+            name: "Normal Operation",
+            scenario_count: 6,
+            episodes: 3_000_000,
+            purpose: "Prove valid commands are APPROVED correctly",
+        },
+        ScenarioCategory {
+            id: 'B',
+            name: "Joint Safety",
+            scenario_count: 8,
+            episodes: 1_500_000,
+            purpose: "Prove P1-P4 catch every joint violation",
+        },
+        ScenarioCategory {
+            id: 'C',
+            name: "Spatial Safety",
+            scenario_count: 6,
+            episodes: 1_000_000,
+            purpose: "Prove P5-P7 catch every workspace/zone/collision violation",
+        },
+        ScenarioCategory {
+            id: 'D',
+            name: "Stability & Locomotion",
+            scenario_count: 10,
+            episodes: 1_500_000,
+            purpose: "Prove P9, P15-P20 catch every balance/gait failure",
+        },
+        ScenarioCategory {
+            id: 'E',
+            name: "Manipulation Safety",
+            scenario_count: 6,
+            episodes: 750_000,
+            purpose: "Prove P11-P14 catch every force/grasp/payload violation",
+        },
+        ScenarioCategory {
+            id: 'F',
+            name: "Environmental Hazards",
+            scenario_count: 8,
+            episodes: 750_000,
+            purpose: "Prove P21-P25 + SR1-SR2 catch every environmental failure",
+        },
+        ScenarioCategory {
+            id: 'G',
+            name: "Authority & Crypto",
+            scenario_count: 10,
+            episodes: 1_500_000,
+            purpose: "Prove A1-A3 catch every authority attack",
+        },
+        ScenarioCategory {
+            id: 'H',
+            name: "Temporal & Sequence",
+            scenario_count: 6,
+            episodes: 750_000,
+            purpose: "Prove replay, sequence, timing attacks are caught",
+        },
+        ScenarioCategory {
+            id: 'I',
+            name: "Cognitive Escape",
+            scenario_count: 10,
+            episodes: 1_500_000,
+            purpose: "Prove LLM/AI reasoning cannot bypass the firewall",
+        },
+        ScenarioCategory {
+            id: 'J',
+            name: "Multi-Step Compound",
+            scenario_count: 8,
+            episodes: 1_000_000,
+            purpose: "Prove chained attacks across categories fail",
+        },
+        ScenarioCategory {
+            id: 'K',
+            name: "Recovery & Resilience",
+            scenario_count: 6,
+            episodes: 500_000,
+            purpose: "Prove safe-stop, recovery, and mode transitions are safe",
+        },
+    ];
+
+    /// Total scenarios across all categories (A-K).
+    pub const TOTAL_SCENARIOS: u32 = 84;
+
+    /// Total episodes allocated across categories A-K.
+    ///
+    /// This is 13.75M; the remaining 1.25M episodes to reach the full 15M
+    /// target are reserved for additional scenario categories (L+) defined
+    /// in later sections of the specification.
+    pub const ALLOCATED_EPISODES: u64 = 13_750_000;
+
+    /// Returns the category for a given ID letter, or `None` if not found.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use invariant_robotics_sim::campaign::scenario_categories::category_by_id;
+    ///
+    /// let cat_a = category_by_id('A').unwrap();
+    /// assert_eq!(cat_a.name, "Normal Operation");
+    /// assert_eq!(cat_a.episodes, 3_000_000);
+    ///
+    /// assert!(category_by_id('Z').is_none());
+    /// ```
+    pub fn category_by_id(id: char) -> Option<&'static ScenarioCategory> {
+        CATEGORIES.iter().find(|c| c.id == id)
+    }
+}
+
+// ---------------------------------------------------------------------------
 // 15M Campaign Execution Target
 // ---------------------------------------------------------------------------
 
@@ -447,6 +651,64 @@ pub mod data_outputs {
     /// adds ~200 bytes per step on top of the command/verdict payload.
     /// After compression, the chain overhead is ~20 bytes/step.
     pub const CHAIN_OVERHEAD_BYTES_PER_STEP_COMPRESSED: u64 = 20;
+
+    /// A single step's command + verdict pair.
+    ///
+    /// Each simulation step produces one command (the robot action) and one
+    /// verdict (the firewall's decision). These pairs form the raw evidence
+    /// trail and are hash-chained into the signed verdict chain.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use invariant_robotics_sim::campaign::data_outputs::{StepRecord, StepVerdict};
+    ///
+    /// let step = StepRecord {
+    ///     step_index: 0,
+    ///     command_hash: "sha256:cmd0".to_string(),
+    ///     verdict: StepVerdict::Approved,
+    ///     checks_evaluated: 6,
+    ///     checks_failed: 0,
+    ///     entry_hash: "sha256:entry0".to_string(),
+    ///     previous_hash: "sha256:genesis".to_string(),
+    /// };
+    ///
+    /// assert!(step.verdict.is_approved());
+    /// assert_eq!(step.checks_failed, 0);
+    /// ```
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct StepRecord {
+        /// Zero-based step index within the episode.
+        pub step_index: u64,
+        /// SHA-256 hash of the serialized command.
+        pub command_hash: String,
+        /// The firewall's verdict for this command.
+        pub verdict: StepVerdict,
+        /// Number of safety checks evaluated for this step.
+        pub checks_evaluated: u32,
+        /// Number of safety checks that failed for this step.
+        pub checks_failed: u32,
+        /// Hash of this entry in the verdict chain.
+        pub entry_hash: String,
+        /// Hash of the previous entry (forms the hash chain).
+        pub previous_hash: String,
+    }
+
+    /// The firewall's verdict for a single command.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+    pub enum StepVerdict {
+        /// Command was approved (all checks passed).
+        Approved,
+        /// Command was rejected (one or more checks failed).
+        Rejected,
+    }
+
+    impl StepVerdict {
+        /// Returns `true` if the verdict is `Approved`.
+        pub fn is_approved(self) -> bool {
+            matches!(self, StepVerdict::Approved)
+        }
+    }
 
     /// The complete output of a single simulation episode.
     ///
@@ -614,6 +876,90 @@ pub mod data_outputs {
         /// Returns the shard duration.
         pub fn duration(&self) -> chrono::Duration {
             self.completed_at.signed_duration_since(self.started_at)
+        }
+    }
+
+    /// Campaign-level aggregate of all shard outputs.
+    ///
+    /// Combines all `ShardOutputSummary` records into a single campaign
+    /// result that can be checked against the proof-of-safety criteria.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use invariant_robotics_sim::campaign::data_outputs::CampaignOutputSummary;
+    ///
+    /// let summary = CampaignOutputSummary {
+    ///     total_episodes: 15_000_000,
+    ///     total_steps: 3_000_000_000,
+    ///     total_commands_approved: 2_950_000_000,
+    ///     total_commands_rejected: 50_000_000,
+    ///     total_violation_escapes: 0,
+    ///     total_false_rejections: 500,
+    ///     total_output_bytes: 180_000_000_000,
+    ///     shard_count: 8,
+    /// };
+    ///
+    /// assert!(summary.is_proof_of_safety());
+    /// ```
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct CampaignOutputSummary {
+        /// Total episodes completed across all shards.
+        pub total_episodes: u64,
+        /// Total steps executed across all shards.
+        pub total_steps: u64,
+        /// Total commands approved across all shards.
+        pub total_commands_approved: u64,
+        /// Total commands rejected across all shards.
+        pub total_commands_rejected: u64,
+        /// Total violation escapes across all shards (must be 0 for proof).
+        pub total_violation_escapes: u64,
+        /// Total false rejections across all shards.
+        pub total_false_rejections: u64,
+        /// Total compressed output size in bytes.
+        pub total_output_bytes: u64,
+        /// Number of shards that contributed to this summary.
+        pub shard_count: u32,
+    }
+
+    impl CampaignOutputSummary {
+        /// Aggregate multiple shard summaries into a campaign-level summary.
+        pub fn from_shards(shards: &[ShardOutputSummary]) -> Self {
+            CampaignOutputSummary {
+                total_episodes: shards.iter().map(|s| s.episodes_completed).sum(),
+                total_steps: shards.iter().map(|s| s.total_steps).sum(),
+                total_commands_approved: shards.iter().map(|s| s.total_commands_approved).sum(),
+                total_commands_rejected: shards.iter().map(|s| s.total_commands_rejected).sum(),
+                total_violation_escapes: shards.iter().map(|s| s.total_violation_escapes).sum(),
+                total_false_rejections: shards.iter().map(|s| s.total_false_rejections).sum(),
+                total_output_bytes: shards.iter().map(|s| s.output_size_bytes).sum(),
+                shard_count: shards.len() as u32,
+            }
+        }
+
+        /// Returns `true` if the campaign meets the statistical proof of safety
+        /// criteria: >= 15M episodes and zero violation escapes.
+        pub fn is_proof_of_safety(&self) -> bool {
+            super::proof_of_safety::is_proof_of_safety(
+                self.total_episodes,
+                self.total_violation_escapes,
+            )
+        }
+
+        /// Returns the overall approval rate across the campaign.
+        pub fn approval_rate(&self) -> f64 {
+            if self.total_steps == 0 {
+                return 0.0;
+            }
+            self.total_commands_approved as f64 / self.total_steps as f64
+        }
+
+        /// Returns the false rejection rate across the campaign.
+        pub fn false_rejection_rate(&self) -> f64 {
+            if self.total_steps == 0 {
+                return 0.0;
+            }
+            self.total_false_rejections as f64 / self.total_steps as f64
         }
     }
 }
@@ -1921,6 +2267,208 @@ scenarios:
             final_chain_hash: "sha256:shard1".into(),
         };
         assert!(!summary.is_clean());
+    }
+
+    // ── Proof of safety (Purpose) ────────────────────────────────
+
+    #[test]
+    fn clopper_pearson_upper_at_15m() {
+        use super::proof_of_safety::*;
+        let bound = clopper_pearson_upper(REQUIRED_EPISODES, CONFIDENCE_LEVEL);
+        assert!(
+            (bound - BYPASS_RATE_UPPER_BOUND).abs() < 1e-9,
+            "bound {bound} should ≈ {BYPASS_RATE_UPPER_BOUND}"
+        );
+    }
+
+    #[test]
+    fn clopper_pearson_upper_monotonically_decreasing_with_n() {
+        use super::proof_of_safety::clopper_pearson_upper;
+        let b1 = clopper_pearson_upper(1_000_000, 0.999);
+        let b2 = clopper_pearson_upper(15_000_000, 0.999);
+        assert!(b1 > b2, "more episodes => lower bound");
+    }
+
+    #[test]
+    fn one_in_n_decisions_consistent() {
+        use super::proof_of_safety::*;
+        let computed = (1.0 / BYPASS_RATE_UPPER_BOUND).floor() as u64;
+        // Allow a small tolerance due to the constant being a rounded approximation.
+        assert!(
+            (computed as i64 - ONE_IN_N_DECISIONS as i64).unsigned_abs() < 1000,
+            "1/{BYPASS_RATE_UPPER_BOUND} = {computed}, expected ≈ {ONE_IN_N_DECISIONS}"
+        );
+    }
+
+    #[test]
+    fn is_proof_of_safety_requires_15m_and_zero_escapes() {
+        use super::proof_of_safety::*;
+        assert!(is_proof_of_safety(15_000_000, 0));
+        assert!(is_proof_of_safety(20_000_000, 0)); // more than required is fine
+        assert!(!is_proof_of_safety(14_999_999, 0));
+        assert!(!is_proof_of_safety(15_000_000, 1));
+        assert!(!is_proof_of_safety(0, 0));
+    }
+
+    // ── Scenario categories (Section 2.1) ─────────────────────────
+
+    #[test]
+    fn scenario_categories_sum_to_allocated() {
+        use super::scenario_categories::*;
+        let total: u64 = CATEGORIES.iter().map(|c| c.episodes).sum();
+        assert_eq!(total, ALLOCATED_EPISODES);
+        assert_eq!(total, 13_750_000);
+    }
+
+    #[test]
+    fn scenario_categories_allocated_within_15m() {
+        use super::scenario_categories::*;
+        assert!(ALLOCATED_EPISODES <= super::execution_target::TOTAL_EPISODES);
+    }
+
+    #[test]
+    fn scenario_categories_count_consistent() {
+        use super::scenario_categories::*;
+        let total: u32 = CATEGORIES.iter().map(|c| c.scenario_count).sum();
+        assert_eq!(total, TOTAL_SCENARIOS);
+    }
+
+    #[test]
+    fn scenario_categories_ids_are_a_through_k() {
+        use super::scenario_categories::*;
+        let ids: Vec<char> = CATEGORIES.iter().map(|c| c.id).collect();
+        assert_eq!(ids, vec!['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K']);
+    }
+
+    #[test]
+    fn scenario_categories_all_have_episodes() {
+        use super::scenario_categories::*;
+        for cat in &CATEGORIES {
+            assert!(cat.episodes > 0, "category {} must have episodes", cat.id);
+        }
+    }
+
+    #[test]
+    fn category_by_id_lookup() {
+        use super::scenario_categories::*;
+        let a = category_by_id('A').unwrap();
+        assert_eq!(a.name, "Normal Operation");
+        assert_eq!(a.episodes, 3_000_000);
+
+        let k = category_by_id('K').unwrap();
+        assert_eq!(k.name, "Recovery & Resilience");
+        assert_eq!(k.episodes, 500_000);
+
+        assert!(category_by_id('Z').is_none());
+    }
+
+    // ── ShardOutputSummary tests (continued) ──────────────────────
+
+    // ── StepRecord tests ────────────────────────────────────────────
+
+    #[test]
+    fn step_record_serialization_round_trip() {
+        use super::data_outputs::{StepRecord, StepVerdict};
+        let step = StepRecord {
+            step_index: 42,
+            command_hash: "sha256:cmd42".into(),
+            verdict: StepVerdict::Rejected,
+            checks_evaluated: 6,
+            checks_failed: 2,
+            entry_hash: "sha256:entry42".into(),
+            previous_hash: "sha256:entry41".into(),
+        };
+        let json = serde_json::to_string(&step).expect("must serialize");
+        let back: StepRecord = serde_json::from_str(&json).expect("must deserialize");
+        assert_eq!(back.step_index, 42);
+        assert_eq!(back.verdict, StepVerdict::Rejected);
+        assert!(!back.verdict.is_approved());
+    }
+
+    #[test]
+    fn step_verdict_is_approved() {
+        use super::data_outputs::StepVerdict;
+        assert!(StepVerdict::Approved.is_approved());
+        assert!(!StepVerdict::Rejected.is_approved());
+    }
+
+    // ── CampaignOutputSummary tests ───────────────────────────────
+
+    #[test]
+    fn campaign_output_summary_from_shards() {
+        use super::data_outputs::{CampaignOutputSummary, ShardOutputSummary};
+        let shards: Vec<ShardOutputSummary> = (0..8)
+            .map(|i| ShardOutputSummary {
+                shard_id: i,
+                episodes_completed: 1_875_000,
+                total_steps: 375_000_000,
+                total_commands_approved: 370_000_000,
+                total_commands_rejected: 5_000_000,
+                total_violation_escapes: 0,
+                total_false_rejections: 50,
+                started_at: chrono::Utc::now(),
+                completed_at: chrono::Utc::now(),
+                output_size_bytes: 20_000_000_000,
+                final_chain_hash: format!("sha256:shard{i}"),
+            })
+            .collect();
+        let summary = CampaignOutputSummary::from_shards(&shards);
+        assert_eq!(summary.total_episodes, 15_000_000);
+        assert_eq!(summary.total_steps, 3_000_000_000);
+        assert_eq!(summary.total_violation_escapes, 0);
+        assert_eq!(summary.total_false_rejections, 400);
+        assert_eq!(summary.shard_count, 8);
+        assert!(summary.is_proof_of_safety());
+    }
+
+    #[test]
+    fn campaign_output_summary_not_proof_with_escapes() {
+        use super::data_outputs::CampaignOutputSummary;
+        let summary = CampaignOutputSummary {
+            total_episodes: 15_000_000,
+            total_steps: 3_000_000_000,
+            total_commands_approved: 2_999_999_999,
+            total_commands_rejected: 1,
+            total_violation_escapes: 1,
+            total_false_rejections: 0,
+            total_output_bytes: 180_000_000_000,
+            shard_count: 8,
+        };
+        assert!(!summary.is_proof_of_safety());
+    }
+
+    #[test]
+    fn campaign_output_summary_approval_rate() {
+        use super::data_outputs::CampaignOutputSummary;
+        let summary = CampaignOutputSummary {
+            total_episodes: 100,
+            total_steps: 1000,
+            total_commands_approved: 950,
+            total_commands_rejected: 50,
+            total_violation_escapes: 0,
+            total_false_rejections: 10,
+            total_output_bytes: 1000,
+            shard_count: 1,
+        };
+        assert!((summary.approval_rate() - 0.95).abs() < f64::EPSILON);
+        assert!((summary.false_rejection_rate() - 0.01).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn campaign_output_summary_zero_steps() {
+        use super::data_outputs::CampaignOutputSummary;
+        let summary = CampaignOutputSummary {
+            total_episodes: 0,
+            total_steps: 0,
+            total_commands_approved: 0,
+            total_commands_rejected: 0,
+            total_violation_escapes: 0,
+            total_false_rejections: 0,
+            total_output_bytes: 0,
+            shard_count: 0,
+        };
+        assert!((summary.approval_rate()).abs() < f64::EPSILON);
+        assert!((summary.false_rejection_rate()).abs() < f64::EPSILON);
     }
 
     #[test]
