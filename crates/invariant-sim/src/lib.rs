@@ -29,6 +29,8 @@
 
 /// Campaign configuration loader and data types.
 pub mod campaign;
+/// Per-episode data outputs: signed verdict chain, seed, and trace bundle.
+pub mod episode;
 /// Result collector for per-command verdicts.
 pub mod collector;
 /// Fault injection engine for generating adversarial commands.
