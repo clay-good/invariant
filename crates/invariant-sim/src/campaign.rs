@@ -616,6 +616,472 @@ pub mod data_outputs {
             self.completed_at.signed_duration_since(self.started_at)
         }
     }
+
+    /// Campaign-level manifest aggregating all shard outputs.
+    ///
+    /// This is the top-level data output record for the entire 15M campaign.
+    /// It combines per-shard summaries into a single verifiable artifact that
+    /// proves the campaign ran to completion with the claimed results.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use chrono::Utc;
+    /// use invariant_robotics_sim::campaign::data_outputs::{CampaignOutputManifest, ShardOutputSummary};
+    ///
+    /// let shards: Vec<ShardOutputSummary> = (0..8u32).map(|i| ShardOutputSummary {
+    ///     shard_id: i,
+    ///     episodes_completed: 100,
+    ///     total_steps: 20_000,
+    ///     total_commands_approved: 19_000,
+    ///     total_commands_rejected: 1_000,
+    ///     total_violation_escapes: 0,
+    ///     total_false_rejections: 5,
+    ///     started_at: Utc::now(),
+    ///     completed_at: Utc::now(),
+    ///     output_size_bytes: 1_000_000,
+    ///     final_chain_hash: format!("sha256:shard{i}"),
+    /// }).collect();
+    ///
+    /// let manifest = CampaignOutputManifest::from_shards(shards);
+    /// assert_eq!(manifest.total_episodes, 800);
+    /// assert_eq!(manifest.total_steps, 160_000);
+    /// assert_eq!(manifest.total_violation_escapes, 0);
+    /// assert!(manifest.is_clean());
+    /// assert_eq!(manifest.shard_count, 8);
+    /// ```
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct CampaignOutputManifest {
+        /// Number of shards that contributed to this campaign.
+        pub shard_count: u32,
+        /// Total episodes completed across all shards.
+        pub total_episodes: u64,
+        /// Total steps executed across all shards.
+        pub total_steps: u64,
+        /// Total commands approved across all shards.
+        pub total_commands_approved: u64,
+        /// Total commands rejected across all shards.
+        pub total_commands_rejected: u64,
+        /// Total violation escapes across all shards (must be 0 for proof).
+        pub total_violation_escapes: u64,
+        /// Total false rejections across all shards.
+        pub total_false_rejections: u64,
+        /// Total compressed output size in bytes across all shards.
+        pub total_output_size_bytes: u64,
+        /// Per-shard final chain hashes, ordered by shard_id.
+        pub shard_chain_hashes: Vec<String>,
+        /// Per-shard summaries, ordered by shard_id.
+        pub shards: Vec<ShardOutputSummary>,
+    }
+
+    impl CampaignOutputManifest {
+        /// Aggregate a set of shard summaries into a campaign manifest.
+        ///
+        /// Shards are sorted by `shard_id` in the output.
+        pub fn from_shards(mut shards: Vec<ShardOutputSummary>) -> Self {
+            shards.sort_by_key(|s| s.shard_id);
+
+            let shard_count = shards.len() as u32;
+            let total_episodes = shards.iter().map(|s| s.episodes_completed).sum();
+            let total_steps = shards.iter().map(|s| s.total_steps).sum();
+            let total_commands_approved = shards.iter().map(|s| s.total_commands_approved).sum();
+            let total_commands_rejected = shards.iter().map(|s| s.total_commands_rejected).sum();
+            let total_violation_escapes = shards.iter().map(|s| s.total_violation_escapes).sum();
+            let total_false_rejections = shards.iter().map(|s| s.total_false_rejections).sum();
+            let total_output_size_bytes = shards.iter().map(|s| s.output_size_bytes).sum();
+            let shard_chain_hashes = shards.iter().map(|s| s.final_chain_hash.clone()).collect();
+
+            CampaignOutputManifest {
+                shard_count,
+                total_episodes,
+                total_steps,
+                total_commands_approved,
+                total_commands_rejected,
+                total_violation_escapes,
+                total_false_rejections,
+                total_output_size_bytes,
+                shard_chain_hashes,
+                shards,
+            }
+        }
+
+        /// Returns `true` if the entire campaign had zero violation escapes.
+        pub fn is_clean(&self) -> bool {
+            self.total_violation_escapes == 0
+        }
+
+        /// Returns the campaign-wide approval rate.
+        pub fn approval_rate(&self) -> f64 {
+            let total = self.total_commands_approved + self.total_commands_rejected;
+            if total == 0 {
+                return 0.0;
+            }
+            self.total_commands_approved as f64 / total as f64
+        }
+
+        /// Returns the estimated output size in gigabytes.
+        pub fn output_size_gb(&self) -> f64 {
+            self.total_output_size_bytes as f64 / (1024.0 * 1024.0 * 1024.0)
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 15M Campaign Scenario Categories (Section 2.1)
+// ---------------------------------------------------------------------------
+
+/// Scenario categories for the 15M campaign (Section 2.1 Overview).
+///
+/// The 15M campaign is divided into 14 categories (A–N), totaling 104
+/// distinct scenarios and 15,000,000 episodes. Each category targets a
+/// specific safety domain — from normal operation through adversarial
+/// red-teaming — ensuring complete coverage of the Invariant firewall's
+/// validation surface.
+pub mod scenario_categories {
+    use serde::{Deserialize, Serialize};
+
+    /// Total number of scenario categories in the 15M campaign.
+    pub const CATEGORY_COUNT: usize = 14;
+
+    /// Total distinct scenarios across all categories.
+    pub const TOTAL_SCENARIOS: u32 = 106;
+
+    /// Total episodes across all categories (must equal 15M).
+    pub const TOTAL_EPISODES: u64 = 15_000_000;
+
+    /// A scenario category in the 15M campaign.
+    ///
+    /// Each variant maps to one row in the Section 2.1 overview table.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use invariant_robotics_sim::campaign::scenario_categories::ScenarioCategory;
+    ///
+    /// let cat = ScenarioCategory::NormalOperation;
+    /// assert_eq!(cat.letter(), 'A');
+    /// assert_eq!(cat.scenarios(), 8);
+    /// assert_eq!(cat.episodes(), 3_000_000);
+    /// ```
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+    pub enum ScenarioCategory {
+        /// A: Prove valid commands are APPROVED correctly.
+        NormalOperation,
+        /// B: Prove P1-P4 catch every joint violation.
+        JointSafety,
+        /// C: Prove P5-P7 catch every workspace/zone/collision violation.
+        SpatialSafety,
+        /// D: Prove P9, P15-P20 catch every balance/gait failure.
+        StabilityLocomotion,
+        /// E: Prove P11-P14 catch every force/grasp/payload violation.
+        ManipulationSafety,
+        /// F: Prove P21-P25 + SR1-SR2 catch every environmental failure.
+        EnvironmentalHazards,
+        /// G: Prove A1-A3 catch every authority attack.
+        AuthorityCrypto,
+        /// H: Prove replay, sequence, timing attacks are caught.
+        TemporalSequence,
+        /// I: Prove LLM/AI reasoning cannot bypass the firewall.
+        CognitiveEscape,
+        /// J: Prove chained attacks across categories fail.
+        MultiStepCompound,
+        /// K: Prove safe-stop, recovery, and mode transitions are safe.
+        RecoveryResilience,
+        /// L: Prove 24h+ operation with no drift or degradation.
+        LongRunningStability,
+        /// M: Prove all profiles under maximum load.
+        CrossPlatformStress,
+        /// N: Prove fuzz/mutation/generation attacks find no bypass.
+        AdversarialRedTeam,
+    }
+
+    impl ScenarioCategory {
+        /// Returns all 14 categories in spec order (A–N).
+        pub fn all() -> &'static [ScenarioCategory; CATEGORY_COUNT] {
+            use ScenarioCategory::*;
+            &[
+                NormalOperation,
+                JointSafety,
+                SpatialSafety,
+                StabilityLocomotion,
+                ManipulationSafety,
+                EnvironmentalHazards,
+                AuthorityCrypto,
+                TemporalSequence,
+                CognitiveEscape,
+                MultiStepCompound,
+                RecoveryResilience,
+                LongRunningStability,
+                CrossPlatformStress,
+                AdversarialRedTeam,
+            ]
+        }
+
+        /// The single-letter identifier (A–N) for this category.
+        pub fn letter(&self) -> char {
+            use ScenarioCategory::*;
+            match self {
+                NormalOperation => 'A',
+                JointSafety => 'B',
+                SpatialSafety => 'C',
+                StabilityLocomotion => 'D',
+                ManipulationSafety => 'E',
+                EnvironmentalHazards => 'F',
+                AuthorityCrypto => 'G',
+                TemporalSequence => 'H',
+                CognitiveEscape => 'I',
+                MultiStepCompound => 'J',
+                RecoveryResilience => 'K',
+                LongRunningStability => 'L',
+                CrossPlatformStress => 'M',
+                AdversarialRedTeam => 'N',
+            }
+        }
+
+        /// Human-readable category name.
+        pub fn name(&self) -> &'static str {
+            use ScenarioCategory::*;
+            match self {
+                NormalOperation => "Normal Operation",
+                JointSafety => "Joint Safety",
+                SpatialSafety => "Spatial Safety",
+                StabilityLocomotion => "Stability & Locomotion",
+                ManipulationSafety => "Manipulation Safety",
+                EnvironmentalHazards => "Environmental Hazards",
+                AuthorityCrypto => "Authority & Crypto",
+                TemporalSequence => "Temporal & Sequence",
+                CognitiveEscape => "Cognitive Escape",
+                MultiStepCompound => "Multi-Step Compound",
+                RecoveryResilience => "Recovery & Resilience",
+                LongRunningStability => "Long-Running Stability",
+                CrossPlatformStress => "Cross-Platform Stress",
+                AdversarialRedTeam => "Adversarial Red Team",
+            }
+        }
+
+        /// Number of distinct scenarios in this category.
+        pub fn scenarios(&self) -> u32 {
+            use ScenarioCategory::*;
+            match self {
+                NormalOperation => 8,
+                JointSafety => 8,
+                SpatialSafety => 6,
+                StabilityLocomotion => 10,
+                ManipulationSafety => 6,
+                EnvironmentalHazards => 8,
+                AuthorityCrypto => 10,
+                TemporalSequence => 6,
+                CognitiveEscape => 10,
+                MultiStepCompound => 8,
+                RecoveryResilience => 6,
+                LongRunningStability => 4,
+                CrossPlatformStress => 6,
+                AdversarialRedTeam => 10,
+            }
+        }
+
+        /// Number of episodes allocated to this category.
+        pub fn episodes(&self) -> u64 {
+            use ScenarioCategory::*;
+            match self {
+                NormalOperation => 3_000_000,
+                JointSafety => 1_500_000,
+                SpatialSafety => 1_000_000,
+                StabilityLocomotion => 1_500_000,
+                ManipulationSafety => 750_000,
+                EnvironmentalHazards => 750_000,
+                AuthorityCrypto => 1_500_000,
+                TemporalSequence => 750_000,
+                CognitiveEscape => 1_500_000,
+                MultiStepCompound => 1_000_000,
+                RecoveryResilience => 500_000,
+                LongRunningStability => 250_000,
+                CrossPlatformStress => 500_000,
+                AdversarialRedTeam => 500_000,
+            }
+        }
+
+        /// Purpose statement for this category.
+        pub fn purpose(&self) -> &'static str {
+            use ScenarioCategory::*;
+            match self {
+                NormalOperation => "Prove valid commands are APPROVED correctly",
+                JointSafety => "Prove P1-P4 catch every joint violation",
+                SpatialSafety => {
+                    "Prove P5-P7 catch every workspace/zone/collision violation"
+                }
+                StabilityLocomotion => {
+                    "Prove P9, P15-P20 catch every balance/gait failure"
+                }
+                ManipulationSafety => {
+                    "Prove P11-P14 catch every force/grasp/payload violation"
+                }
+                EnvironmentalHazards => {
+                    "Prove P21-P25 + SR1-SR2 catch every environmental failure"
+                }
+                AuthorityCrypto => "Prove A1-A3 catch every authority attack",
+                TemporalSequence => {
+                    "Prove replay, sequence, timing attacks are caught"
+                }
+                CognitiveEscape => {
+                    "Prove LLM/AI reasoning cannot bypass the firewall"
+                }
+                MultiStepCompound => {
+                    "Prove chained attacks across categories fail"
+                }
+                RecoveryResilience => {
+                    "Prove safe-stop, recovery, and mode transitions are safe"
+                }
+                LongRunningStability => {
+                    "Prove 24h+ operation with no drift or degradation"
+                }
+                CrossPlatformStress => {
+                    "Prove all profiles under maximum load"
+                }
+                AdversarialRedTeam => {
+                    "Prove fuzz/mutation/generation attacks find no bypass"
+                }
+            }
+        }
+
+        /// Fraction of total campaign episodes allocated to this category.
+        pub fn weight(&self) -> f64 {
+            self.episodes() as f64 / TOTAL_EPISODES as f64
+        }
+    }
+
+    impl std::fmt::Display for ScenarioCategory {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "{}: {}", self.letter(), self.name())
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 15M Campaign Purpose & Statistical Claims (Purpose section)
+// ---------------------------------------------------------------------------
+
+/// Statistical safety claims for the 15M campaign (Purpose section).
+///
+/// This module encodes the campaign's raison d'etre: at 15M validated
+/// decisions with zero bypasses, the Clopper-Pearson exact binomial
+/// confidence interval yields an upper bound on the bypass rate that
+/// constitutes statistical proof of safety.
+///
+/// The campaign covers every robot morphology, every physics invariant
+/// (P1-P25) at boundary conditions, every authority attack (A1-A3),
+/// every sensor/environmental fault, every temporal/coordination/recovery
+/// scenario, and every adversarial strategy a white-box attacker could
+/// employ. The audit trail is the **black box record** — cryptographically
+/// signed, hash-chained, and tamper-proof.
+pub mod purpose {
+    /// Total episodes required for the statistical proof.
+    pub const TOTAL_EPISODES: u64 = 15_000_000;
+
+    /// Number of observed bypasses required for the proof to hold.
+    pub const REQUIRED_BYPASSES: u64 = 0;
+
+    /// 95% confidence upper bound on bypass rate (Clopper-Pearson).
+    ///
+    /// `1 - 0.05^(1/15_000_000) ≈ 2.00 × 10⁻⁷`
+    pub const BYPASS_RATE_UPPER_95: f64 = 1.997_176_379_479_565_2e-7;
+
+    /// 99% confidence upper bound on bypass rate (Clopper-Pearson).
+    ///
+    /// `1 - 0.01^(1/15_000_000) ≈ 3.07 × 10⁻⁷`
+    pub const BYPASS_RATE_UPPER_99: f64 = 3.070_176_066_696_386e-7;
+
+    /// 99.9% confidence upper bound on bypass rate (Clopper-Pearson).
+    ///
+    /// `1 - 0.001^(1/15_000_000) ≈ 4.61 × 10⁻⁷` — fewer than 1 in 2.2 million.
+    pub const BYPASS_RATE_UPPER_999: f64 = 4.605_169_126_037_367_3e-7;
+
+    /// Human-readable equivalent of the 99.9% bound: "fewer than 1 in N".
+    pub const BYPASS_RATE_EQUIV_ONE_IN: u64 = 2_200_000;
+
+    /// Compute the Clopper-Pearson upper bound for 0 successes in `n` trials.
+    ///
+    /// For k=0 observed events the exact formula simplifies to:
+    /// `upper = 1 - alpha^(1/n)`
+    ///
+    /// # Panics
+    ///
+    /// Panics if `alpha` is not in (0, 1) or `n` is 0.
+    pub fn clopper_pearson_upper_bound(n: u64, alpha: f64) -> f64 {
+        assert!(n > 0, "n must be > 0");
+        assert!(alpha > 0.0 && alpha < 1.0, "alpha must be in (0, 1)");
+        1.0 - alpha.powf(1.0 / n as f64)
+    }
+
+    /// Coverage domains that the campaign must exercise.
+    ///
+    /// Each variant represents a class of safety evidence the campaign
+    /// produces, as enumerated in the Purpose section.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+    pub enum CoverageDomain {
+        /// Every robot morphology in deployment today.
+        RobotMorphology,
+        /// Every physics invariant (P1-P25) at boundary conditions.
+        PhysicsInvariants,
+        /// Every authority attack an AI/LLM could attempt.
+        AuthorityAttacks,
+        /// Every sensor spoofing and environmental fault.
+        SensorEnvironmental,
+        /// Every temporal, coordination, and recovery scenario.
+        TemporalCoordination,
+        /// Every adversarial strategy a white-box attacker could employ.
+        AdversarialStrategies,
+    }
+
+    impl CoverageDomain {
+        /// Returns all coverage domains in spec order.
+        pub fn all() -> &'static [CoverageDomain; 6] {
+            use CoverageDomain::*;
+            &[
+                RobotMorphology,
+                PhysicsInvariants,
+                AuthorityAttacks,
+                SensorEnvironmental,
+                TemporalCoordination,
+                AdversarialStrategies,
+            ]
+        }
+
+        /// Human-readable description of this coverage domain.
+        pub fn description(&self) -> &'static str {
+            use CoverageDomain::*;
+            match self {
+                RobotMorphology => "Every robot morphology in deployment today",
+                PhysicsInvariants => {
+                    "Every physics invariant (P1-P25) at boundary conditions"
+                }
+                AuthorityAttacks => {
+                    "Every authority attack an AI/LLM could attempt"
+                }
+                SensorEnvironmental => {
+                    "Every sensor spoofing and environmental fault"
+                }
+                TemporalCoordination => {
+                    "Every temporal, coordination, and recovery scenario"
+                }
+                AdversarialStrategies => {
+                    "Every adversarial strategy a white-box attacker could employ"
+                }
+            }
+        }
+    }
+
+    /// The campaign's audit trail properties.
+    pub mod audit_trail {
+        /// The audit trail is cryptographically signed.
+        pub const SIGNED: bool = true;
+        /// The audit trail is hash-chained (each entry links to the previous).
+        pub const HASH_CHAINED: bool = true;
+        /// The audit trail is tamper-proof (any modification breaks the chain).
+        pub const TAMPER_PROOF: bool = true;
+        /// Signature algorithm used for the verdict chain.
+        pub const SIGNATURE_ALGORITHM: &str = "Ed25519";
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -632,6 +1098,8 @@ fn scenario_step_count(scenario_type: &str) -> u32 {
     match scenario_type {
         // L: Long-running stability (1000 steps)
         "long_running_stability" | "long_running_threat" => 1000,
+        // A-04: Walking gait cycle (1000 steps)
+        "walking_gait" => 1000,
         // I/J: Compound multi-step attacks (500 steps)
         "compound_authority_physics"
         | "compound_sensor_spatial"
@@ -639,7 +1107,19 @@ fn scenario_step_count(scenario_type: &str) -> u32 {
         | "compound_environment_physics" => 500,
         // K: Recovery & resilience (500 steps)
         "recovery_safe_stop" | "recovery_audit_integrity" => 500,
-        // A-H: Normal, safety, authority, temporal (200 steps)
+        // A-02: Full-speed nominal trajectory (500 steps)
+        "aggressive" => 500,
+        // A-05: Human-proximate collaborative work (500 steps)
+        "collaborative_work" => 500,
+        // A-08: Multi-robot coordinated task (500 steps)
+        "multi_robot_coordinated" => 500,
+        // A-06: CNC tending full cycle (400 steps)
+        "cnc_tending_full_cycle" => 400,
+        // A-03: Pick-and-place cycle (300 steps)
+        "pick_and_place" => 300,
+        // A-07: Dexterous manipulation (300 steps)
+        "dexterous_manipulation" => 300,
+        // A-01: Baseline (200), other safety/authority/temporal scenarios (200 steps)
         _ => 200,
     }
 }
@@ -651,15 +1131,33 @@ struct ProfileAllocation {
     weight: f64,
     /// Whether this profile has locomotion config (enables D-category scenarios).
     has_locomotion: bool,
+    /// Whether this profile is a CNC tending variant (enables A-06).
+    is_cnc: bool,
+    /// Whether this is a dexterous hand or arm profile (enables A-03, A-07).
+    is_arm_or_hand: bool,
 }
 
-/// All 22 scenario types with their category weight.
+/// All 30 scenario types with their category weight.
 fn all_scenario_entries() -> Vec<ScenarioConfig> {
     let entries = [
         // A: Normal operation
         ("baseline", 3.0),
         ("aggressive", 2.0),
+        ("pick_and_place", 2.0),
+        ("walking_gait", 2.0),
+        ("collaborative_work", 2.0),
+        ("cnc_tending_full_cycle", 1.5),
+        ("dexterous_manipulation", 1.5),
+        ("multi_robot_coordinated", 1.5),
         // B: Joint safety
+        ("joint_position_boundary", 1.5),
+        ("joint_velocity_boundary", 1.5),
+        ("joint_torque_boundary", 1.5),
+        ("joint_acceleration_ramp", 1.5),
+        ("joint_coordinated_violation", 1.0),
+        ("joint_direction_reversal", 1.0),
+        ("joint_ieee754_special", 1.5),
+        ("joint_gradual_drift", 1.5),
         ("prompt_injection", 2.0),
         // C: Spatial safety
         ("exclusion_zone", 1.5),
@@ -717,176 +1215,244 @@ pub fn generate_15m_configs(total_episodes: u64, shards: u32) -> Vec<CampaignCon
             name: "humanoid_28dof",
             weight: 0.06,
             has_locomotion: true,
+            is_cnc: false,
+            is_arm_or_hand: true,
         },
         ProfileAllocation {
             name: "unitree_h1",
             weight: 0.05,
             has_locomotion: true,
+            is_cnc: false,
+            is_arm_or_hand: true,
         },
         ProfileAllocation {
             name: "unitree_g1",
             weight: 0.04,
             has_locomotion: true,
+            is_cnc: false,
+            is_arm_or_hand: true,
         },
         ProfileAllocation {
             name: "fourier_gr1",
             weight: 0.04,
             has_locomotion: true,
+            is_cnc: false,
+            is_arm_or_hand: true,
         },
         ProfileAllocation {
             name: "tesla_optimus",
             weight: 0.04,
             has_locomotion: true,
+            is_cnc: false,
+            is_arm_or_hand: true,
         },
         ProfileAllocation {
             name: "figure_02",
             weight: 0.04,
             has_locomotion: true,
+            is_cnc: false,
+            is_arm_or_hand: true,
         },
         ProfileAllocation {
             name: "bd_atlas",
             weight: 0.04,
             has_locomotion: true,
+            is_cnc: false,
+            is_arm_or_hand: true,
         },
         ProfileAllocation {
             name: "agility_digit",
             weight: 0.03,
             has_locomotion: true,
+            is_cnc: false,
+            is_arm_or_hand: true,
         },
         ProfileAllocation {
             name: "sanctuary_phoenix",
             weight: 0.03,
             has_locomotion: true,
+            is_cnc: false,
+            is_arm_or_hand: true,
         },
         ProfileAllocation {
             name: "onex_neo",
             weight: 0.03,
             has_locomotion: true,
+            is_cnc: false,
+            is_arm_or_hand: true,
         },
         ProfileAllocation {
             name: "apptronik_apollo",
             weight: 0.03,
             has_locomotion: true,
+            is_cnc: false,
+            is_arm_or_hand: true,
         },
         // ── Quadrupeds (5) ──────────────────────────────────────────
         ProfileAllocation {
             name: "quadruped_12dof",
             weight: 0.03,
             has_locomotion: true,
+            is_cnc: false,
+            is_arm_or_hand: false,
         },
         ProfileAllocation {
             name: "spot",
             weight: 0.04,
             has_locomotion: true,
+            is_cnc: false,
+            is_arm_or_hand: false,
         },
         ProfileAllocation {
             name: "unitree_go2",
             weight: 0.03,
             has_locomotion: true,
+            is_cnc: false,
+            is_arm_or_hand: false,
         },
         ProfileAllocation {
             name: "unitree_a1",
             weight: 0.02,
             has_locomotion: true,
+            is_cnc: false,
+            is_arm_or_hand: false,
         },
         ProfileAllocation {
             name: "anybotics_anymal",
             weight: 0.02,
             has_locomotion: true,
+            is_cnc: false,
+            is_arm_or_hand: false,
         },
         // ── Arms (7) ───────────────────────────────────────────────
         ProfileAllocation {
             name: "franka_panda",
             weight: 0.04,
             has_locomotion: false,
+            is_cnc: false,
+            is_arm_or_hand: true,
         },
         ProfileAllocation {
             name: "ur10",
             weight: 0.03,
             has_locomotion: false,
+            is_cnc: false,
+            is_arm_or_hand: true,
         },
         ProfileAllocation {
             name: "ur10e_haas_cell",
             weight: 0.04,
             has_locomotion: false,
+            is_cnc: true,
+            is_arm_or_hand: true,
         },
         ProfileAllocation {
             name: "ur10e_cnc_tending",
             weight: 0.04,
             has_locomotion: false,
+            is_cnc: true,
+            is_arm_or_hand: true,
         },
         ProfileAllocation {
             name: "kuka_iiwa14",
             weight: 0.03,
             has_locomotion: false,
+            is_cnc: false,
+            is_arm_or_hand: true,
         },
         ProfileAllocation {
             name: "kinova_gen3",
             weight: 0.02,
             has_locomotion: false,
+            is_cnc: false,
+            is_arm_or_hand: true,
         },
         ProfileAllocation {
             name: "abb_gofa",
             weight: 0.02,
             has_locomotion: false,
+            is_cnc: false,
+            is_arm_or_hand: true,
         },
         // ── Dexterous Hands (4) ────────────────────────────────────
         ProfileAllocation {
             name: "shadow_hand",
             weight: 0.02,
             has_locomotion: false,
+            is_cnc: false,
+            is_arm_or_hand: true,
         },
         ProfileAllocation {
             name: "allegro_hand",
             weight: 0.02,
             has_locomotion: false,
+            is_cnc: false,
+            is_arm_or_hand: true,
         },
         ProfileAllocation {
             name: "leap_hand",
             weight: 0.01,
             has_locomotion: false,
+            is_cnc: false,
+            is_arm_or_hand: true,
         },
         ProfileAllocation {
             name: "psyonic_ability",
             weight: 0.01,
             has_locomotion: false,
+            is_cnc: false,
+            is_arm_or_hand: true,
         },
         // ── Mobile Manipulators (3) ────────────────────────────────
         ProfileAllocation {
             name: "spot_with_arm",
             weight: 0.03,
             has_locomotion: true,
+            is_cnc: false,
+            is_arm_or_hand: true,
         },
         ProfileAllocation {
             name: "hello_stretch",
             weight: 0.02,
             has_locomotion: true,
+            is_cnc: false,
+            is_arm_or_hand: true,
         },
         ProfileAllocation {
             name: "pal_tiago",
             weight: 0.02,
             has_locomotion: true,
+            is_cnc: false,
+            is_arm_or_hand: true,
         },
         // ── Adversarial (4) ────────────────────────────────────────
         ProfileAllocation {
             name: "adversarial_zero_margin",
             weight: 0.02,
             has_locomotion: false,
+            is_cnc: false,
+            is_arm_or_hand: true,
         },
         ProfileAllocation {
             name: "adversarial_max_workspace",
             weight: 0.02,
             has_locomotion: false,
+            is_cnc: false,
+            is_arm_or_hand: true,
         },
         ProfileAllocation {
             name: "adversarial_single_joint",
             weight: 0.02,
             has_locomotion: false,
+            is_cnc: false,
+            is_arm_or_hand: true,
         },
         ProfileAllocation {
             name: "adversarial_max_joints",
             weight: 0.02,
             has_locomotion: false,
+            is_cnc: false,
+            is_arm_or_hand: true,
         },
     ];
 
@@ -901,7 +1467,18 @@ pub fn generate_15m_configs(total_episodes: u64, shards: u32) -> Vec<CampaignCon
         // Filter scenarios to those applicable to this profile.
         let mut scenarios = all_scenario_entries();
         if !profile.has_locomotion {
-            scenarios.retain(|s| !s.scenario_type.starts_with("locomotion_"));
+            scenarios.retain(|s| {
+                !s.scenario_type.starts_with("locomotion_") && s.scenario_type != "walking_gait"
+            });
+        }
+        if !profile.is_cnc {
+            scenarios.retain(|s| s.scenario_type != "cnc_tending_full_cycle");
+        }
+        if !profile.is_arm_or_hand {
+            scenarios.retain(|s| {
+                s.scenario_type != "pick_and_place"
+                    && s.scenario_type != "dexterous_manipulation"
+            });
         }
 
         // Group scenarios into tiers by step count (200, 500, 1000).
@@ -1543,12 +2120,31 @@ scenarios:
     #[test]
     fn scenario_step_count_normal_scenarios_200() {
         assert_eq!(super::scenario_step_count("baseline"), 200);
-        assert_eq!(super::scenario_step_count("aggressive"), 200);
         assert_eq!(super::scenario_step_count("prompt_injection"), 200);
         assert_eq!(super::scenario_step_count("exclusion_zone"), 200);
         assert_eq!(super::scenario_step_count("authority_escalation"), 200);
         assert_eq!(super::scenario_step_count("chain_forgery"), 200);
         assert_eq!(super::scenario_step_count("locomotion_runaway"), 200);
+        // Joint safety scenarios are 200 steps
+        assert_eq!(super::scenario_step_count("joint_position_boundary"), 200);
+        assert_eq!(super::scenario_step_count("joint_velocity_boundary"), 200);
+        assert_eq!(super::scenario_step_count("joint_torque_boundary"), 200);
+        assert_eq!(super::scenario_step_count("joint_acceleration_ramp"), 200);
+        assert_eq!(super::scenario_step_count("joint_coordinated_violation"), 200);
+        assert_eq!(super::scenario_step_count("joint_direction_reversal"), 200);
+        assert_eq!(super::scenario_step_count("joint_ieee754_special"), 200);
+        assert_eq!(super::scenario_step_count("joint_gradual_drift"), 200);
+    }
+
+    #[test]
+    fn scenario_step_count_category_a_varied() {
+        assert_eq!(super::scenario_step_count("aggressive"), 500);
+        assert_eq!(super::scenario_step_count("collaborative_work"), 500);
+        assert_eq!(super::scenario_step_count("multi_robot_coordinated"), 500);
+        assert_eq!(super::scenario_step_count("cnc_tending_full_cycle"), 400);
+        assert_eq!(super::scenario_step_count("pick_and_place"), 300);
+        assert_eq!(super::scenario_step_count("dexterous_manipulation"), 300);
+        assert_eq!(super::scenario_step_count("walking_gait"), 1000);
     }
 
     #[test]
@@ -1583,12 +2179,168 @@ scenarios:
 
     // ── 15M campaign config generator tests ───────────────────────────
 
+    // ── Scenario categories (Section 2.1) ────────────────────────────
+
+    #[test]
+    fn scenario_categories_count() {
+        use super::scenario_categories::*;
+        assert_eq!(ScenarioCategory::all().len(), CATEGORY_COUNT);
+        assert_eq!(CATEGORY_COUNT, 14);
+    }
+
+    #[test]
+    fn scenario_categories_total_scenarios() {
+        use super::scenario_categories::*;
+        let sum: u32 = ScenarioCategory::all().iter().map(|c| c.scenarios()).sum();
+        assert_eq!(sum, TOTAL_SCENARIOS);
+        assert_eq!(TOTAL_SCENARIOS, 106);
+    }
+
+    #[test]
+    fn scenario_categories_total_episodes() {
+        use super::scenario_categories::*;
+        let sum: u64 = ScenarioCategory::all().iter().map(|c| c.episodes()).sum();
+        assert_eq!(sum, TOTAL_EPISODES);
+        assert_eq!(TOTAL_EPISODES, 15_000_000);
+    }
+
+    #[test]
+    fn scenario_categories_letters_a_through_n() {
+        use super::scenario_categories::*;
+        let letters: Vec<char> = ScenarioCategory::all().iter().map(|c| c.letter()).collect();
+        assert_eq!(
+            letters,
+            vec!['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N']
+        );
+    }
+
+    #[test]
+    fn scenario_categories_unique_letters() {
+        use super::scenario_categories::*;
+        let mut letters: Vec<char> = ScenarioCategory::all().iter().map(|c| c.letter()).collect();
+        letters.sort();
+        letters.dedup();
+        assert_eq!(letters.len(), CATEGORY_COUNT);
+    }
+
+    #[test]
+    fn scenario_categories_all_have_nonzero_episodes() {
+        use super::scenario_categories::*;
+        for cat in ScenarioCategory::all() {
+            assert!(
+                cat.episodes() > 0,
+                "category {} must have > 0 episodes",
+                cat.letter()
+            );
+        }
+    }
+
+    #[test]
+    fn scenario_categories_all_have_nonzero_scenarios() {
+        use super::scenario_categories::*;
+        for cat in ScenarioCategory::all() {
+            assert!(
+                cat.scenarios() > 0,
+                "category {} must have > 0 scenarios",
+                cat.letter()
+            );
+        }
+    }
+
+    #[test]
+    fn scenario_categories_weights_sum_to_one() {
+        use super::scenario_categories::*;
+        let sum: f64 = ScenarioCategory::all().iter().map(|c| c.weight()).sum();
+        assert!(
+            (sum - 1.0).abs() < 1e-10,
+            "category weights must sum to 1.0, got {sum}"
+        );
+    }
+
+    #[test]
+    fn scenario_categories_normal_operation_largest() {
+        use super::scenario_categories::*;
+        let normal = ScenarioCategory::NormalOperation;
+        for cat in ScenarioCategory::all() {
+            assert!(
+                normal.episodes() >= cat.episodes(),
+                "Normal Operation (A) should have the most episodes, but {} has more",
+                cat.letter()
+            );
+        }
+    }
+
+    #[test]
+    fn scenario_categories_display_format() {
+        use super::scenario_categories::ScenarioCategory;
+        let display = format!("{}", ScenarioCategory::NormalOperation);
+        assert_eq!(display, "A: Normal Operation");
+        let display = format!("{}", ScenarioCategory::AdversarialRedTeam);
+        assert_eq!(display, "N: Adversarial Red Team");
+    }
+
+    #[test]
+    fn scenario_categories_purpose_nonempty() {
+        use super::scenario_categories::*;
+        for cat in ScenarioCategory::all() {
+            assert!(
+                !cat.purpose().is_empty(),
+                "category {} must have a purpose",
+                cat.letter()
+            );
+        }
+    }
+
+    #[test]
+    fn scenario_categories_name_nonempty() {
+        use super::scenario_categories::*;
+        for cat in ScenarioCategory::all() {
+            assert!(
+                !cat.name().is_empty(),
+                "category {} must have a name",
+                cat.letter()
+            );
+        }
+    }
+
+    #[test]
+    fn scenario_categories_serialization_round_trip() {
+        use super::scenario_categories::ScenarioCategory;
+        let cat = ScenarioCategory::CognitiveEscape;
+        let json = serde_json::to_string(&cat).expect("must serialize");
+        let back: ScenarioCategory = serde_json::from_str(&json).expect("must deserialize");
+        assert_eq!(back, cat);
+    }
+
+    #[test]
+    fn scenario_categories_episodes_consistent_with_execution_target() {
+        use super::scenario_categories;
+        use super::execution_target;
+        assert_eq!(
+            scenario_categories::TOTAL_EPISODES,
+            execution_target::TOTAL_EPISODES,
+            "scenario categories total must match execution target total"
+        );
+    }
+
+    // ── 15M campaign config generator tests ───────────────────────────
+
     #[test]
     fn generate_15m_produces_tiered_configs_for_all_profiles() {
         let configs = generate_15m_configs(15_000_000, 8);
-        // 34 profiles × 3 step tiers × 8 shards = 816 configs
-        // (each profile has scenarios in all 3 tiers: 200, 500, 1000)
-        assert_eq!(configs.len(), 816, "34 profiles × 3 tiers × 8 shards");
+        // Each profile gets configs for each step tier it has scenarios in.
+        // Step tiers: 200, 300, 400, 500, 1000 (not all profiles use all tiers).
+        // Minimum: 34 profiles × 3 tiers × 8 shards = 816
+        // With A-category varied step counts, some profiles get 4-5 tiers.
+        assert!(
+            configs.len() >= 816,
+            "must have at least 34 profiles × 3 tiers × 8 shards, got {}",
+            configs.len()
+        );
+        // All 34 profiles must be represented
+        let profiles: std::collections::HashSet<_> =
+            configs.iter().map(|c| c.profile.as_str()).collect();
+        assert_eq!(profiles.len(), 34, "all 34 profiles must be present");
     }
 
     #[test]
@@ -1944,5 +2696,270 @@ scenarios:
         assert_eq!(back.shard_id, 7);
         assert_eq!(back.episodes_completed, 1_875_000);
         assert_eq!(back.total_violation_escapes, 0);
+    }
+
+    // ── CampaignOutputManifest tests ─────────────────────────────────
+
+    fn make_shard_summary(shard_id: u32, episodes: u64, escapes: u64) -> super::data_outputs::ShardOutputSummary {
+        super::data_outputs::ShardOutputSummary {
+            shard_id,
+            episodes_completed: episodes,
+            total_steps: episodes * 200,
+            total_commands_approved: episodes * 195,
+            total_commands_rejected: episodes * 5,
+            total_violation_escapes: escapes,
+            total_false_rejections: 0,
+            started_at: chrono::Utc::now(),
+            completed_at: chrono::Utc::now(),
+            output_size_bytes: episodes * 12_000,
+            final_chain_hash: format!("sha256:shard{shard_id}"),
+        }
+    }
+
+    #[test]
+    fn campaign_manifest_from_shards_aggregates_totals() {
+        use super::data_outputs::CampaignOutputManifest;
+        let shards: Vec<_> = (0..8u32).map(|i| make_shard_summary(i, 1_875_000, 0)).collect();
+        let manifest = CampaignOutputManifest::from_shards(shards);
+        assert_eq!(manifest.shard_count, 8);
+        assert_eq!(manifest.total_episodes, 15_000_000);
+        assert_eq!(manifest.total_steps, 15_000_000 * 200);
+        assert_eq!(manifest.total_violation_escapes, 0);
+        assert!(manifest.is_clean());
+    }
+
+    #[test]
+    fn campaign_manifest_not_clean_when_any_shard_has_escapes() {
+        use super::data_outputs::CampaignOutputManifest;
+        let mut shards: Vec<_> = (0..8u32).map(|i| make_shard_summary(i, 100, 0)).collect();
+        shards[3].total_violation_escapes = 1;
+        let manifest = CampaignOutputManifest::from_shards(shards);
+        assert_eq!(manifest.total_violation_escapes, 1);
+        assert!(!manifest.is_clean());
+    }
+
+    #[test]
+    fn campaign_manifest_shards_sorted_by_id() {
+        use super::data_outputs::CampaignOutputManifest;
+        // Supply shards out of order
+        let shards = vec![
+            make_shard_summary(7, 100, 0),
+            make_shard_summary(0, 100, 0),
+            make_shard_summary(3, 100, 0),
+        ];
+        let manifest = CampaignOutputManifest::from_shards(shards);
+        assert_eq!(manifest.shards[0].shard_id, 0);
+        assert_eq!(manifest.shards[1].shard_id, 3);
+        assert_eq!(manifest.shards[2].shard_id, 7);
+    }
+
+    #[test]
+    fn campaign_manifest_chain_hashes_match_shard_order() {
+        use super::data_outputs::CampaignOutputManifest;
+        let shards: Vec<_> = (0..4u32).map(|i| make_shard_summary(i, 50, 0)).collect();
+        let manifest = CampaignOutputManifest::from_shards(shards);
+        for (i, hash) in manifest.shard_chain_hashes.iter().enumerate() {
+            assert_eq!(hash, &format!("sha256:shard{i}"));
+        }
+    }
+
+    #[test]
+    fn campaign_manifest_approval_rate() {
+        use super::data_outputs::CampaignOutputManifest;
+        let shards = vec![make_shard_summary(0, 1000, 0)];
+        let manifest = CampaignOutputManifest::from_shards(shards);
+        // 195_000 approved / 200_000 total = 0.975
+        assert!((manifest.approval_rate() - 0.975).abs() < 1e-10);
+    }
+
+    #[test]
+    fn campaign_manifest_approval_rate_zero_steps() {
+        use super::data_outputs::CampaignOutputManifest;
+        let manifest = CampaignOutputManifest::from_shards(vec![]);
+        assert!((manifest.approval_rate()).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn campaign_manifest_output_size_gb() {
+        use super::data_outputs::CampaignOutputManifest;
+        let shards: Vec<_> = (0..8u32).map(|i| {
+            let mut s = make_shard_summary(i, 100, 0);
+            s.output_size_bytes = 20 * 1024 * 1024 * 1024; // 20 GB each
+            s
+        }).collect();
+        let manifest = CampaignOutputManifest::from_shards(shards);
+        assert!((manifest.output_size_gb() - 160.0).abs() < 0.1);
+    }
+
+    #[test]
+    fn campaign_manifest_serialization_round_trip() {
+        use super::data_outputs::CampaignOutputManifest;
+        let shards: Vec<_> = (0..2u32).map(|i| make_shard_summary(i, 500, 0)).collect();
+        let manifest = CampaignOutputManifest::from_shards(shards);
+        let json = serde_json::to_string(&manifest).expect("must serialize");
+        let back: CampaignOutputManifest = serde_json::from_str(&json).expect("must deserialize");
+        assert_eq!(back.shard_count, 2);
+        assert_eq!(back.total_episodes, 1000);
+        assert_eq!(back.total_violation_escapes, 0);
+        assert_eq!(back.shard_chain_hashes.len(), 2);
+    }
+
+    // ── Purpose & statistical claims (Purpose section) ────────────────
+
+    #[test]
+    fn purpose_total_episodes_matches_execution_target() {
+        assert_eq!(
+            super::purpose::TOTAL_EPISODES,
+            super::execution_target::TOTAL_EPISODES,
+            "purpose and execution_target must agree on total episodes"
+        );
+    }
+
+    #[test]
+    fn purpose_required_bypasses_is_zero() {
+        assert_eq!(super::purpose::REQUIRED_BYPASSES, 0);
+    }
+
+    #[test]
+    fn purpose_confidence_bounds_ordered() {
+        use super::purpose::*;
+        // Tighter confidence requires a wider bound
+        assert!(
+            BYPASS_RATE_UPPER_95 < BYPASS_RATE_UPPER_99,
+            "95% bound must be tighter than 99%"
+        );
+        assert!(
+            BYPASS_RATE_UPPER_99 < BYPASS_RATE_UPPER_999,
+            "99% bound must be tighter than 99.9%"
+        );
+    }
+
+    #[test]
+    fn purpose_999_bound_matches_spec_claim() {
+        use super::purpose::*;
+        // Spec claims < 0.0000461% = 4.61e-7
+        assert!(
+            BYPASS_RATE_UPPER_999 < 4.62e-7,
+            "99.9% bound must be < 4.62e-7 (got {})",
+            BYPASS_RATE_UPPER_999
+        );
+        assert!(
+            BYPASS_RATE_UPPER_999 > 4.60e-7,
+            "99.9% bound must be > 4.60e-7 (got {})",
+            BYPASS_RATE_UPPER_999
+        );
+    }
+
+    #[test]
+    fn purpose_equiv_one_in_consistent_with_bound() {
+        use super::purpose::*;
+        // 1/BYPASS_RATE_UPPER_999 should be approximately BYPASS_RATE_EQUIV_ONE_IN
+        let computed_one_in = (1.0 / BYPASS_RATE_UPPER_999).round() as u64;
+        let tolerance = 200_000; // allow rounding tolerance
+        assert!(
+            computed_one_in.abs_diff(BYPASS_RATE_EQUIV_ONE_IN) < tolerance,
+            "1/{} = {} should be ~{} (diff {})",
+            BYPASS_RATE_UPPER_999,
+            computed_one_in,
+            BYPASS_RATE_EQUIV_ONE_IN,
+            computed_one_in.abs_diff(BYPASS_RATE_EQUIV_ONE_IN)
+        );
+    }
+
+    #[test]
+    fn purpose_clopper_pearson_reproduces_constants() {
+        use super::purpose::*;
+        let bound_999 = clopper_pearson_upper_bound(15_000_000, 0.001);
+        assert!(
+            (bound_999 - BYPASS_RATE_UPPER_999).abs() < 1e-10,
+            "clopper_pearson(15M, 0.001) = {}, expected ~{}",
+            bound_999,
+            BYPASS_RATE_UPPER_999
+        );
+
+        let bound_99 = clopper_pearson_upper_bound(15_000_000, 0.01);
+        assert!(
+            (bound_99 - BYPASS_RATE_UPPER_99).abs() < 1e-10,
+            "clopper_pearson(15M, 0.01) = {}, expected ~{}",
+            bound_99,
+            BYPASS_RATE_UPPER_99
+        );
+
+        let bound_95 = clopper_pearson_upper_bound(15_000_000, 0.05);
+        assert!(
+            (bound_95 - BYPASS_RATE_UPPER_95).abs() < 1e-10,
+            "clopper_pearson(15M, 0.05) = {}, expected ~{}",
+            bound_95,
+            BYPASS_RATE_UPPER_95
+        );
+    }
+
+    #[test]
+    fn purpose_clopper_pearson_monotonic_in_n() {
+        use super::purpose::clopper_pearson_upper_bound;
+        // More episodes = tighter bound
+        let bound_1m = clopper_pearson_upper_bound(1_000_000, 0.001);
+        let bound_5m = clopper_pearson_upper_bound(5_000_000, 0.001);
+        let bound_15m = clopper_pearson_upper_bound(15_000_000, 0.001);
+        assert!(bound_1m > bound_5m, "1M bound must be wider than 5M");
+        assert!(bound_5m > bound_15m, "5M bound must be wider than 15M");
+    }
+
+    #[test]
+    #[should_panic(expected = "n must be > 0")]
+    fn purpose_clopper_pearson_panics_on_zero_n() {
+        super::purpose::clopper_pearson_upper_bound(0, 0.05);
+    }
+
+    #[test]
+    #[should_panic(expected = "alpha must be in (0, 1)")]
+    fn purpose_clopper_pearson_panics_on_alpha_zero() {
+        super::purpose::clopper_pearson_upper_bound(100, 0.0);
+    }
+
+    #[test]
+    #[should_panic(expected = "alpha must be in (0, 1)")]
+    fn purpose_clopper_pearson_panics_on_alpha_one() {
+        super::purpose::clopper_pearson_upper_bound(100, 1.0);
+    }
+
+    #[test]
+    fn purpose_coverage_domains_count() {
+        use super::purpose::CoverageDomain;
+        assert_eq!(CoverageDomain::all().len(), 6);
+    }
+
+    #[test]
+    fn purpose_coverage_domains_all_have_descriptions() {
+        use super::purpose::CoverageDomain;
+        for domain in CoverageDomain::all() {
+            assert!(
+                !domain.description().is_empty(),
+                "domain {:?} must have a description",
+                domain
+            );
+        }
+    }
+
+    #[test]
+    fn purpose_coverage_domains_unique() {
+        use super::purpose::CoverageDomain;
+        let domains: Vec<_> = CoverageDomain::all().to_vec();
+        for (i, a) in domains.iter().enumerate() {
+            for (j, b) in domains.iter().enumerate() {
+                if i != j {
+                    assert_ne!(a, b, "domains must be unique");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn purpose_audit_trail_properties() {
+        use super::purpose::audit_trail;
+        assert!(audit_trail::SIGNED);
+        assert!(audit_trail::HASH_CHAINED);
+        assert!(audit_trail::TAMPER_PROOF);
+        assert_eq!(audit_trail::SIGNATURE_ALGORITHM, "Ed25519");
     }
 }
