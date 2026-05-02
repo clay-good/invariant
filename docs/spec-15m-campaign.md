@@ -52,7 +52,7 @@ Every episode produces:
 
 | # | Category | Scenarios | Episodes | Purpose |
 |---|----------|-----------|----------|---------|
-| A | Normal Operation | 6 | 3,000,000 | Prove valid commands are APPROVED correctly |
+| A | Normal Operation | 8 | 3,000,000 | Prove valid commands are APPROVED correctly |
 | B | Joint Safety | 8 | 1,500,000 | Prove P1-P4 catch every joint violation |
 | C | Spatial Safety | 6 | 1,000,000 | Prove P5-P7 catch every workspace/zone/collision violation |
 | D | Stability & Locomotion | 10 | 1,500,000 | Prove P9, P15-P20 catch every balance/gait failure |
@@ -66,7 +66,7 @@ Every episode produces:
 | L | Long-Running Stability | 4 | 250,000 | Prove 24h+ operation with no drift or degradation |
 | M | Cross-Platform Stress | 6 | 500,000 | Prove all profiles under maximum load |
 | N | Adversarial Red Team | 10 | 500,000 | Prove fuzz/mutation/generation attacks find no bypass |
-| | **TOTAL** | **104** | **15,000,000** | |
+| | **TOTAL** | **106** | **15,000,000** | |
 
 ---
 
@@ -341,7 +341,7 @@ With 15,000,000 validated decisions and 0 bypass events:
 | 99.9% confidence upper bound | < 0.0000461% |
 | Equivalent | "fewer than 1 in 2.2 million" |
 | Robot profiles tested | 13 + 4 synthetic |
-| Unique scenarios | 104 |
+| Unique scenarios | 106 |
 | Adversarial attack classes | 55+ (PA1-PA15, AA1-AA10, SA1-SA15, CE1-CE10, J1-J8) |
 
 ### 5.3 What This Proves (and What It Doesn't)
@@ -471,4 +471,4 @@ Invariant at 15M simulations achieves a **demonstrated safety rate comparable to
 
 15M is the sweet spot: it achieves aviation-grade confidence bounds within a practical budget (~$35 in GPU time, ~5 hours wall clock). Going to 100M would tighten the bound by 7× but costs 7× more and takes 7× longer — diminishing returns for the insurance use case.
 
-The critical insight: **the scenarios matter more than the count**. 15M random episodes would prove less than 15M episodes structured across 104 targeted scenarios that systematically exercise every invariant, every attack class, and every robot morphology. This campaign is not random sampling — it is **adversarial proof by exhaustive scenario coverage**.
+The critical insight: **the scenarios matter more than the count**. 15M random episodes would prove less than 15M episodes structured across 106 targeted scenarios that systematically exercise every invariant, every attack class, and every robot morphology. This campaign is not random sampling — it is **adversarial proof by exhaustive scenario coverage**.
