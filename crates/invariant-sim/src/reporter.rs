@@ -478,7 +478,11 @@ fn compute_confidence(n_trials: u64, n_escapes: u64) -> ConfidenceStats {
         let ub95 = 1.0 - (0.05_f64).powf(1.0 / n);
         let ub99 = 1.0 - (0.01_f64).powf(1.0 / n);
         let ub999 = 1.0 - (0.001_f64).powf(1.0 / n);
-        (ub95.clamp(0.0, 1.0), ub99.clamp(0.0, 1.0), ub999.clamp(0.0, 1.0))
+        (
+            ub95.clamp(0.0, 1.0),
+            ub99.clamp(0.0, 1.0),
+            ub999.clamp(0.0, 1.0),
+        )
     } else {
         // Wilson score interval — more conservative than the Wald (normal)
         // approximation for small p and large n, which is the regime we

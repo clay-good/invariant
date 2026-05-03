@@ -134,6 +134,10 @@ pub enum ScenarioType {
     LongRunningStability,
     /// L-04: Extended episode with mixed threat patterns for scorer stability.
     LongRunningThreat,
+    /// A-05: Human-proximate collaborative work with proximity-scaled velocity.
+    HumanProximate,
+    /// A-06: CNC tending full cycle — all commands safe (zone overrides synchronized).
+    NominalCncTending,
 }
 
 // ---------------------------------------------------------------------------
@@ -191,9 +195,7 @@ impl<'a> ScenarioGenerator<'a> {
             ScenarioType::Aggressive => self.aggressive(count, pca_chain_b64, ops),
             ScenarioType::PickAndPlace => self.pick_and_place(count, pca_chain_b64, ops),
             ScenarioType::WalkingGait => self.walking_gait(count, pca_chain_b64, ops),
-            ScenarioType::CollaborativeWork => {
-                self.collaborative_work(count, pca_chain_b64, ops)
-            }
+            ScenarioType::CollaborativeWork => self.collaborative_work(count, pca_chain_b64, ops),
             ScenarioType::CncTendingFullCycle => {
                 self.cnc_tending_full_cycle(count, pca_chain_b64, ops)
             }
@@ -236,9 +238,7 @@ impl<'a> ScenarioGenerator<'a> {
             ScenarioType::JointIeee754Special => {
                 self.joint_ieee754_special(count, pca_chain_b64, ops)
             }
-            ScenarioType::JointGradualDrift => {
-                self.joint_gradual_drift(count, pca_chain_b64, ops)
-            }
+            ScenarioType::JointGradualDrift => self.joint_gradual_drift(count, pca_chain_b64, ops),
             ScenarioType::CompoundAuthorityPhysics => {
                 self.compound_authority_physics(count, pca_chain_b64, ops)
             }
@@ -259,6 +259,10 @@ impl<'a> ScenarioGenerator<'a> {
                 self.long_running_stability(count, pca_chain_b64, ops)
             }
             ScenarioType::LongRunningThreat => self.long_running_threat(count, pca_chain_b64, ops),
+            ScenarioType::HumanProximate => self.collaborative_work(count, pca_chain_b64, ops),
+            ScenarioType::NominalCncTending => {
+                self.cnc_tending_full_cycle(count, pca_chain_b64, ops)
+            }
         }
     }
 
@@ -650,12 +654,7 @@ impl<'a> ScenarioGenerator<'a> {
     /// A-03: Pick-and-place cycle — approach, grasp, lift, transport, place,
     /// retract. All commands stay within joint/workspace limits. 6 phases
     /// distributed evenly across `count` steps.
-    fn pick_and_place(
-        &self,
-        count: usize,
-        pca_chain_b64: &str,
-        ops: &[Operation],
-    ) -> Vec<Command> {
+    fn pick_and_place(&self, count: usize, pca_chain_b64: &str, ops: &[Operation]) -> Vec<Command> {
         let base_ts: DateTime<Utc> = Utc::now();
         let delta_time = self.profile.max_delta_time * 0.5;
         let meta_template = Self::metadata_template(self.scenario);
@@ -733,12 +732,7 @@ impl<'a> ScenarioGenerator<'a> {
 
     /// A-04: Walking gait cycle — alternating stance/swing phases at safe
     /// velocity. All locomotion parameters stay within profile limits.
-    fn walking_gait(
-        &self,
-        count: usize,
-        pca_chain_b64: &str,
-        ops: &[Operation],
-    ) -> Vec<Command> {
+    fn walking_gait(&self, count: usize, pca_chain_b64: &str, ops: &[Operation]) -> Vec<Command> {
         let base_ts: DateTime<Utc> = Utc::now();
         let delta_time = self.profile.max_delta_time * 0.5;
         let meta_template = Self::metadata_template(self.scenario);
@@ -754,7 +748,9 @@ impl<'a> ScenarioGenerator<'a> {
         let max_step_height = loco_cfg.map(|l| l.max_step_height).unwrap_or(0.5);
         let max_heading = loco_cfg.map(|l| l.max_heading_rate).unwrap_or(1.0);
         let friction = loco_cfg.map(|l| l.friction_coefficient).unwrap_or(0.6);
-        let max_grf = loco_cfg.map(|l| l.max_ground_reaction_force).unwrap_or(1000.0);
+        let max_grf = loco_cfg
+            .map(|l| l.max_ground_reaction_force)
+            .unwrap_or(1000.0);
 
         // Safe clearance midpoint between min and max step height.
         let swing_clearance = (min_clearance + max_step_height) / 2.0;
@@ -959,23 +955,26 @@ impl<'a> ScenarioGenerator<'a> {
                         i as f64 * delta_time * 1_000.0,
                     ));
 
-                let (ee_pos, zone_active) = if i < quarter {
-                    // Phase 1: Approach — safe position, zone active.
-                    (safe_pos, true)
+                let (ee_pos, override_zone_off) = if i < quarter {
+                    // Phase 1: Approach — safe position, no zone override.
+                    (safe_pos, false)
                 } else if i < quarter * 2 {
-                    // Phase 2: Loading — EE inside conditional zone, zone disabled.
-                    (conditional_zone_point.unwrap_or(safe_pos), false)
+                    // Phase 2: Loading — EE inside conditional zone, zone disabled via override.
+                    (conditional_zone_point.unwrap_or(safe_pos), true)
                 } else if i < quarter * 3 {
-                    // Phase 3: Cutting — safe position, zone active.
-                    (safe_pos, true)
+                    // Phase 3: Cutting — safe position, no zone override.
+                    (safe_pos, false)
                 } else {
-                    // Phase 4: Retract — safe position, zone active.
-                    (safe_pos, true)
+                    // Phase 4: Retract — safe position, no zone override.
+                    (safe_pos, false)
                 };
 
                 let mut zone_overrides = HashMap::new();
-                if let Some(ref zone_name) = conditional_zone_name {
-                    zone_overrides.insert(zone_name.clone(), zone_active);
+                if override_zone_off {
+                    if let Some(ref zone_name) = conditional_zone_name {
+                        // false = zone disabled, allowing EE inside the conditional zone.
+                        zone_overrides.insert(zone_name.clone(), false);
+                    }
                 }
 
                 let mut ee_positions = vec![EndEffectorPosition {
@@ -2525,10 +2524,10 @@ impl<'a> ScenarioGenerator<'a> {
                     .map(|(j, jdef)| {
                         let position = if j == target_joint {
                             match phase {
-                                0 => jdef.min,                // at min boundary (PASS)
-                                1 => jdef.max,                // at max boundary (PASS)
-                                2 => jdef.min - epsilon,      // below min (REJECT)
-                                _ => jdef.max + epsilon,      // above max (REJECT)
+                                0 => jdef.min,           // at min boundary (PASS)
+                                1 => jdef.max,           // at max boundary (PASS)
+                                2 => jdef.min - epsilon, // below min (REJECT)
+                                _ => jdef.max + epsilon, // above max (REJECT)
                             }
                         } else {
                             Self::joint_mid(jdef.min, jdef.max)
@@ -2602,9 +2601,9 @@ impl<'a> ScenarioGenerator<'a> {
                         let max_vel = jdef.max_velocity * self.profile.global_velocity_scale;
                         let velocity = if j == target_joint {
                             match phase {
-                                0 => max_vel,                // at limit (PASS)
-                                1 => max_vel + epsilon,      // just above (REJECT)
-                                _ => max_vel * 2.0,          // 2× (REJECT)
+                                0 => max_vel,           // at limit (PASS)
+                                1 => max_vel + epsilon, // just above (REJECT)
+                                _ => max_vel * 2.0,     // 2× (REJECT)
                             }
                         } else {
                             0.0
@@ -2677,8 +2676,8 @@ impl<'a> ScenarioGenerator<'a> {
                     .map(|(j, jdef)| {
                         let effort = if j == target_joint {
                             match phase {
-                                0 => jdef.max_torque,            // at limit (PASS)
-                                _ => jdef.max_torque + epsilon,  // above limit (REJECT)
+                                0 => jdef.max_torque,           // at limit (PASS)
+                                _ => jdef.max_torque + epsilon, // above limit (REJECT)
                             }
                         } else {
                             0.0
