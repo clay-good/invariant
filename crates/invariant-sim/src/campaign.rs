@@ -1963,7 +1963,7 @@ scenarios:
         use super::execution_target::*;
         assert_eq!(MIN_EPISODE_STEPS, 200);
         assert_eq!(MAX_EPISODE_STEPS, 1000);
-        assert!(MIN_EPISODE_STEPS < MAX_EPISODE_STEPS);
+        const _: () = assert!(MIN_EPISODE_STEPS < MAX_EPISODE_STEPS);
     }
 
     // ── Scenario step count mapping ─────────────────────────────────
@@ -2002,7 +2002,7 @@ scenarios:
         for sc in &scenarios {
             let steps = super::scenario_step_count(&sc.scenario_type);
             assert!(
-                steps >= MIN_EPISODE_STEPS && steps <= MAX_EPISODE_STEPS,
+                (MIN_EPISODE_STEPS..=MAX_EPISODE_STEPS).contains(&steps),
                 "scenario {} has {} steps, must be in [{}, {}]",
                 sc.scenario_type, steps, MIN_EPISODE_STEPS, MAX_EPISODE_STEPS
             );
@@ -2305,7 +2305,7 @@ scenarios:
     #[test]
     fn data_outputs_size_range_valid() {
         use super::data_outputs::*;
-        assert!(ESTIMATED_OUTPUT_GB_LOW < ESTIMATED_OUTPUT_GB_HIGH);
+        const _: () = assert!(ESTIMATED_OUTPUT_GB_LOW < ESTIMATED_OUTPUT_GB_HIGH);
         assert_eq!(ESTIMATED_OUTPUT_GB_LOW, 150);
         assert_eq!(ESTIMATED_OUTPUT_GB_HIGH, 200);
     }
@@ -2318,7 +2318,7 @@ scenarios:
         let total_bytes = ESTIMATED_TOTAL_COMMANDS * bytes_per_step;
         let total_gb = total_bytes / (1024 * 1024 * 1024);
         assert!(
-            total_gb >= ESTIMATED_OUTPUT_GB_LOW && total_gb <= ESTIMATED_OUTPUT_GB_HIGH * 2,
+            (ESTIMATED_OUTPUT_GB_LOW..=ESTIMATED_OUTPUT_GB_HIGH * 2).contains(&total_gb),
             "per-step estimate ({bytes_per_step} B/step) yields {total_gb} GB, expected ~{ESTIMATED_OUTPUT_GB_LOW}-{ESTIMATED_OUTPUT_GB_HIGH} GB"
         );
     }

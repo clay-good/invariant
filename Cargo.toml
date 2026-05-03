@@ -25,7 +25,7 @@ categories = ["aerospace", "cryptography", "embedded", "science", "simulation"]
 # Crypto
 ed25519-dalek = { version = "2.1", features = ["rand_core"] }
 coset = "0.4"
-sha2 = "0.11"
+sha2 = "0.10"
 
 # Serialization
 serde = { version = "1.0", features = ["derive"] }
@@ -35,7 +35,7 @@ chrono = { version = "0.4", features = ["serde"] }
 base64 = "0.22"
 
 # Core utilities
-rand = "0.10"
+rand = "0.8"
 regex = "1.11"
 thiserror = "2.0"
 quick-xml = "0.39"
