@@ -470,6 +470,36 @@ fn parse_scenario_type(name: &str) -> Result<ScenarioType, DryRunError> {
         }
         "LongRunningStability" | "long_running_stability" => Ok(ScenarioType::LongRunningStability),
         "LongRunningThreat" | "long_running_threat" => Ok(ScenarioType::LongRunningThreat),
+        // A: Normal operation (new scenarios)
+        "PickAndPlace" | "pick_and_place" => Ok(ScenarioType::PickAndPlace),
+        "WalkingGait" | "walking_gait" => Ok(ScenarioType::WalkingGait),
+        "CollaborativeWork" | "collaborative_work" => Ok(ScenarioType::CollaborativeWork),
+        "CncTendingFullCycle" | "cnc_tending_full_cycle" => Ok(ScenarioType::CncTendingFullCycle),
+        "DexterousManipulation" | "dexterous_manipulation" => {
+            Ok(ScenarioType::DexterousManipulation)
+        }
+        "MultiRobotCoordinated" | "multi_robot_coordinated" => {
+            Ok(ScenarioType::MultiRobotCoordinated)
+        }
+        // B: Joint safety
+        "JointPositionBoundary" | "joint_position_boundary" => {
+            Ok(ScenarioType::JointPositionBoundary)
+        }
+        "JointVelocityBoundary" | "joint_velocity_boundary" => {
+            Ok(ScenarioType::JointVelocityBoundary)
+        }
+        "JointTorqueBoundary" | "joint_torque_boundary" => Ok(ScenarioType::JointTorqueBoundary),
+        "JointAccelerationRamp" | "joint_acceleration_ramp" => {
+            Ok(ScenarioType::JointAccelerationRamp)
+        }
+        "JointCoordinatedViolation" | "joint_coordinated_violation" => {
+            Ok(ScenarioType::JointCoordinatedViolation)
+        }
+        "JointDirectionReversal" | "joint_direction_reversal" => {
+            Ok(ScenarioType::JointDirectionReversal)
+        }
+        "JointIeee754Special" | "joint_ieee754_special" => Ok(ScenarioType::JointIeee754Special),
+        "JointGradualDrift" | "joint_gradual_drift" => Ok(ScenarioType::JointGradualDrift),
         other => Err(DryRunError::UnknownScenario(other.to_string())),
     }
 }
@@ -521,8 +551,15 @@ fn parse_injection_type(name: &str) -> Result<InjectionType, DryRunError> {
 fn is_expected_reject(scenario: ScenarioType) -> bool {
     !matches!(
         scenario,
+        // Category A: Normal operation — all commands should be APPROVED.
         ScenarioType::Baseline
             | ScenarioType::Aggressive
+            | ScenarioType::PickAndPlace
+            | ScenarioType::WalkingGait
+            | ScenarioType::CollaborativeWork
+            | ScenarioType::CncTendingFullCycle
+            | ScenarioType::DexterousManipulation
+            | ScenarioType::MultiRobotCoordinated
             | ScenarioType::MultiAgentHandoff
             | ScenarioType::CncTending
             | ScenarioType::LongRunningStability
@@ -821,9 +858,16 @@ mod tests {
 
     #[test]
     fn expected_reject_classification() {
-        // Legitimate scenarios: commands are valid, should NOT be rejected.
+        // Category A: Normal operation — all commands should be APPROVED.
         assert!(!is_expected_reject(ScenarioType::Baseline));
         assert!(!is_expected_reject(ScenarioType::Aggressive));
+        assert!(!is_expected_reject(ScenarioType::PickAndPlace));
+        assert!(!is_expected_reject(ScenarioType::WalkingGait));
+        assert!(!is_expected_reject(ScenarioType::CollaborativeWork));
+        assert!(!is_expected_reject(ScenarioType::CncTendingFullCycle));
+        assert!(!is_expected_reject(ScenarioType::DexterousManipulation));
+        assert!(!is_expected_reject(ScenarioType::MultiRobotCoordinated));
+        // Other non-reject scenarios.
         assert!(!is_expected_reject(ScenarioType::MultiAgentHandoff));
         assert!(!is_expected_reject(ScenarioType::CncTending));
         assert!(!is_expected_reject(ScenarioType::LongRunningStability));
@@ -2323,6 +2367,12 @@ mod tests {
         let scenario_names = [
             "Baseline",
             "Aggressive",
+            "PickAndPlace",
+            "WalkingGait",
+            "CollaborativeWork",
+            "CncTendingFullCycle",
+            "DexterousManipulation",
+            "MultiRobotCoordinated",
             "ExclusionZone",
             "AuthorityEscalation",
             "ChainForgery",
@@ -2334,6 +2384,14 @@ mod tests {
             "LocomotionFall",
             "CncTending",
             "EnvironmentFault",
+            "JointPositionBoundary",
+            "JointVelocityBoundary",
+            "JointTorqueBoundary",
+            "JointAccelerationRamp",
+            "JointCoordinatedViolation",
+            "JointDirectionReversal",
+            "JointIeee754Special",
+            "JointGradualDrift",
         ];
         for name in scenario_names {
             let result = parse_scenario_type(name);
@@ -2384,6 +2442,12 @@ mod tests {
         let snake_names = [
             "baseline",
             "aggressive",
+            "pick_and_place",
+            "walking_gait",
+            "collaborative_work",
+            "cnc_tending_full_cycle",
+            "dexterous_manipulation",
+            "multi_robot_coordinated",
             "exclusion_zone",
             "authority_escalation",
             "chain_forgery",
@@ -2404,6 +2468,14 @@ mod tests {
             "recovery_audit_integrity",
             "long_running_stability",
             "long_running_threat",
+            "joint_position_boundary",
+            "joint_velocity_boundary",
+            "joint_torque_boundary",
+            "joint_acceleration_ramp",
+            "joint_coordinated_violation",
+            "joint_direction_reversal",
+            "joint_ieee754_special",
+            "joint_gradual_drift",
         ];
         for name in snake_names {
             let result = parse_scenario_type(name);
@@ -3849,6 +3921,14 @@ mod tests {
             "recovery_audit_integrity",
             "long_running_stability",
             "long_running_threat",
+            "joint_position_boundary",
+            "joint_velocity_boundary",
+            "joint_torque_boundary",
+            "joint_acceleration_ramp",
+            "joint_coordinated_violation",
+            "joint_direction_reversal",
+            "joint_ieee754_special",
+            "joint_gradual_drift",
         ];
         for scenario in &all_scenarios {
             let config = CampaignConfig {

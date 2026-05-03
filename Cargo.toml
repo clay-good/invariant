@@ -24,7 +24,7 @@ categories = ["aerospace", "cryptography", "embedded", "science", "simulation"]
 [workspace.dependencies]
 # Crypto
 ed25519-dalek = { version = "2.1", features = ["rand_core"] }
-coset = "0.3"
+coset = "0.4"
 sha2 = "0.10"
 
 # Serialization
@@ -38,11 +38,11 @@ base64 = "0.22"
 rand = "0.8"
 regex = "1.11"
 thiserror = "2.0"
-quick-xml = "0.37"
+quick-xml = "0.39"
 
 # CLI & server
-clap = { version = "4.5", features = ["derive"] }
-tokio = { version = "1.0" }
+clap = { version = "4.6", features = ["derive"] }
+tokio = { version = "1.52" }
 axum = "0.8"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }

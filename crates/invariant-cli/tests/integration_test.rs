@@ -107,7 +107,10 @@ fn safe_command(profile: &RobotProfile, chain_b64: &str, ops: Vec<Operation>) ->
         })
         .collect();
     for ee_config in &profile.end_effectors {
-        if let Some(existing) = end_effector_forces.iter_mut().find(|f| f.name == ee_config.name) {
+        if let Some(existing) = end_effector_forces
+            .iter_mut()
+            .find(|f| f.name == ee_config.name)
+        {
             existing.grasp_force = Some(ee_config.min_grasp_force_n);
         } else {
             end_effector_forces.push(EndEffectorForce {

@@ -1,890 +1,909 @@
-% Invariant — Gap-Closure Execution Spec (v4)
+% Invariant — Gap-Closure Execution Spec (Claude Code Prompts)
 % Status: Draft
-% Date: 2026-04-27
-% Branch: codelicious/spec-spec-15m-campaign-part-4
-% Companion to: `docs/spec-gaps.md` (gap analysis with citations)
+% Date: 2026-04-28
+% Branch: codelicious/spec-spec-15m-campaign-part-2
+% Companion to: `docs/spec-gaps.md` (the audit) and `docs/spec-15m-campaign.md` (the deliverable)
 
-# 0. How To Use This Document
+# 0. How to use this document
 
-Each section below is a self-contained **Claude Code prompt**. Paste one
-prompt at a time into a Claude Code session at the repo root and let it run
-to completion before moving on. Every prompt:
+Each numbered step below is a **self-contained Claude Code prompt**. Copy a step
+verbatim into a fresh Claude Code session (or paste it as the body of a task)
+and let the agent implement it. Steps are ordered: every step assumes the
+preceding steps have landed on `main`. Each step contains:
 
-- Names the gap, the spec citation, and the existing code citation so Claude
-  can re-verify before editing.
-- States acceptance criteria as concrete files / tests / CLI behavior.
-- Ends with the verification commands that must pass.
+- **Goal** — what changes after the step lands.
+- **Spec citations** — what's promised, where.
+- **Code citations** — files to touch (verified against `HEAD` 2026-04-28).
+- **Prompt** — the exact instructions to give Claude Code.
+- **Done when** — verification checklist (tests + commands).
 
-The order is the prioritized order from `spec-gaps.md §7`. Do not parallelize
-prompts that touch the same module unless explicitly noted.
+Conventions every prompt inherits (do not repeat in the per-step prompt unless
+overridden):
 
-Each prompt assumes:
+- Read existing files before editing them.
+- After every change run, in order: `cargo build`, `cargo test --workspace`,
+  `cargo clippy --all-targets -- -D warnings`. All three must pass.
+- One commit per step. Commit message format:
+  `<crate>: <short imperative>` followed by a body that cites the spec section.
+- Never push to `main`. Land via a PR titled `spec-v4 step N: <title>`.
+- Do not introduce new external dependencies unless the prompt names them.
+- Do not silently change public APIs — if a signature must change, list every
+  caller updated in the commit body.
+- If a prompt's "Done when" check fails, do not loosen the check; surface the
+  failure and stop.
 
-- Working directory is the repo root.
-- `cargo build`, `cargo test`, and `cargo clippy -- -D warnings` are the
-  required gates per [CLAUDE.md](../CLAUDE.md).
-- One commit per prompt, message prefixed with `[gap-NN]` matching the
-  section number here.
-
-If a verification step fails, fix the root cause — do not weaken the
-acceptance criteria, and do not commit `--no-verify`.
-
----
-
-# Prompt 1 — A3 Predecessor Digest (PCA-to-PCA Causal Binding)
-
-**Gap:** `spec-gaps.md §1.2`. Spec at [docs/spec.md:230-232](spec.md#L230-L232)
-and [docs/spec.md:388-392](spec.md#L388-L392) requires PoC binding hop *i+1*
-to the byte representation of hop *i*. Code at
-[crates/invariant-core/src/authority/chain.rs:31](../crates/invariant-core/src/authority/chain.rs#L31)
-verifies signatures, monotonic narrowing, and `p_0` immutability only.
-
-> Read `crates/invariant-core/src/authority/chain.rs`, `mod.rs`, and
-> `tests.rs`. Read `docs/spec.md` lines 230–232 and 388–392 to confirm the
-> A3 wording.
->
-> Add a non-optional `predecessor_digest: [u8; 32]` field to the `Pca`
-> struct. The first hop in a chain stores the SHA-256 of an explicit
-> "genesis" canonical byte string (define a documented constant — do not use
-> all-zeros). Every subsequent hop must store
-> `sha256(canonical_bytes(prev_hop))`, where `canonical_bytes` is the
-> existing canonical serialization used for signing (extract a helper if
-> needed; do not invent a second canonicalization).
->
-> Update `verify_chain` to reject any chain where
-> `hop[i].predecessor_digest != expected_digest(hop[i-1])`. Reuse the
-> existing `AuthorityError` taxonomy; add a new variant
-> `PredecessorDigestMismatch { hop_index: usize }` only if no existing
-> variant fits.
->
-> Regenerate every fixture, test helper, and example that constructs a
-> `Pca` literal. Search with `rg "Pca \{" crates/ examples/` and update each
-> hit. Do not silently default the field — every construction site must
-> compute the digest explicitly so the test surface stays honest.
->
-> Add tests in `crates/invariant-core/src/authority/tests.rs`:
->
-> - `predecessor_digest_genesis_hop_accepted` — single-hop chain with the
->   genesis constant verifies.
-> - `predecessor_digest_chain_accepted` — three-hop well-formed chain.
-> - `g09_cross_chain_splice_rejected` — assemble two locally valid chains
->   sharing an issuer; splice them; verifier rejects on the first hop whose
->   `predecessor_digest` does not match its prior hop's canonical digest.
->   Match the campaign-spec attack at
->   [docs/spec-15m-campaign.md:179](spec-15m-campaign.md#L179).
-> - `predecessor_digest_mutation_rejected` — flip one byte in
->   `predecessor_digest` of hop 2; verifier rejects.
->
-> Verify: `cargo build`, `cargo test -p invariant-core`,
-> `cargo clippy -- -D warnings`. Commit as
-> `[gap-1] authority: bind PCA hops via predecessor digest (A3)`.
+Background reading required before any step:
+`docs/spec.md`, `docs/spec-15m-campaign.md`, `docs/spec-gaps.md`, `CLAUDE.md`.
 
 ---
 
-# Prompt 2 — B1–B4 Execution-Binding Module
+# 1. Foundations (P1 — must land before proof package or serve hardening)
 
-**Gap:** `spec-gaps.md §1.1`. Spec at
-[docs/spec.md:394-403](spec.md#L394-L403); `authority/binding.rs` does not
-exist.
+## Step 1.1 — Add PCA-to-PCA causal binding (A3 predecessor digest)
 
-> Read `docs/spec.md` lines 394–403 to lock in the wording of B1 (session
-> binding), B2 (sequence monotonicity vs the PCA chain), B3 (temporal-window
-> enforcement), B4 (executor identity).
->
-> Read the existing validator entry point at
-> `crates/invariant-core/src/validator.rs` (focus on the sequence handling
-> around lines 220, 300, 315) and `authority/chain.rs` so the new module
-> integrates cleanly. Read `crates/invariant-cli/src/commands/serve.rs` to
-> understand the connection model.
->
-> Create `crates/invariant-core/src/authority/binding.rs` exposing:
->
-> - `pub struct ExecutionContext { pub session_id: SessionId, pub
->   executor_id: ExecutorId, pub time_window: TimeWindow }` with serde and
->   debug derives. Define newtype wrappers for the IDs.
-> - `pub enum BindingError { SessionMismatch, SequenceRegression { last:
->   u64, got: u64 }, OutOfWindow { now_ms: i64, window: TimeWindow },
->   ExecutorMismatch }` with `thiserror::Error`.
-> - `pub fn verify_execution_binding(cmd: &Command, ctx: &ExecutionContext,
->   pca: &Pca) -> Result<(), BindingError>` enforcing B1–B4 in that order.
->
-> Wire it into `ValidatorConfig` so it carries an optional
-> `ExecutionContext`. When set, the validator calls
-> `verify_execution_binding` before existing physics checks. When unset,
-> behavior is unchanged for backwards compatibility with offline tools
-> (this is the only acceptable default-on/off knob — document the
-> reasoning in the rustdoc).
->
-> Update `crates/invariant-cli/src/commands/serve.rs` to construct a
-> per-connection `ExecutionContext` from the negotiated session ID, the
-> executor's identity claim, and the configured temporal window. Reject
-> connections that do not provide all three.
->
-> Add `crates/invariant-core/tests/binding.rs` with one positive and one
-> hostile test per invariant (8 tests total): valid session vs swapped
-> session, monotonic vs regressed sequence, in-window vs expired, matching
-> vs mismatched executor.
->
-> Verify: `cargo build`, `cargo test -p invariant-core --test binding`,
-> `cargo test`, `cargo clippy -- -D warnings`. Commit as
-> `[gap-2] authority: B1–B4 execution-binding module`.
+**Goal:** Hops in a PCA chain are cryptographically bound to their predecessor,
+closing the cross-chain splice attack (campaign G-09).
+
+**Spec citations:** `docs/spec.md:230-232`, `docs/spec.md:388-392` (PoC, A3);
+`docs/spec-15m-campaign.md:179` (G-09 Cross-chain splice).
+
+**Code citations:**
+- `crates/invariant-core/src/authority/chain.rs:31` — `verify_chain` today
+  enforces signatures, monotonic narrowing, and `p_0` immutability only.
+- `crates/invariant-core/src/authority/mod.rs` — `Pca` struct lives here.
+- `crates/invariant-core/src/authority/tests.rs` — add the new tests here.
+
+**Prompt:**
+> Implement causal binding between PCA hops. Open
+> `crates/invariant-core/src/authority/mod.rs`, find the `Pca` struct, and add a
+> field `predecessor_digest: [u8; 32]`. Hop 0's predecessor digest is the
+> all-zero array (document this as the genesis convention in a one-line comment
+> on the field). Define a helper `Pca::canonical_bytes(&self) -> Vec<u8>` that
+> serializes the hop in a deterministic byte form (reuse the existing canonical
+> encoding used by signing if one exists; if not, document the encoding inline
+> and use it consistently). In `crates/invariant-core/src/authority/chain.rs`
+> extend `verify_chain` so that for every `i >= 1`,
+> `hops[i].predecessor_digest == sha256(hops[i-1].canonical_bytes())`; on
+> mismatch return a new `ChainError::PredecessorMismatch { index: usize }`
+> variant. Update every fixture, builder, and test that constructs a `Pca` to
+> populate the new field — do not introduce a default `Option`. In
+> `authority/tests.rs` add `g09_cross_chain_splice_rejected`: build two
+> independently valid 3-hop chains sharing an issuer, splice hop 2 of chain B
+> onto hop 1 of chain A, assert `verify_chain` returns
+> `ChainError::PredecessorMismatch { index: 2 }`. Update CHANGELOG.md under an
+> "Unreleased" heading.
+
+**Done when:**
+- `cargo test -p invariant-core authority::` shows the new test passing.
+- `cargo test --workspace` is green.
+- No `Option<[u8;32]>` introduced for the new field.
+- `grep -rn "predecessor_digest" crates/invariant-core/src/` shows the field
+  in struct, helper, verifier, and at least three test fixtures.
 
 ---
 
-# Prompt 3 — Wildcard-Coverage Hostile Tests (G-07)
+## Step 1.2 — Add execution-binding invariants B1–B4
 
-**Gap:** `spec-gaps.md §1.3` (G-07 portion — G-09 lands in Prompt 1).
-Wildcard semantics are documented at
-[crates/invariant-core/src/authority/operations.rs:11-14](../crates/invariant-core/src/authority/operations.rs#L11-L14)
-but no targeted hostile tests exist.
+**Goal:** Reject syntactically valid PCAs replayed across sessions, executors,
+or outside the issuer's temporal window.
 
-> Read `crates/invariant-core/src/authority/operations.rs` to confirm the
-> existing wildcard-matching rules. Read
-> [docs/spec-15m-campaign.md:177](spec-15m-campaign.md#L177) (G-07) for the
-> attack wording.
->
-> Add to `crates/invariant-core/src/authority/tests.rs`:
->
-> - `g07_wildcard_actuate_does_not_cover_read` — chain whose hop authorizes
->   `actuate:*`; verifier rejects an attempt to perform `read:proprioception`.
-> - `g07_move_namespace_wildcard_does_not_cross_subsystem` — hop authorizes
->   `move:arm.*`; verifier rejects `move:base.linear`.
->
-> Use existing test helpers; do not introduce new fixtures unless required.
->
-> Verify: `cargo test -p invariant-core authority`,
-> `cargo clippy -- -D warnings`. Commit as
-> `[gap-3] authority: G-07 wildcard hostile tests`.
+**Spec citations:** `docs/spec.md:394-403` (B1–B4 definitions),
+`docs/spec.md:478` (planned `authority/binding.rs`).
 
----
+**Code citations:**
+- `crates/invariant-core/src/authority/` — module list (no `binding.rs` today).
+- `crates/invariant-core/src/validator.rs:220, :300, :315` — partial sequence
+  handling.
+- `crates/invariant-cli/src/commands/serve.rs` — needs to plumb context.
 
-# Prompt 4 — Merkle Tree + Signed Manifest in Proof Package
+**Prompt:**
+> Create `crates/invariant-core/src/authority/binding.rs`. Define
+> `pub struct ExecutionContext { session_id: [u8;16], executor_id: [u8;32], now_ms: u64, window_ms: u64 }`
+> and `pub enum BindingError { Session, Sequence, TemporalWindow, Executor }`.
+> Define `pub fn verify_execution_binding(cmd: &Command, ctx: &ExecutionContext, pca: &Pca) -> Result<(), BindingError>`
+> covering: B1 session — `cmd.session_id == ctx.session_id`; B2 sequence —
+> `cmd.sequence` strictly greater than the last seen for `(session_id, pca.p_0)`
+> (track via a small in-memory map injected via parameter, not a global); B3
+> temporal — `pca.issued_at_ms <= ctx.now_ms <= pca.issued_at_ms + ctx.window_ms`;
+> B4 executor — `pca.executor_id == ctx.executor_id`. Wire it into the validator:
+> add an `ExecutionContext` field to `ValidatorConfig` (or a new `ValidatorState`
+> if more appropriate — read `validator.rs` first and pick the smallest change),
+> call `verify_execution_binding` after `verify_chain`, surface `BindingError`
+> as a typed `RejectReason`. Update `crates/invariant-cli/src/commands/serve.rs`
+> to construct one `ExecutionContext` per accepted bridge connection. Add a new
+> file `crates/invariant-core/tests/binding.rs` with eight tests: one positive
+> and one hostile case per invariant B1–B4. Hostile cases must come from the
+> attack catalog (replay across sessions, regression seq, future-dated, wrong
+> executor). Update CHANGELOG.md.
 
-**Gap:** `spec-gaps.md §3.1`. Spec at
-[docs/spec-15m-campaign.md:371-407](spec-15m-campaign.md#L371-L407) requires
-`audit/merkle_root.txt` and a signed manifest. Today,
-[crates/invariant-core/src/proof_package.rs:241](../crates/invariant-core/src/proof_package.rs#L241)
-documents the manifest as unsigned and emits per-file SHA-256 only.
-
-> Read `crates/invariant-core/src/proof_package.rs` (full file),
-> `audit.rs`, and `crates/invariant-cli/src/commands/verify_package.rs`.
-> Confirm the existing `assemble` API and the verifier's expectations.
->
-> Add a binary SHA-256 Merkle tree over audit JSONL leaves. Define:
->
-> - `pub struct MerkleTree { root: [u8; 32], leaves: Vec<[u8; 32]> }`.
-> - `pub fn merkle_proof(&self, seq: u64) -> Vec<[u8; 32]>` returning the
->   sibling path for the leaf at `seq`.
-> - Determinism: leaves are hashed as `sha256(jsonl_line_bytes)`; internal
->   nodes as `sha256(0x01 || left || right)`; odd levels duplicate the last
->   leaf. Document this in the module docstring so external verifiers can
->   reimplement.
->
-> During `assemble`:
->
-> - Build the tree from the audit JSONL files in shard order.
-> - Write the hex root to `audit/merkle_root.txt`.
-> - Write `audit/chain_verification.json` with shard count, leaf count, and
->   the root.
-> - Sign `manifest.json` with the supplied Ed25519 key (pass the key into
->   `assemble`; if absent, fail with a typed error rather than silently
->   skipping). Emit `manifest.sig` next to `manifest.json`.
->
-> During `verify_package`:
->
-> - Rebuild the Merkle tree from the JSONL files; assert the root matches
->   `audit/merkle_root.txt`.
-> - Verify `manifest.sig` against a caller-supplied public key.
-> - Re-check each per-file SHA-256 (existing behavior).
->
-> Add `crates/invariant-core/tests/proof_package_signed.rs`:
->
-> - Build a 2-shard fixture with ~20 audit entries.
-> - Assemble with a generated Ed25519 key.
-> - Verify with the matching public key — success.
-> - Mutate one byte of one JSONL leaf — verify fails with a Merkle mismatch.
-> - Mutate `manifest.json` — verify fails with a signature mismatch.
-> - Mutate one byte of `manifest.sig` — verify fails.
->
-> Update `crates/invariant-cli/src/commands/verify_package.rs` so its
-> existing tests still pass and the new round-trip is exercised end-to-end.
->
-> Verify: `cargo test -p invariant-core --test proof_package_signed`,
-> `cargo test`, `cargo clippy -- -D warnings`. Commit as
-> `[gap-4] proof_package: Merkle root and signed manifest`.
+**Done when:**
+- `cargo test -p invariant-core --test binding` shows 8/8 passing.
+- `serve` still starts (`cargo run -p invariant-cli -- serve --help`).
+- `grep -rn "BindingError" crates/invariant-core/src/validator.rs` is non-empty.
 
 ---
 
-# Prompt 5 — `invariant campaign assemble` CLI Subcommand
+## Step 1.3 — Add wildcard-exploitation tests (G-07)
 
-**Gap:** `spec-gaps.md §3.2`. The Rust API is wired but no CLI surface
-exists. The registry at
-[crates/invariant-cli/src/main.rs:23-72](../crates/invariant-cli/src/main.rs#L23-L72)
-exposes 20 subcommands today; adding this brings it to 21.
+**Goal:** Confirm `actuate:*` does not subsume `read:*` and that namespaced
+wildcards do not leak across subsystems.
 
-> Read `crates/invariant-cli/src/main.rs` and
-> `crates/invariant-cli/src/commands/campaign.rs`. Read
-> `crates/invariant-cli/src/commands/verify_package.rs` for the matching
-> CLI ergonomics.
->
-> Extend the existing `Campaign` subcommand with an `Assemble` action (or
-> add a new top-level `CampaignAssemble` subcommand if it produces a
-> cleaner help surface — pick one and document the choice in the file
-> header). Required flags:
->
-> - `--shards <DIR>` — directory of per-shard audit JSONL + per-shard
->   summary JSON.
-> - `--output <PATH>` — proof-package output directory.
-> - `--key <PATH>` — Ed25519 signing key for the manifest (PEM or the
->   project's existing on-disk format; reuse `keys::load`).
->
-> Behavior:
->
-> - Validate inputs exist and are well-formed before doing any I/O on
->   `--output`.
-> - Call `proof_package::assemble`.
-> - Compute a roll-up Clopper-Pearson 99.9% CI per category (categories A–N
->   per `spec-15m-campaign.md §2.1`); emit
->   `results/per_category/ci.json`.
-> - Emit profile fingerprints to `results/per_profile/fingerprints.json`
->   (SHA-256 of canonical profile JSON used in each shard).
-> - Print a summary table to stdout.
->
-> Add `crates/invariant-cli/tests/cli_assemble.rs`: build a 2-shard fixture
-> on disk, run the subcommand via `assert_cmd`, then run `verify-package`
-> against the output and assert success. Use `tempfile`.
->
-> Update README.md and `docs/spec-15m-campaign.md §7 Step 6` to reference
-> the new subcommand.
->
-> Verify: `cargo test -p invariant-cli --test cli_assemble`,
-> `cargo test`, `cargo clippy -- -D warnings`. Commit as
-> `[gap-5] cli: campaign assemble subcommand`.
+**Spec citations:** `docs/spec-15m-campaign.md:177` (G-07).
+
+**Code citations:**
+- `crates/invariant-core/src/authority/operations.rs:11-14` — wildcard
+  semantics documented but no targeted test.
+- `crates/invariant-core/src/authority/tests.rs` — add tests here.
+
+**Prompt:**
+> In `crates/invariant-core/src/authority/tests.rs`, add two tests:
+> `g07_wildcard_actuate_does_not_cover_read` — issue a chain whose root grants
+> `actuate:*`, attempt a command requesting `read:proprioception`; assert the
+> chain verification rejects with the existing scope-mismatch error.
+> `g07_move_namespace_wildcard_does_not_cross_subsystem` — issue a chain whose
+> root grants `move:arm.*`, attempt `move:base.linear`; assert rejection. Reuse
+> the existing chain builders; do not add new abstractions. If the current
+> wildcard matcher in `operations.rs` accepts either case (i.e., the test
+> initially fails with "approved"), fix the matcher in `operations.rs` and
+> document the change in the commit body.
+
+**Done when:**
+- Both tests pass.
+- `cargo clippy --all-targets -- -D warnings` is clean.
 
 ---
 
-# Prompt 6 — Profile `end_effectors` Audit + `validate-profiles --strict`
+# 2. Proof Package End-to-End (P1 — campaign deliverable depends on this)
 
-**Gap:** `spec-gaps.md §4.2`. Nine profiles lack `end_effectors`; no strict
-validator exists.
+## Step 2.1 — Add SHA-256 Merkle tree over audit JSONL
 
-> Read `docs/spec-v1.md §1.1 lines 38–97` and any current profile JSON
-> under `profiles/` (run `ls profiles/`).
->
-> For the five locomotion-only profiles
-> (`anybotics_anymal.json`, `quadruped_12dof.json`, `spot.json`,
-> `unitree_a1.json`, `unitree_go2.json`), add:
->
-> ```json
-> "end_effectors": [],
-> "platform_class": "locomotion-only"
-> ```
->
-> For `agility_digit.json`, add a real `end_effectors` block matching
-> Digit's hands. If you do not have a defensible source for the limits,
-> document the descope by setting `platform_class: "locomotion-only"` and
-> `end_effectors: []`, and note in the file's `metadata.notes` that
-> manipulation operations should be denied at the policy layer until the
-> EE block lands.
->
-> For the four adversarial profiles, add `"adversarial": true` to their
-> top-level metadata. Confirm `adversarial_max_joints.json` and
-> `adversarial_single_joint.json` carry an `environment` block; add one
-> with conservative defaults if missing.
->
-> Add a new CLI subcommand `validate-profiles` (registered alongside the
-> 21 existing subcommands — count goes to 22 alongside the new
-> `campaign assemble` from Prompt 5):
->
-> - `invariant validate-profiles [--strict] [PATHS...]` — defaults to
->   `profiles/*.json`.
-> - Without `--strict`: schema check only.
-> - With `--strict`: also fails when a profile permits a manipulation
->   operation but declares no `end_effectors`, **unless** the profile
->   carries `"adversarial": true`.
->
-> Add to `.github/workflows/ci.yml` a job step
-> `cargo run -p invariant-cli -- validate-profiles --strict` so the gate
-> is permanent.
->
-> Add a test that loads every profile and asserts strict validation
-> passes.
->
-> Verify: `cargo run -p invariant-cli -- validate-profiles --strict`,
-> `cargo test`, `cargo clippy -- -D warnings`. Commit as
-> `[gap-6] profiles: end_effectors audit + validate-profiles --strict`.
+**Goal:** Make per-leaf inclusion verifiable; produce
+`audit/merkle_root.txt` as listed in the campaign artifact tree.
+
+**Spec citations:** `docs/spec-15m-campaign.md:391-396` (audit/ tree),
+`docs/spec.md:124` (hash-chained audit).
+
+**Code citations:**
+- `crates/invariant-core/src/proof_package.rs:328-343` — `assemble` exists.
+- `crates/invariant-core/src/proof_package.rs:241` — manifest is unsigned,
+  per-file SHA-256 only.
+- `crates/invariant-core/src/audit.rs` — JSONL writer.
+
+**Prompt:**
+> Implement a binary SHA-256 Merkle tree over audit log JSONL entries. Add a
+> new module `crates/invariant-core/src/merkle.rs` with: `MerkleTree::from_leaves(leaves: &[[u8;32]]) -> MerkleTree`,
+> `tree.root() -> [u8;32]`, `tree.proof(index: usize) -> Vec<[u8;32]>`,
+> `pub fn verify_proof(leaf: [u8;32], proof: &[[u8;32]], index: usize, root: [u8;32]) -> bool`.
+> Use the convention: leaf hash = `sha256(0x00 || entry_bytes)`, internal node =
+> `sha256(0x01 || left || right)`; if a level has an odd count, duplicate the
+> last node. Wire it into `proof_package::assemble`: read each shard's audit
+> JSONL, hash each line as a leaf, build one tree per shard plus a root-of-roots
+> tree across shards, write `audit/merkle_root.txt` (hex), and add a
+> `merkle_root: [u8;32]` field to the in-memory manifest. Extend
+> `verify_package` (`crates/invariant-cli/src/commands/verify_package.rs`) to
+> rebuild the tree and assert the recorded root matches. Add three tests:
+> `merkle_single_leaf`, `merkle_odd_count_duplication`, `merkle_proof_round_trip`
+> in the new module, plus extend the existing `proof_package` round-trip test
+> to assert tree-root presence on a 2-shard fixture.
+
+**Done when:**
+- `cargo test -p invariant-core merkle::` passes.
+- The proof_package round-trip test asserts a non-zero merkle root.
+- `audit/merkle_root.txt` is produced for the test fixture.
 
 ---
 
-# Prompt 7 — Split SR1 / SR2 Sensor-Range Checks
+## Step 2.2 — Sign the manifest
 
-**Gap:** `spec-gaps.md §4.1`. SR1 (env-state range) and SR2 (payload range)
-are merged into a single `check_sensor_range` at
-[crates/invariant-core/src/physics/environment.rs:361-427](../crates/invariant-core/src/physics/environment.rs#L361-L427).
+**Goal:** `manifest.json` is Ed25519-signed; `manifest.sig` is emitted; the
+verifier rejects tampered manifests.
 
-> Read `crates/invariant-core/src/physics/environment.rs` and the
-> registration at `crates/invariant-core/src/physics/mod.rs:326`.
->
-> Split the function into:
->
-> - `check_sensor_range_env` — SR1, env-state values (battery, temperature,
->   IMU, latency).
-> - `check_sensor_range_payload` — SR2, command payload numeric ranges
->   (positions, encoders, forces, etc.).
->
-> Each returns its own `CheckResult` with distinct names
-> (`"sensor_range_env"`, `"sensor_range_payload"`). Update the registration
-> in `physics/mod.rs` and any callers/tests. Update the `compliance`
-> subcommand to count both checks independently.
->
-> Add tests asserting both checks fire on the inputs they cover and never
-> the other. Update existing tests that depend on the merged name.
->
-> Verify: `cargo test`, `cargo clippy -- -D warnings`. Commit as
-> `[gap-7] physics: split SR1/SR2 sensor-range checks`.
+**Spec citations:** `docs/spec-15m-campaign.md:373` (signed manifest).
 
----
+**Code citations:**
+- `crates/invariant-core/src/proof_package.rs:241` — current "unsigned" comment.
+- `crates/invariant-cli/src/commands/verify_package.rs:339-460` — round-trip
+  test.
 
-# Prompt 8 — Eliminate Test/Subcommand/Scenario Count Drift
+**Prompt:**
+> Extend `proof_package::assemble` to accept a `signing_key: &SigningKey`
+> argument (Ed25519, reusing the existing key types from `crates/invariant-core/src/keys.rs`).
+> After the manifest JSON is finalized, compute `sig = sign(manifest_bytes)`,
+> write it to `manifest.sig`. Update the comment at line 241 to reflect signed
+> status. Extend `verify_package` to take a public key path, load the manifest,
+> verify `manifest.sig`, and only after that proceed to digest/Merkle checks.
+> If `--key` is omitted, refuse to verify and emit a typed error
+> `VerifyError::UnsignedPackage` (do not fall back to digest-only verification
+> silently). Update the existing round-trip test to sign with a generated key
+> and verify with its public half. Update the CLI help text for both
+> `verify-package` and (after Step 2.3 lands) `campaign assemble`.
 
-**Gap:** `spec-gaps.md §4.5`. README, CHANGELOG, spec-v2, and
-public-release-polish all cite different test counts. None matches the
-current 1 881 `#[test]` markers.
-
-> Run `cargo test --workspace 2>&1 | tail -50` and capture the aggregate
-> "test result: ok. N passed" lines. Sum N across all test binaries.
->
-> Add a CI step in `.github/workflows/ci.yml` that runs the workspace
-> tests, parses the per-binary `test result:` lines, sums the counts, and
-> writes the total to `docs/test-count.txt` (single integer + trailing
-> newline). Commit the file with the current accurate count. Add a CI
-> guard that fails if the file would change vs `HEAD` so contributors
-> regenerate it intentionally.
->
-> Update README.md, CHANGELOG.md, `docs/spec-v2.md`, and
-> `docs/public-release-polish.md` to reference `docs/test-count.txt`
-> rather than hard-coded literals — wording like "see
-> [docs/test-count.txt](docs/test-count.txt) for the current count".
->
-> Update the subcommand count to 22 (post-Prompt 5 + Prompt 6) and the
-> scenario count statements where they appear, but only after Prompt 14
-> has landed; if Prompt 14 has not landed when this prompt runs, leave
-> scenario counts alone and note the dependency in the commit message.
->
-> Verify: `cargo test`, `cat docs/test-count.txt`. Commit as
-> `[gap-8] docs: eliminate count drift via generated test-count.txt`.
+**Done when:**
+- Existing round-trip test passes with signing enabled.
+- A new test `verify_package_rejects_tampered_manifest` flips one byte in
+  `manifest.json` and asserts verification fails with a signature error.
 
 ---
 
-# Prompt 9 — OS Keyring Backend (`os-keyring` feature)
+## Step 2.3 — Add `invariant campaign assemble` CLI subcommand
 
-**Gap:** `spec-gaps.md §2.1` (one of three). Stub at
-[crates/invariant-core/src/keys.rs:436-444](../crates/invariant-core/src/keys.rs#L436-L444).
+**Goal:** End-users can assemble a proof package from a directory of shard
+outputs without writing Rust.
 
-> Read `crates/invariant-core/src/keys.rs` (full file). Confirm the
-> `KeyStore` trait surface and existing file-backed implementation.
->
-> Add a Cargo feature `os-keyring` to `crates/invariant-core/Cargo.toml`
-> gating the `keyring` crate. Implement `OsKeyringKeyStore` to:
->
-> - Store Ed25519 private keys under service name
->   `"io.invariant-robotics.signing"` and account = key label.
-> - Round-trip via the platform default backend (Keychain on macOS,
->   Secret Service on Linux, Credential Manager on Windows).
-> - Surface platform errors as `KeyStoreError::Backend { source, hint }`
->   with a hint that mentions the platform.
->
-> Update CLI `keygen --store=keyring` to select the backend at runtime;
-> unknown `--store` values fail with a typed error before any I/O.
->
-> Replace the stub test `open_key_store_stubs` (do not augment) with a
-> feature-gated `#[cfg(feature = "os-keyring")]` integration test under
-> `crates/invariant-core/tests/keyring.rs` that round-trips a generated
-> key. Mark with `#[ignore]` if CI cannot provide a keychain; document the
-> manual run command in the file header.
->
-> Verify:
-> `cargo build --features os-keyring -p invariant-core`,
-> `cargo test --features os-keyring -p invariant-core`, default-feature
-> build still passes (`cargo test -p invariant-core`),
-> `cargo clippy --features os-keyring -- -D warnings`.
-> Commit as `[gap-9] keys: os-keyring backend behind feature flag`.
+**Spec citations:** `docs/spec-15m-campaign.md` §6 step 6, §7 step 6.
 
----
+**Code citations:**
+- `crates/invariant-cli/src/main.rs:23-72` — current 20 subcommands.
+- `crates/invariant-cli/src/commands/campaign.rs:39` — only dry-run today.
+- `crates/invariant-core/src/proof_package.rs` — API exists.
 
-# Prompt 10 — TPM Backend (`tpm` feature)
+**Prompt:**
+> Add an `assemble` subcommand under `campaign`. Edit
+> `crates/invariant-cli/src/commands/campaign.rs` to introduce a new clap
+> subcommand `Assemble { shards: PathBuf, output: PathBuf, key: PathBuf,
+> public_key: Option<PathBuf> }`. The handler must: enumerate `shards/<id>/`
+> directories, validate each contains `audit.jsonl` and `summary.json`, call
+> `proof_package::assemble` with the loaded signing key, emit Clopper-Pearson
+> 99.9% upper bounds per category to `results/per_category/<cat>.json` (use the
+> existing statistics helper if one exists; otherwise add a small
+> `clopper_pearson_upper(n: u64, k: u64, alpha: f64) -> f64` function in
+> `invariant-core` and unit-test it against the four reference values from
+> `docs/spec-15m-campaign.md:464-470`). Update `crates/invariant-cli/src/main.rs`
+> to register the subcommand if it is a top-level (otherwise just confirm the
+> nested registration). Add `crates/invariant-cli/tests/cli_assemble.rs` with a
+> 2-shard fixture (use `tempfile`), invoke the subcommand via `Command::cargo_bin`,
+> then invoke `verify-package` and assert success. Update README.md's subcommand
+> list and bump the count from 20 to 21 in any spec/doc that mentions it
+> (search: `rg -n "20 subcommands"`). Update CHANGELOG.md.
 
-**Gap:** `spec-gaps.md §2.1` (two of three). Stub at
-[crates/invariant-core/src/keys.rs:482-491](../crates/invariant-core/src/keys.rs#L482-L491).
-
-> Read `crates/invariant-core/src/keys.rs` and the `os-keyring` work from
-> Prompt 9 to mirror its style.
->
-> Add a `tpm` feature gating `tss-esapi`. Implement `TpmKeyStore`:
->
-> - Persistent keys under the owner hierarchy.
-> - Key identification by label, mapped to a TPM handle the store
->   tracks in a small on-disk index (`~/.invariant/tpm-index.json`,
->   permissions 0600).
-> - Sign/verify Ed25519 via the TPM where supported; fall back to a typed
->   `KeyStoreError::AlgorithmUnsupported` if the device doesn't support
->   ed25519 (do not silently substitute).
->
-> Document attestation requirements in the module rustdoc; do not
-> implement attestation in this prompt — call it out explicitly as
-> follow-up scope.
->
-> Replace the stub test with a feature-gated integration test that runs
-> against `swtpm` if `INVARIANT_TPM_TEST=1` is set; otherwise `#[ignore]`.
-> Document the `swtpm` setup in the test file header.
->
-> Verify: default build still passes; `cargo build --features tpm
-> -p invariant-core` succeeds on a Linux host (gracefully fail with a
-> documented compile error on unsupported platforms).
-> Commit as `[gap-10] keys: tpm backend behind feature flag`.
+**Done when:**
+- `cargo run -p invariant-cli -- campaign assemble --help` prints help.
+- `cargo test -p invariant-cli --test cli_assemble` passes.
+- `rg -n "20 subcommands"` returns zero hits, `rg -n "21 subcommands"` returns
+  the updated locations.
 
 ---
 
-# Prompt 11 — YubiHSM Backend (`yubihsm` feature)
+# 3. Campaign Coverage (P1 — required for the 15M statistical claim)
 
-**Gap:** `spec-gaps.md §2.1` (three of three). Stub at
-[crates/invariant-core/src/keys.rs:530-539](../crates/invariant-core/src/keys.rs#L530-L539).
+These steps expand `ScenarioType` from the current ~28 variants up to the 104
+IDs cited in the campaign spec. They are grouped to keep PRs reviewable and
+each can be done in parallel after Steps 1–2.
 
-> Mirror Prompts 9 and 10. Feature `yubihsm` gating the `yubihsm` crate.
-> Auth via password-derived session; key handles persisted by label in
-> the same on-disk index pattern.
->
-> Replace the stub test with a feature-gated integration test that runs
-> against the YubiHSM connector mock if available; otherwise `#[ignore]`
-> with header docs explaining how to point at a real device via
-> `YUBIHSM_CONNECTOR_URL`.
->
-> Verify: default build unaffected; `cargo build --features yubihsm
-> -p invariant-core` succeeds; clippy clean. Commit as
-> `[gap-11] keys: yubihsm backend behind feature flag`.
+## Step 3.1 — Add `Scenario::all()` enumerator + coverage test
 
----
+**Goal:** A single source of truth that enumerates every scenario; CI fails if
+any spec ID lacks a `ScenarioType`.
 
-# Prompt 12 — S3 Audit Replication (`replication-s3` feature)
+**Spec citations:** `docs/spec-15m-campaign.md:69` (104 IDs total).
 
-**Gap:** `spec-gaps.md §2.2` (one of two). Stub at
-[crates/invariant-core/src/replication.rs:257-259](../crates/invariant-core/src/replication.rs#L257-L259).
+**Code citations:**
+- `crates/invariant-sim/src/scenario.rs:51` — `pub enum ScenarioType` (~28
+  variants today; verify count when you start).
 
-> Read `crates/invariant-core/src/replication.rs` (full file) and `audit.rs`.
->
-> Add a `replication-s3` feature gating `aws-sdk-s3`. Implement
-> `S3Replicator::push`:
->
-> - Object naming: `{prefix}/{epoch_ms}-{seq}.jsonl`.
-> - SSE-KMS via the configured KMS key ARN; refuse to push if the key is
->   not configured.
-> - S3 Object Lock retention configured per `ReplicationConfig`.
-> - Exponential backoff on `ThrottlingException`, capped retries, then
->   surface as `ReplicationError::Throttled { attempts }`.
-> - On startup, list the bucket prefix and resume from the highest
->   replicated sequence.
->
-> Add `WebhookWitness` POST handler (also part of §2.2):
->
-> - On each Merkle-root rotation (Prompt 4), POST
->   `{root, count, signature}` JSON.
-> - HMAC-SHA256 signature in `X-Invariant-Signature` header.
-> - Bounded in-memory retry queue with disk spillover under the audit
->   directory; surface persistent failure (≥N consecutive attempts) as an
->   `incident::Incident`.
->
-> Live test: behind `INVARIANT_REPL_TEST=1`, run against MinIO + a
-> local webhook receiver, then chaos-restart the replicator process and
-> assert no leaf is lost. Otherwise `#[ignore]`.
->
-> Document RTO/RPO assumptions in the module rustdoc.
->
-> Verify: default build unaffected; feature build + tests pass; clippy
-> clean. Commit as
-> `[gap-12] replication: s3 + webhook witness behind feature flag`.
+**Prompt:**
+> In `crates/invariant-sim/src/scenario.rs`, add `impl ScenarioType { pub fn all() -> &'static [ScenarioType] { ... } }`
+> listing every variant exactly once (no `Default`, no derived enumerator —
+> explicit, so the compiler flags missing entries when variants are added).
+> Add a `pub fn spec_id(&self) -> &'static str` returning the campaign-spec
+> identifier (e.g. `ScenarioType::Baseline => "A-01"`). For variants that map
+> to multiple IDs (e.g. compound scenarios), return the primary ID; document
+> the mapping in a doc comment on the function. Create
+> `crates/invariant-sim/tests/scenario_coverage.rs`: parse
+> `docs/spec-15m-campaign.md` (read the file at runtime — it is workspace-local;
+> use `env!("CARGO_MANIFEST_DIR")`) for every `^| <ID> |` table row, build the
+> set of expected IDs, and assert that every ID is covered by `ScenarioType::all`.
+> Until the remaining categories land (Steps 3.2–3.7), the test will fail —
+> mark it `#[ignore]` with a comment naming the steps that will un-ignore it.
+> File the failing IDs in the test's docstring so future steps know what's
+> outstanding.
+
+**Done when:**
+- `cargo test -p invariant-sim` passes (the new test is `#[ignore]`d).
+- Running `cargo test -p invariant-sim -- --ignored scenario_coverage` prints
+  the exact list of missing IDs.
 
 ---
 
-# Prompt 13 — Alert Sinks (Webhook + Syslog)
+## Step 3.2 — Implement Category B (Joint Safety) scenarios
 
-**Gap:** `spec-gaps.md §2.3`. Stubs at
-[crates/invariant-core/src/incident.rs:175-180](../crates/invariant-core/src/incident.rs#L175-L180)
-and `:194-197`.
+**Goal:** Add B-01..B-08 to `ScenarioType` with deterministic step generators.
 
-> Read `crates/invariant-core/src/incident.rs`.
->
-> Implement `WebhookAlertSink`:
->
-> - HMAC-SHA256 signed POST.
-> - Bounded retry queue with disk spillover next to the audit log.
-> - Configurable per-host concurrency cap; never block the validator hot
->   path — the sink runs on its own Tokio task.
->
-> Implement `SyslogAlertSink`:
->
-> - RFC 5424 over UDP and TCP+TLS (selectable via config).
-> - Structured-data field carries verdict ID and severity per RFC 5424
->   section 6.3.
->
-> Behind `INVARIANT_ALERT_TEST=1`, HIL test against an `rsyslog` container
-> and a local HTTP receiver. Verify back-pressure on the sink does not
-> increase validator latency by more than 5% under a 10 kHz validation
-> load.
->
-> Verify: default tests pass; clippy clean. Commit as
-> `[gap-13] incident: webhook + syslog alert sinks`.
+**Spec citations:** `docs/spec-15m-campaign.md:96-105`.
+
+**Prompt:**
+> For each of B-01 Position boundary sweep, B-02 Velocity boundary sweep, B-03
+> Torque boundary sweep, B-04 Acceleration ramp, B-05 Multi-joint coordinated,
+> B-06 Rapid direction reversal, B-07 IEEE 754 special values, B-08 Gradual
+> drift attack: add a `ScenarioType` variant; implement step generation in the
+> existing dry-run loop in `crates/invariant-sim/src/scenario.rs` (read the
+> Locomotion or Compound implementations as templates). Each scenario must be
+> seedable, deterministic, and produce a clear "expected reject" classification
+> (use the existing `is_expected_reject` mapping). Add one dry-run smoke test
+> per scenario in the existing `dry_run_*` test family. Update
+> `Scenario::all()`, `spec_id`, and the snake_case parser. Do NOT yet remove
+> the `#[ignore]` on `scenario_coverage` — that happens after the last category
+> lands (Step 3.7).
+
+**Done when:**
+- `cargo test -p invariant-sim` passes.
+- `Scenario::all().len()` increased by exactly 8.
 
 ---
 
-# Prompt 14 — Scenario Coverage Expansion (22 → 104)
+## Step 3.3 — Implement Categories C, D, E, F additions
 
-**Gap:** `spec-gaps.md §3.3`. The scenario list in
-`crates/invariant-sim/src/scenario.rs` carries 22 variants vs the 104 IDs in
-[docs/spec-15m-campaign.md §3](spec-15m-campaign.md). This prompt is large
-enough to warrant a sub-plan; the agent should checkpoint with a commit per
-category.
+**Goal:** Spatial, locomotion, manipulation, environmental scenarios.
 
-> Read `crates/invariant-sim/src/scenario.rs`,
-> `crates/invariant-sim/src/orchestrator.rs`,
-> `crates/invariant-sim/src/injector.rs`, and the campaign spec
-> `docs/spec-15m-campaign.md` lines 80–300.
->
-> Add `pub fn all() -> &'static [ScenarioType]` and a stable
-> `pub const SPEC_ID: &str` accessor on each variant so coverage tests can
-> map back to the campaign spec IDs (A-01..N-10).
->
-> Add `crates/invariant-sim/tests/scenario_coverage.rs` that asserts every
-> ID in `docs/spec-15m-campaign.md §3` (extract via a small parser, or
-> hard-code the list with a comment pointing at the section) has a
-> corresponding `ScenarioType`. Run it; expect failures listing the gap.
->
-> Implement the missing scenarios category-by-category, in the order
-> listed in `spec-gaps.md §3.3` (table). For each category:
->
-> 1. Add the scenario variants and their step generators to
->    `scenario.rs`.
-> 2. Wire snake_case names into the dry-run parser.
-> 3. Update `is_expected_reject` / `expected_reject_classification` for
->    new variants (pass / reject / mixed).
-> 4. Run `cargo test -p invariant-sim` and `cargo clippy -- -D warnings`.
-> 5. Commit as `[gap-14.<cat>] sim: implement Category <cat> scenarios`.
->
-> If a scenario in the spec is not implementable in dry-run alone (e.g.
-> Isaac-only humanoid push-recovery), implement a faithful stub that
-> exercises the validator path and document the Isaac-side follow-up in
-> `docs/spec-15m-campaign.md §7`.
->
-> If after honest effort the count still cannot reach 104 (e.g. because a
-> scenario duplicates another), amend the campaign spec downward to the
-> achievable count and re-derive the §5 Clopper-Pearson CI numbers in the
-> same commit. Do not silently leave the spec inconsistent.
->
-> Final verification: scenario_coverage test passes; `cargo test`;
-> `cargo clippy -- -D warnings`. Final commit as
-> `[gap-14] sim: scenario coverage closure (22 → N)` with the actual N
-> stated in the message.
+**Spec citations:** `docs/spec-15m-campaign.md:113-163`.
+
+**Prompt:**
+> Implement the missing IDs:
+> - C-01 workspace-boundary sweep, C-03 conditional-zone state machine,
+>   C-04 self-collision approach, C-05 overlapping-zone, C-06 corrupt-spatial
+>   data (5 new).
+> - D-09 push recovery, D-10 incline walking (2 new).
+> - E-01..E-06 entire manipulation category (6 new).
+> - F-05..F-08 sensor/environmental scenarios (4 new).
+> Same conventions as Step 3.2: `ScenarioType` variant, deterministic generator,
+> dry-run smoke test, `Scenario::all`, `spec_id`, parser. Profile-applicability
+> filtering must follow the existing locomotion-filter pattern in
+> `campaign.rs::generate_15m_configs` — manipulation scenarios skip
+> locomotion-only profiles, locomotion scenarios skip arm profiles.
+
+**Done when:**
+- `Scenario::all().len()` increased by exactly 17 vs end of Step 3.2.
+- `cargo test --workspace` passes.
 
 ---
 
-# Prompt 15 — Isaac Lab Env Classes Per Profile Family
+## Step 3.4 — Implement Category G (Authority) remaining scenarios
 
-**Gap:** `spec-gaps.md §3.4`. `isaac/envs/` has only `cell_config.py` and
-`cnc_tending.py`; the campaign claims coverage of all profile families.
+**Goal:** G-02 empty chain, G-03 forged sig, G-04 key substitution, G-05
+escalation, G-06 provenance mutation, G-08 expired chain, G-09 splice, G-10
+garbage COSE.
 
-> Read existing `isaac/envs/cell_config.py` and `cnc_tending.py` for the
-> task API conventions. Read
-> `crates/invariant-sim/src/isaac/bridge.rs` for the bridge protocol.
->
-> Add one env class per profile family under `isaac/envs/`:
->
-> - `arm.py` (UR/Franka/KUKA/ABB/Kinova family).
-> - `humanoid.py` (Unitree H1/G1, Digit, generic 28-DOF).
-> - `quadruped.py` (Spot, ANYmal, Unitree A1/Go2, generic 12-DOF).
-> - `hand.py` (Shadow Hand and similar dexterous hands).
-> - `mobile_base.py` (mobile bases for whole-body motion tests).
->
-> Each implements `reset / step / observe`, publishes sensor payloads
-> matching the Rust-side `SensorPayload` (verify by deserializing one
-> payload back through the bridge in the smoke test), and accepts
-> deterministic seeds.
->
-> Add `isaac/run_campaign.py` headless driver:
->
-> - Consumes a campaign config (the YAML produced by
->   `generate_15m_configs`).
-> - Spawns the right env class per profile.
-> - Emits per-episode JSON traces compatible with the proof-package
->   `assemble` step (Prompt 5).
->
-> Add `isaac/tests/test_envs_smoke.py`: 1 000 Category-A episodes for
-> one humanoid (`unitree_h1`) and one arm (`franka_panda`); zero
-> validator errors; full audit JSONL emitted; trace files round-trip
-> through `invariant verify-package`. Mark `@pytest.mark.skipif` when
-> Isaac Lab is not installed; document the local dev setup in
-> `docs/runpod-simulation-guide.md`.
->
-> Verify: `pytest isaac/tests/test_envs_smoke.py` (or skip if Isaac
-> unavailable, but the test must collect cleanly). Commit as
-> `[gap-15] isaac: env classes per profile family + smoke test`.
+**Spec citations:** `docs/spec-15m-campaign.md:170-180`.
+
+**Prompt:**
+> Add scenario variants for G-02..G-06, G-08, G-09, G-10 (G-01 valid-chain
+> already exercised by Baseline, G-07 covered by Step 1.3 unit tests but add a
+> scenario shell that runs the same construction at simulation scale). Each
+> generator must produce a `Pca` with the targeted defect and let the validator
+> reject it; assert the rejection reason matches the table's "Expected" column.
+> Use the existing `ChainForgery` and `AuthorityEscalation` variants as
+> templates. Coordinate with Step 1.1 (predecessor digest) — G-09 depends on
+> the field existing.
+
+**Done when:**
+- `Scenario::all().len()` increased by exactly 8 vs end of Step 3.3.
+- For each new variant the dry-run smoke test asserts a non-zero rejection
+  count.
 
 ---
 
-# Prompt 16 — RunPod Preempt-Recovery + Cost Ceiling
+## Step 3.5 — Implement Category H (Temporal & Sequence)
 
-**Gap:** `spec-gaps.md §3.5` (one of two).
+**Spec citations:** `docs/spec-15m-campaign.md:188-194`.
 
-> Read `scripts/run_15m_campaign.sh`, `scripts/runpod_setup.sh`, and
-> `scripts/upload_results.py`.
->
-> Extend `scripts/run_15m_campaign.sh` (or add `scripts/runpod_fanout.sh`
-> as a thin orchestrator that calls it — pick one and document) with:
->
-> - SIGTERM trap that flushes the in-progress shard summary, marks the
->   shard incomplete in a `status/` directory, and exits cleanly with code
->   0 so the supervisor can restart.
-> - Idempotent resume: at startup, scan `status/` and skip shards already
->   marked complete.
-> - `MAX_USD` environment variable: track elapsed runtime against the per-
->   GPU price published in `scripts/runpod_setup.sh`; abort cleanly when
->   the projected spend would exceed `MAX_USD`. Default unset = no cap.
-> - Status file format documented in `scripts/README.md` (create it if
->   absent).
->
-> Add a shell test under `scripts/tests/` (use `bats` if already in the
-> repo, otherwise plain bash with `set -e`) that exercises the SIGTERM
-> path on a 5-shard local fanout with a stub binary.
->
-> Verify: run the new bash test locally. Commit as
-> `[gap-16] scripts: preempt-recovery and cost ceiling`.
+**Prompt:**
+> Implement H-01 sequence replay, H-02 sequence regression, H-03 sequence gap
+> (positive case), H-04 delta-time attack, H-05 stale command, H-06
+> future-dated sensor. Coordinate with Step 1.2 — H-01 and H-02 should
+> exercise the new B2 binding. Add scenario variants and dry-run smoke tests
+> per the conventions of 3.2.
+
+**Done when:**
+- `Scenario::all().len()` increased by exactly 6 vs end of Step 3.4.
 
 ---
 
-# Prompt 17 — Shadow-Deployment Runbook
+## Step 3.6 — Implement Category I (Cognitive Escape)
 
-**Gap:** `spec-gaps.md §3.5` (two of two). `docs/runpod-simulation-guide.md`
-exists but is exploratory.
+**Spec citations:** `docs/spec-15m-campaign.md:200-212`.
 
-> Read `docs/runpod-simulation-guide.md` for tone and the campaign-spec
-> §7 lines 425–432 for the deliverable shape.
->
-> Create `docs/shadow-deployment.md` covering:
->
-> - **Scope:** ≥100 robot-hours on a UR10e CNC cell (matches the existing
->   `ur10e_haas_cell` profile).
-> - **Setup:** wiring the validator in shadow mode (no actuation
->   blocking, audit-only) — point at the `serve` subcommand and link to
->   the relevant config keys.
-> - **Metrics collected:** validator p50/p95/p99 latency, rejection rate
->   per check, divergence between sim-predicted verdicts and observed
->   robot behavior.
-> - **Divergence triage protocol:** triage table mapping divergence type
->   → owner → SLO for response.
-> - **Sign-off criteria:** zero unexplained divergences for 100 robot-
->   hours; <0.1% latency p99 regression vs sim; explicit sign-off by
->   Safety + Engineering leads with a checklist.
->
-> Cross-link from `docs/spec-15m-campaign.md §7 Step 7` and from
-> `README.md`'s deployment section.
->
-> Verify: `mdformat docs/shadow-deployment.md` (or whatever formatter
-> the repo uses; check `Makefile` and `.pre-commit-config.yaml`).
-> Commit as `[gap-17] docs: shadow-deployment runbook`.
+**Prompt:**
+> Implement I-01 gradual drift, I-02 distraction flooding, I-03 semantic
+> confusion, I-04 authority laundering, I-05 error mining, I-06 watchdog
+> manipulation, I-07 profile probing, I-08 multi-agent collusion, I-09 timing
+> exploitation, I-10 rollback replay. Several map onto existing primitives —
+> I-01 reuses gradual-drift logic from Compound scenarios; I-06 reuses
+> watchdog handling. Where a primitive exists, compose it; do not duplicate.
+> Critical success criterion (`docs/spec-15m-campaign.md:212` — ZERO
+> bypasses): every cognitive scenario's smoke test must assert the validator
+> approval count for unauthorized operations is exactly 0.
+
+**Done when:**
+- `Scenario::all().len()` increased by exactly 10 vs end of Step 3.5.
+- Every Category I smoke test asserts `bypasses == 0`.
 
 ---
 
-# Prompt 18 — Fleet-Scale Coordinator Test + `fleet status` Subcommand
+## Step 3.7 — Implement Categories J, K, L, M, N remaining
 
-**Gap:** `spec-gaps.md §4.3`. Coordinator only proven pairwise.
+**Spec citations:** `docs/spec-15m-campaign.md:218-282`.
 
-> Read `crates/invariant-coordinator/src/lib.rs`, `monitor.rs`,
-> `partition.rs`. Read `crates/invariant-cli/src/main.rs` to see where to
-> register a new subcommand.
->
-> Add `crates/invariant-coordinator/tests/fleet_10_robot.rs`: 8 arms +
-> 2 mobile bases; 60 s of synthetic traffic from a deterministic seed.
-> Assert:
->
-> - Zero false positives (no near-miss flagged where positions remain
->   above the configured separation).
-> - Zero missed near-misses against a hand-scripted close-approach event
->   embedded in the trace.
->
-> Add CLI `invariant fleet status` reading the coordinator state via the
-> existing in-memory monitor API (or via a status file if the monitor is
-> per-process — match the existing pattern). Output: JSON summary of
-> active robots, current separations, recent partitions.
->
-> The subcommand registry now exposes 23 (post-Prompts 5, 6, 18). Update
-> any spec that hard-codes a count after Prompt 8 has landed.
->
-> Verify: `cargo test -p invariant-coordinator --test fleet_10_robot`;
-> `cargo run -p invariant-cli -- fleet status` against a stub state.
-> Commit as `[gap-18] coordinator: 10-robot fleet test + fleet status CLI`.
+**Prompt:**
+> Implement: J-03, J-04, J-06, J-08 (4 compound); K-02, K-03, K-05, K-06 (4
+> recovery); L-02, L-03 (2 long-running); M-01..M-06 (6 cross-platform stress);
+> N-01..N-10 (10 red-team fuzz). For Category N, prefer driving the existing
+> `invariant-fuzz` crate from the simulation harness rather than reimplementing
+> mutators. After this step lands, remove the `#[ignore]` from
+> `tests/scenario_coverage.rs` and assert `Scenario::all().len() == 104`.
+> If the count differs from 104 because the spec table actually enumerates a
+> different number, file the discrepancy in the commit body and update
+> `docs/spec-15m-campaign.md §5.2` to match the achieved count — do NOT silently
+> drop the assertion.
+
+**Done when:**
+- `cargo test -p invariant-sim --test scenario_coverage` passes (no `--ignored`).
+- `Scenario::all().len()` matches the documented total.
 
 ---
 
-# Prompt 19 — Per-Connection Watchdog
+# 4. Profile Coverage and Isaac Lab Envs
 
-**Gap:** `spec-gaps.md §4.4`. Single shared watchdog across bridge clients.
+## Step 4.1 — Resolve "34 profiles" claim against ~17 registered
 
-> Read `crates/invariant-sim/src/isaac/bridge.rs` (full file) — pay
-> attention to the file-header comment that documents the limitation.
->
-> Refactor the bridge to maintain a `HashMap<ClientId, WatchdogState>`,
-> initialized on connection accept and torn down on disconnect. Each
-> heartbeat updates only its client's entry. A timeout fires safe-stop
-> for that client only.
->
-> Alternative: if the simpler choice is to enforce single-client at the
-> protocol layer, add `BridgeError::SecondClient` and reject subsequent
-> connections with a typed error. Choose based on the existing serve-mode
-> use cases — document the choice in the file header and remove the
-> outdated comment.
->
-> Add a test that opens two simulated connections, lets one go silent,
-> and asserts only that one's watchdog fires.
->
-> Verify: `cargo test -p invariant-sim`; `cargo clippy -- -D warnings`.
-> Commit as `[gap-19] bridge: per-connection watchdog`.
+**Goal:** Either bring profile count to 34, or amend the spec down to the
+actual deployable list with explicit rationale.
 
----
+**Spec citations:** `docs/spec-15m-campaign.md:34, :289-307` (34 profiles, 30
+real-world + 4 synthetic).
 
-# Prompt 20 — Lean Formal Status Reconciliation
+**Code citations:**
+- `profiles/*.json` — current set.
+- `crates/invariant-core/src/profile.rs` (or wherever profile registration
+  happens — verify with `rg -n "fn builtin_profiles"`).
 
-**Gap:** `spec-gaps.md §5.1`. Lean is sketch + axioms, not proof; spec
-overclaims.
+**Prompt:**
+> Inventory `ls profiles/*.json` and the registered builtins. Count the real
+> distinct profiles (excluding the four `adversarial_*`). If the count is below
+> 30, propose the missing 30−N profiles by deriving from public URDFs/specs of
+> robots already named in the campaign spec table at lines 289-303 (humanoids,
+> arms, quadrupeds, hands). Add the missing profile JSONs under `profiles/`
+> with full `joints`, `workspace`, `manipulation.end_effectors`, `environment`
+> blocks. Register each in `builtin_profiles`. Add a smoke test that loads
+> every builtin profile and validates a Baseline scenario for one episode each.
+> If the missing profiles are not feasible to add (no public URDF, etc.), do
+> NOT pad — instead amend `docs/spec-15m-campaign.md`: change "34 built-in
+> profiles" to the achievable count, regenerate the §4 distribution table so
+> weights still sum to 100%, and document each removal with a one-line
+> rationale.
 
-> Read `formal/Invariant.lean` and the files under `formal/Invariant/`.
->
-> Create `formal/README.md` with a table:
->
-> | Theorem | Status | spec.md cross-ref | Notes |
-> |---------|--------|--------------------|-------|
-> | `safety_guarantee` | hypothesis-discharge | spec.md:799 | Composition not proven |
-> | `monotonicity_transitive` | sorry | spec.md:802 | … |
-> | `hash_collision_resistant` | axiom | spec.md:810 | Standard crypto axiom |
-> | `pointInConvexPolygon` | axiom | … | Geometric primitive |
->
-> Attempt to discharge `monotonicity_transitive` (`Authority.lean`
-> ~L85–90) by direct induction on hop indices. If the proof is not
-> tractable in this prompt's scope, descope the claim by renaming it to a
-> conjecture and updating the README accordingly — do not leave a `sorry`
-> with no documentation.
->
-> Add a `lake build` step to `.github/workflows/ci.yml` as a
-> `continue-on-error: true` job. The job's purpose is to detect breakage
-> in the Lean spec, not to gate merges yet.
->
-> Update `docs/spec.md §8` (the master safety theorem section, currently
-> ~lines 799–831) to qualify "proves" as "specifies; mechanized proofs
-> in progress (see `formal/README.md`)" until the master theorems land.
->
-> Verify: `cd formal && lake build`; CI workflow lints. Commit as
-> `[gap-20] formal: status table + lean CI job + spec wording fix`.
+**Done when:**
+- `rg -n "34 built-in profiles" docs/` is consistent with reality (either 34
+  exist, or the doc is amended).
+- New profile-loading smoke test passes for every registered builtin.
 
 ---
 
-# Prompt 21 — SBOM and Reproducible Build in CI
+## Step 4.2 — Profile EE / platform_class hardening
 
-**Gap:** `spec-gaps.md §5.2`.
+**Goal:** Reject profiles that permit manipulation operations without an EE
+declaration.
 
-> Read `.github/workflows/ci.yml` and `release.yml`. Read the `Dockerfile`.
->
-> Add to `release.yml`:
->
-> - Step `cargo install cyclonedx-cargo` (or pin via the CI action).
-> - Step `cargo cyclonedx --format json --output sbom.cdx.json`.
-> - Step that signs `sbom.cdx.json` with the release Ed25519 key and
->   uploads both files as release assets.
->
-> Add `scripts/repro.sh` that:
->
-> - Builds the release binary inside the repo's `Dockerfile` with
->   `--no-cache`.
-> - Computes SHA-256 of the resulting binary.
-> - Compares against `docs/repro-digest.txt` (commit the current digest).
-> - Exits non-zero on mismatch.
->
-> Add a `make repro` target invoking the script (create `Makefile` if
-> absent — keep it minimal).
->
-> Add a CI job in `ci.yml` that runs `scripts/repro.sh` on PRs that
-> modify `Dockerfile`, `Cargo.lock`, or `rust-toolchain.toml`.
->
-> Verify: `bash scripts/repro.sh` locally; `actionlint .github/workflows/*.yml`
-> if available. Commit as `[gap-21] ci: SBOM + reproducible-build verify`.
+**Spec citations:** `docs/spec-v1.md §1.1` (profile schema requirements).
 
----
+**Code citations:**
+- `profiles/*.json` — nine profiles missing `end_effectors` per
+  `spec-gaps.md §4.2`.
+- No `validate-profiles` subcommand exists today
+  (`rg -n "ValidateProfiles" crates/invariant-cli/src/`).
 
-# Prompt 22 — ROS2 Bindings Disposition
+**Prompt:**
+> Update the five locomotion-only profiles (`anybotics_anymal.json`,
+> `quadruped_12dof.json`, `spot.json`, `unitree_a1.json`, `unitree_go2.json`)
+> to add `"end_effectors": []` and `"platform_class": "locomotion-only"`. Add a
+> real EE block to `agility_digit.json` (Digit has hands; check public URDF for
+> reach/payload/force limits). For the four `adversarial_*` profiles, add a
+> top-level `"adversarial": true` flag and add the missing `environment` block
+> to the two that lack one (`adversarial_max_joints.json`,
+> `adversarial_single_joint.json`). Add a new CLI subcommand
+> `validate-profiles --strict` in `crates/invariant-cli/src/commands/`. Its
+> handler must: load every profile, and for each one that permits a
+> manipulation operation (check `operations.allowed` or equivalent) but
+> declares no `end_effectors` AND lacks `"adversarial": true`, fail with
+> exit code 2 listing the offending profile names. Wire it into `main.rs`.
+> Add a CI step (`.github/workflows/ci.yml`) that runs `invariant
+> validate-profiles --strict`. Update README and bump subcommand count.
 
-**Gap:** `spec-gaps.md §5.3`. `invariant-ros2/` is unreferenced.
-
-> Inspect `invariant-ros2/` and `Cargo.toml` to confirm it's not a
-> workspace member.
->
-> Decide between two options based on whether the bindings still build:
->
-> 1. **Wire in:** add `invariant-ros2` to `Cargo.toml` `members`, fix any
->    build breakage, add a smoke test asserting one publish/subscribe
->    round-trip against a `ros2_rust` mock node.
-> 2. **Move to examples:** `git mv invariant-ros2 examples/ros2-bindings`;
->    add an `examples/ros2-bindings/README.md` qualifying the integration
->    as "example, unmaintained until milestone X"; update `README.md` to
->    match.
->
-> Pick the option that takes less than half a day. Document the choice
-> in the commit message.
->
-> Verify: `cargo build --workspace`. Commit as
-> `[gap-22] ros2: <wire-in|move to examples> per disposition`.
+**Done when:**
+- `cargo run -p invariant-cli -- validate-profiles --strict` exits 0.
+- Removing `end_effectors` from any non-adversarial manipulation-capable
+  profile causes exit 2.
+- CI workflow includes the new step.
 
 ---
 
-# Prompt 23 — Spec Consolidation
+## Step 4.3 — Isaac Lab env coverage per profile family
 
-**Gap:** `spec-gaps.md §5.4`. Multiple specs claim to supersede each other.
+**Goal:** Five profile-family env classes plus a headless campaign runner.
 
-> Run this prompt **last** — many earlier prompts edit `docs/spec.md` and
-> `docs/spec-15m-campaign.md`.
->
-> Move `docs/spec-v1.md`, `docs/spec-v2.md`, `docs/spec-v3.md` into
-> `docs/history/`. Replace each with a one-line redirect at the original
-> path:
->
-> ```markdown
-> > Superseded. See [docs/spec.md](spec.md). Historical version preserved at
-> > [docs/history/spec-v1.md](history/spec-v1.md).
-> ```
->
-> `docs/spec.md` becomes the single live spec. `docs/spec-15m-campaign.md`
-> stays as the campaign-specific addendum. `docs/spec-gaps.md` and this
-> file (`docs/spec-v4.md`) may be deleted once every prompt above is
-> landed and its acceptance test is green in CI — see the closure
-> criterion in `spec-gaps.md §8`.
->
-> Update README.md, CHANGELOG.md, and any other top-level pointers to
-> reference `docs/spec.md` directly.
->
-> Verify: `grep -r "spec-v[123]" docs/ README.md CHANGELOG.md` returns
-> only the redirect lines. Commit as
-> `[gap-23] docs: consolidate to single live spec`.
+**Spec citations:** `docs/spec-15m-campaign.md:34`, §3 lines 80-87.
+
+**Code citations:**
+- `isaac/envs/` — only `__init__.py`, `cell_config.py`, `cnc_tending.py` today.
+- `crates/invariant-cli/src/commands/campaign.rs:24-35` — exits 2 saying "use
+  Python runner".
+
+**Prompt:**
+> Create five env classes under `isaac/envs/`: `arm.py`, `humanoid.py`,
+> `quadruped.py`, `hand.py`, `mobile_base.py`. Each must implement `reset(seed)`,
+> `step(action)`, `observe() -> SensorPayload`-compatible dict; the observation
+> format must match the existing schema consumed by the bridge in
+> `crates/invariant-sim/src/isaac/bridge.rs`. Use the existing `cnc_tending.py`
+> as the structural template — do not invent a new abstraction. Add
+> `isaac/run_campaign.py` that takes `--config <yaml>` (the format produced by
+> `campaign::generate_15m_configs::configs_to_yaml`), iterates episodes, and
+> emits per-episode JSON traces to a directory layout compatible with `campaign
+> assemble` (Step 2.3). Add `isaac/tests/test_envs_smoke.py`: 1000 Category-A
+> episodes for one humanoid + one arm, asserting zero validator errors. Hook
+> the smoke test into the existing Python CI job (commit `7a88217` added one;
+> read `.github/workflows/ci.yml` to find it). Document required Isaac Lab
+> version in `docs/runpod-simulation-guide.md`.
+
+**Done when:**
+- `python -m pytest isaac/tests/test_envs_smoke.py` passes locally given Isaac
+  Lab is installed.
+- The smoke test is invoked by CI (or skipped with a clear reason if Isaac is
+  unavailable in CI).
 
 ---
 
-# 1. Closure Criterion
+# 5. Production Backends (P1, parallelizable)
 
-This document, like `spec-gaps.md`, may be deleted when **every** prompt
-above is landed with its verification step green in CI, or has an explicit
-descope decision logged in `docs/spec.md`. Partial completion is not
-closure.
+## Step 5.1 — OS keyring backend
 
-# 2. Notes on Sequencing
+**Goal:** `OsKeyringKeyStore` actually persists keys via OS-native APIs.
 
-Prompts 1–8 are the highest-leverage and have no infra dependencies — run
-them first in order. Prompts 9–13 (hardware-key and replication backends)
-are independent and can be parallelized across separate branches if
-multiple agents are available; each lands behind its own feature flag and
-does not perturb the default build. Prompts 14–17 require Isaac Lab and
-RunPod access. Prompt 23 must run last because it rewrites doc paths the
-earlier prompts edit.
+**Spec citations:** `docs/spec.md:838`; spec-v3 hardening list.
+
+**Code citations:** `crates/invariant-core/src/keys.rs:413, :436-444`.
+
+**Prompt:**
+> Add a Cargo feature `os-keyring` to `crates/invariant-core/Cargo.toml`,
+> gating a new dependency on the `keyring` crate (current stable). Replace the
+> `KeyStoreError::Unavailable` body of `OsKeyringKeyStore` methods with real
+> implementations: store/load Ed25519 keys keyed by label under a service
+> name `invariant`. Round-trip Ed25519 sign/verify in a feature-gated
+> integration test under `crates/invariant-core/tests/keys_keyring.rs`
+> (gate with `#[cfg(feature = "os-keyring")]`). Remove the stub-semantics
+> portion of `open_key_store_stubs` for the keyring variant. Default workspace
+> build does NOT enable the feature; document the opt-in in README.
+
+**Done when:**
+- `cargo test -p invariant-core --features os-keyring --test keys_keyring`
+  passes on macOS or Linux Secret Service.
+- Default `cargo test --workspace` still passes (feature off).
+
+---
+
+## Step 5.2 — TPM and YubiHSM backends
+
+**Goal:** Same as 5.1 for `tpm` (via `tss-esapi`) and `yubihsm` features.
+
+**Code citations:** `crates/invariant-core/src/keys.rs:462, :482-491, :510, :530-539`.
+
+**Prompt:**
+> Mirror Step 5.1 for two more features: `tpm` (depends on `tss-esapi`,
+> persistent keys under owner hierarchy; document attestation as a separate
+> follow-up) and `yubihsm` (depends on `yubihsm` crate, password-derived auth
+> session). Each gets its own feature-gated integration test. Provide a
+> `--store {file|keyring|tpm|yubihsm}` flag on `invariant keygen` (read
+> `crates/invariant-cli/src/commands/keygen.rs`), failing fast with a typed
+> error before any I/O when an unbuilt store is selected.
+
+**Done when:**
+- `cargo build -p invariant-core --features tpm` and `--features yubihsm`
+  succeed on a workstation with the dev libraries installed.
+- `invariant keygen --store tpm` on a build without the feature exits with a
+  typed error (not a panic).
+
+---
+
+## Step 5.3 — S3 replication and webhook witness
+
+**Goal:** Audit replication is live, not stubbed.
+
+**Spec citations:** `docs/spec.md:124, :410-412` (L1–L4).
+
+**Code citations:** `crates/invariant-core/src/replication.rs:257-259, :289-292`.
+
+**Prompt:**
+> Add features `replication-s3` (depends on `aws-sdk-s3`) and
+> `replication-webhook` (depends on `reqwest` rustls-only, no openssl). Replace
+> the `Unavailable` returns in `S3Replicator::push` and `WebhookWitness::push`
+> with real implementations. S3 object naming: `{prefix}/{epoch_ms}-{seq}.jsonl`;
+> require SSE-KMS and S3 Object Lock configured server-side (assert at startup
+> via `head_bucket` + `get_object_lock_configuration`; refuse to start if
+> retention is missing). Webhook: POST `{root, count, signature}` JSON on each
+> Merkle-root rotation (rotation hook lives in the audit module — read it
+> first); HMAC-SHA256 over the body, header `X-Invariant-Signature: sha256=...`;
+> bounded retry queue with disk spillover under `<audit_dir>/replication-queue/`.
+> Add MinIO and a stub HTTP receiver to `docker-compose.test.yml` (create if
+> missing) and add an integration test that restarts the replicator mid-stream
+> and asserts no entries are lost. Update `Dockerfile` to include
+> `replication-s3` only when the build arg `INVARIANT_FEATURES` includes it.
+
+**Done when:**
+- Integration test green against MinIO.
+- Bringing down and back up the receiver does not drop entries.
+
+---
+
+## Step 5.4 — Webhook + RFC 5424 syslog alert sinks
+
+**Code citations:** `crates/invariant-core/src/incident.rs:175-180, :194-197`.
+
+**Prompt:**
+> Behind features `incident-webhook` and `incident-syslog`, replace the
+> `Unavailable` returns. Webhook: HMAC-SHA256 signed POST, bounded retry queue
+> with disk spillover, configurable per-host concurrency (default 4). Syslog:
+> RFC 5424 over UDP and TCP+TLS (use `rustls`, no openssl), structured-data
+> field `[invariant verdict_id="..." severity="..."]`. Critical: the sink runs
+> on its own Tokio task — assert by integration test that a stalled receiver
+> does not block the validator hot path (`validate()` latency p99 stays under
+> 1ms with a black-holed sink). Test against an `rsyslog` container.
+
+**Done when:**
+- Latency-under-stalled-sink test passes.
+- Both feature builds compile and link.
+
+---
+
+# 6. Silent Weaknesses (P2)
+
+## Step 6.1 — Split SR1 / SR2 into separate checks
+
+**Spec citations:** `docs/spec-v2.md:139-145`.
+**Code citations:** `crates/invariant-core/src/physics/environment.rs:361-427`,
+`crates/invariant-core/src/physics/mod.rs:326`.
+
+**Prompt:**
+> Split the single `check_sensor_range` (which covers both SR1 environment-state
+> range and SR2 payload range) into two functions: `check_sensor_range_env`
+> returning a `CheckResult` named `"sensor_range_env"` and
+> `check_sensor_range_payload` returning `"sensor_range_payload"`. Update
+> registration in `physics/mod.rs:326` and any pipeline that iterates checks.
+> Update `crates/invariant-cli/src/commands/compliance.rs` to count them
+> independently. Add one positive and one hostile test per split check. Update
+> any spec/doc that enumerates check names.
+
+**Done when:**
+- `rg -n '"sensor_range"' crates/` returns no production hits (only test
+  fixtures asserting both new names).
+- `cargo test --workspace` passes.
+
+---
+
+## Step 6.2 — Per-connection bridge watchdog
+
+**Spec citations:** `docs/spec.md:421-424` (W1), `:434` (per-cognitive-layer
+heartbeat).
+**Code citations:** `crates/invariant-sim/src/isaac/bridge.rs:13-16` (single
+shared watchdog documented).
+
+**Prompt:**
+> Make the bridge watchdog per-connection. Read `bridge.rs` to understand the
+> current shared-state shape. The simplest change is: move the `Watchdog`
+> instance from a singleton into the per-connection task state, give each
+> connection its own heartbeat counter, and let an unrelated stalled client
+> only trigger safe-stop on its own connection. Alternative: enforce
+> single-client at the listener and return a typed `BridgeError::SecondClient`
+> on a second concurrent accept; pick whichever is structurally smaller — read
+> the file first and document the choice in the commit body. Add a regression
+> test that opens two connections, stops heartbeats on connection A, and
+> asserts connection B remains live.
+
+**Done when:**
+- New test passes.
+- The header comment at line 13-16 is updated to reflect the new behavior.
+
+---
+
+## Step 6.3 — Multi-robot fleet test + `fleet status` subcommand
+
+**Spec citations:** `docs/spec.md:534-538`.
+**Code citations:** `crates/invariant-coordinator/src/{lib,monitor,partition}.rs`;
+no `fleet` subcommand today.
+
+**Prompt:**
+> Add `crates/invariant-coordinator/tests/fleet_10_robot.rs`: 8 arms + 2 mobile
+> bases, 60 seconds of synthetic traffic, scripted near-miss event. Assert zero
+> false positives and zero missed near-misses. Add `invariant fleet status`
+> subcommand that reads coordinator state (introduce a JSON state-export
+> function in `invariant-coordinator` if none exists) and prints a tabular
+> summary. Wire into `main.rs`; bump documented subcommand count.
+
+**Done when:**
+- New integration test passes.
+- `invariant fleet status --help` works.
+
+---
+
+## Step 6.4 — Eliminate doc-count drift
+
+**Spec citations:** README.md:392, CHANGELOG.md:63, spec-v2.md:307,
+public-release-polish.md.
+
+**Prompt:**
+> Add a CI step that runs `cargo test --workspace 2>&1 | tee /tmp/tests.txt`
+> and extracts the totals into `docs/test-count.txt` (committed). Replace
+> hard-coded test-count literals in README.md, CHANGELOG.md, spec-v2.md, and
+> public-release-polish.md with a one-line "see `docs/test-count.txt`"
+> reference (or, for narrative prose, with the literal that matches reality at
+> commit time plus a `<!-- generated: do not edit -->` comment that points to a
+> regen script). Also normalize subcommand-count references and scenario-count
+> references using the same pattern.
+
+**Done when:**
+- `rg -n "[12][0-9]{3} tests" README.md docs/` returns only references that
+  match `docs/test-count.txt`.
+- CI publishes the file.
+
+---
+
+# 7. Operational Hardening for the 15M Campaign
+
+## Step 7.1 — Preempt-recovery + cost ceiling for RunPod fan-out
+
+**Spec citations:** `docs/spec-15m-campaign.md §7` step 5.
+**Code citations:** `scripts/run_15m_campaign.sh`, `scripts/runpod_setup.sh`,
+`scripts/upload_results.py`.
+
+**Prompt:**
+> Extend `scripts/run_15m_campaign.sh` (or add `scripts/runpod_fanout.sh` —
+> read the existing script first and choose). Required additions: SIGTERM trap
+> that flushes the in-progress shard summary to disk; a per-shard
+> `completed.marker` file used to skip on resume; a `MAX_USD` env var that
+> aborts the run cleanly when the running cost estimate exceeds the cap (cost
+> derived from elapsed wall time × per-GPU rate × GPU count, all configurable).
+> Add a dry-run mode (`--dry-run`) that prints the planned shard list and
+> exits. Add `scripts/tests/test_runpod_fanout.bats` (or a `pytest` if bats is
+> not in the repo) verifying SIGTERM behavior with a fake worker.
+
+**Done when:**
+- Sending SIGTERM mid-run leaves recoverable state.
+- `MAX_USD=0.01 ./scripts/run_15m_campaign.sh` aborts before significant work.
+
+---
+
+## Step 7.2 — Shadow deployment runbook
+
+**Spec citations:** `docs/spec-15m-campaign.md §7` step 7.
+
+**Prompt:**
+> Create `docs/shadow-deployment.md`: target ≥100 robot-hours on a UR10e CNC
+> cell; required metrics (commands/sec, p50/p99 latency, divergence rate
+> sim-vs-real, near-miss count); divergence-triage protocol (rules for
+> distinguishing physics-model error vs validator error vs sensor noise);
+> sign-off criteria (zero unexplained divergences in the last 24 hours; p99
+> latency under 1ms continuously). The doc must be operational, not
+> exploratory — it should read as a runbook, not a brainstorm. Reference
+> `docs/runpod-simulation-guide.md` for sim-side setup but make this doc
+> stand on its own for the hardware deployment phase.
+
+**Done when:**
+- `docs/shadow-deployment.md` exists and passes a markdownlint pass.
+
+---
+
+# 8. Polish and Release Hygiene (P3)
+
+## Step 8.1 — Lean formalization honesty
+
+**Spec citations:** `docs/spec.md:799-831` (master safety theorem).
+**Code citations:** `formal/Invariant.lean:54-63`, `formal/Invariant/Authority.lean`
+(`sorry` at ~L85), `formal/Invariant/Audit.lean:82` (axiom),
+`formal/Invariant/Physics.lean:132` (axiom).
+
+**Prompt:**
+> Create `formal/README.md` listing every theorem, its status
+> (`proved | sorry | axiom`), and a cross-reference to the corresponding
+> `docs/spec.md` line. Either close the `sorry` in `Authority.lean`
+> (`monotonicity_transitive`) or descope the claim with a comment citing the
+> reason. Add a non-blocking `lake build` job to `.github/workflows/ci.yml`
+> (allow-failure: true). Until the master safety and confused-deputy theorems
+> are closed, edit `docs/spec.md §8` to change "proves" wording to "specifies;
+> mechanized proofs in progress" — preserve the theorem statements.
+
+**Done when:**
+- `formal/README.md` exists and is accurate.
+- `lake build` runs in CI (failure does not block).
+- Spec wording reflects actual proof status.
+
+---
+
+## Step 8.2 — SBOM and reproducible build
+
+**Prompt:**
+> Add a `cargo cyclonedx` step to `.github/workflows/release.yml`. Sign the
+> generated SBOM with the existing release Ed25519 key, attach as a release
+> asset. Add `scripts/repro.sh` that builds inside the published `Dockerfile`
+> and asserts the resulting binary's SHA-256 matches a value committed to
+> `docs/repro-digest.txt`; provide a small make-equivalent target description
+> in `CONTRIBUTING.md`. The first commit lands the script and a placeholder
+> digest; the second commit (after one CI run) updates the digest.
+
+**Done when:**
+- Release workflow attaches `sbom.cdx.json` and `sbom.cdx.json.sig`.
+- `bash scripts/repro.sh` exits 0 in a clean Docker context.
+
+---
+
+## Step 8.3 — Decide ROS2 bindings status
+
+**Code citations:** `invariant-ros2/` exists at repo root but is not in
+`Cargo.toml`'s workspace.
+
+**Prompt:**
+> Read `invariant-ros2/`. Decide one of two paths and execute it:
+> (a) Add it to the workspace `Cargo.toml`; add a smoke test (publish/subscribe
+> a fake topic, validate one command, assert verdict signed); add a CI job
+> guarded by ROS2 availability.
+> (b) Move the directory to `examples/ros2-integration/` and update README.md's
+> integrations list to read "example integration, unmaintained until milestone
+> X" with a concrete milestone reference.
+> Document the decision and rationale in the commit body.
+
+**Done when:**
+- Either workspace builds with `invariant-ros2` as a member, or
+  `examples/ros2-integration/` exists and README is updated. Both states are
+  acceptable; ambiguity is not.
+
+---
+
+## Step 8.4 — Spec consolidation
+
+**Code citations:** `docs/spec.md` (864 L), `spec-v1.md` (1348), `spec-v2.md`
+(420), `spec-v3.md` (437), `spec-15m-campaign.md` (474), `spec-gaps.md` (561),
+`spec-v4.md` (this doc), `public-release-polish.md` (64).
+
+**Prompt:**
+> Move `docs/spec-v1.md`, `docs/spec-v2.md`, `docs/spec-v3.md` to
+> `docs/history/`. Replace each moved file at its old path with a stub
+> containing only `# Moved` and a one-line redirect to `docs/spec.md`. Resolve
+> the contradiction at `spec.md:1-5` and `spec-v2.md:1-9` (both claim to
+> supersede prior specs): `spec.md` becomes the single live spec. Once every
+> step in this document (`spec-v4.md`) is landed AND `spec-gaps.md`'s closure
+> criterion (§8) is met, delete both `spec-gaps.md` and `spec-v4.md` in a
+> separate commit titled `docs: retire gap-closure specs`. `spec-15m-campaign.md`
+> remains as the campaign addendum.
+
+**Done when:**
+- `ls docs/*.md` shows only: `spec.md`, `spec-15m-campaign.md`,
+  `public-release-polish.md`, `runpod-simulation-guide.md`,
+  `shadow-deployment.md`, `test-count.txt`, plus the v1/v2/v3 stubs.
+- `docs/history/` contains the originals.
+
+---
+
+# 9. Cross-Cutting Acceptance Tests (must all pass after Step 8.4)
+
+These tests exist as steps above; this section is the consolidated checklist a
+reviewer can run to verify closure:
+
+1. `cargo test -p invariant-core --test binding` (Step 1.2).
+2. `cargo test -p invariant-core authority::g09_cross_chain_splice_rejected`
+   (Step 1.1).
+3. `cargo test -p invariant-core --test proof_package` round-trip with Merkle
+   root and signature (Steps 2.1–2.2).
+4. `cargo test -p invariant-sim --test scenario_coverage` (no `--ignored`)
+   (Step 3.7).
+5. `cargo test -p invariant-coordinator --test fleet_10_robot` (Step 6.3).
+6. `cargo test -p invariant-cli --test cli_assemble` (Step 2.3).
+7. `python -m pytest isaac/tests/test_envs_smoke.py` (Step 4.3).
+8. `cargo test --workspace --all-features` clean.
+9. `cargo clippy --workspace --all-targets --all-features -- -D warnings` clean.
+10. `invariant validate-profiles --strict` exits 0 against every committed
+    profile (Step 4.2).
+
+---
+
+# 10. Closure
+
+This document may be deleted (alongside `spec-gaps.md`) when every step in
+sections 1–8 has either landed with its acceptance test passing in CI, or has
+an explicit decision logged in `docs/spec.md` to descope, with rationale.
+Partial completion is not closure.
