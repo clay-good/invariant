@@ -381,6 +381,8 @@ fn validate_config(config: &CampaignConfig) -> Result<(), CampaignError> {
 pub mod execution_target {
     /// Total episodes in the 15M campaign.
     pub const TOTAL_EPISODES: u64 = 15_000_000;
+    /// Target hardware: GPU model used for each shard.
+    pub const GPU_TYPE: &str = "NVIDIA A40";
     /// Number of GPU shards for parallel execution (8x NVIDIA A40).
     pub const SHARDS: u32 = 8;
     /// Episodes per shard (`TOTAL_EPISODES / SHARDS`).
@@ -1651,7 +1653,7 @@ pub mod normal_operation {
     use serde::{Deserialize, Serialize};
 
     /// Total episodes allocated to Category A.
-    pub const TOTAL_EPISODES: u64 = 3_000_000;
+    pub const TOTAL_EPISODES: u64 = 3_100_000;
 
     /// Number of distinct scenarios in Category A (A-01 through A-08).
     pub const SCENARIO_COUNT: u32 = 8;
@@ -3254,6 +3256,12 @@ scenarios:
     }
 
     #[test]
+    fn execution_target_gpu_type() {
+        use super::execution_target::*;
+        assert_eq!(GPU_TYPE, "NVIDIA A40");
+    }
+
+    #[test]
     fn execution_target_step_range() {
         use super::execution_target::*;
         assert_eq!(MIN_EPISODE_STEPS, 200);
@@ -3328,6 +3336,18 @@ scenarios:
         // A-07: Dexterous manipulation (300 steps)
         assert_eq!(super::scenario_step_count("dexterous_manipulation"), 300);
         // A-08: Multi-robot coordinated task (500 steps)
+        assert_eq!(super::scenario_step_count("multi_robot_coordinated"), 500);
+    }
+
+    #[test]
+    fn scenario_step_count_category_a_scenarios() {
+        assert_eq!(super::scenario_step_count("baseline"), 200);
+        assert_eq!(super::scenario_step_count("aggressive"), 500);
+        assert_eq!(super::scenario_step_count("pick_and_place"), 300);
+        assert_eq!(super::scenario_step_count("walking_gait"), 1000);
+        assert_eq!(super::scenario_step_count("collaborative_work"), 500);
+        assert_eq!(super::scenario_step_count("cnc_tending_full_cycle"), 400);
+        assert_eq!(super::scenario_step_count("dexterous_manipulation"), 300);
         assert_eq!(super::scenario_step_count("multi_robot_coordinated"), 500);
     }
 
@@ -5055,5 +5075,105 @@ scenarios:
         const _: () = assert!(audit_trail::HASH_CHAINED);
         const _: () = assert!(audit_trail::TAMPER_PROOF);
         assert_eq!(audit_trail::SIGNATURE_ALGORITHM, "Ed25519");
+    }
+
+    // ── Category A: Normal Operation ──────────────────────────────────
+
+    #[test]
+    fn normal_operation_scenario_count() {
+        use super::normal_operation::*;
+        assert_eq!(SCENARIO_COUNT, 8);
+        assert_eq!(NormalScenario::all().len(), SCENARIO_COUNT as usize);
+    }
+
+    #[test]
+    fn normal_operation_total_episodes() {
+        use super::normal_operation::*;
+        assert_eq!(TOTAL_EPISODES, 3_100_000);
+        let sum: u64 = NormalScenario::all().iter().map(|s| s.episodes()).sum();
+        assert_eq!(sum, TOTAL_EPISODES);
+    }
+
+    #[test]
+    fn normal_operation_scenario_count_consistent_with_category() {
+        use super::normal_operation;
+        use super::scenario_categories::ScenarioCategory;
+        assert_eq!(
+            normal_operation::SCENARIO_COUNT,
+            ScenarioCategory::NormalOperation.scenarios(),
+        );
+    }
+
+    #[test]
+    fn normal_operation_ids_sequential() {
+        use super::normal_operation::NormalScenario;
+        let ids: Vec<&str> = NormalScenario::all().iter().map(|s| s.id()).collect();
+        assert_eq!(
+            ids,
+            vec!["A-01", "A-02", "A-03", "A-04", "A-05", "A-06", "A-07", "A-08"]
+        );
+    }
+
+    #[test]
+    fn normal_operation_steps_within_spec_range() {
+        use super::normal_operation::NormalScenario;
+        for s in NormalScenario::all() {
+            assert!(
+                s.steps() >= 200 && s.steps() <= 1000,
+                "{} has {} steps, must be in [200, 1000]",
+                s.id(),
+                s.steps()
+            );
+        }
+    }
+
+    #[test]
+    fn normal_operation_baseline_has_most_episodes() {
+        use super::normal_operation::NormalScenario;
+        let baseline = NormalScenario::BaselineSafeOperation;
+        for s in NormalScenario::all() {
+            assert!(
+                baseline.episodes() >= s.episodes(),
+                "A-01 should have the most episodes, but {} has more",
+                s.id()
+            );
+        }
+    }
+
+    #[test]
+    fn normal_operation_all_scenarios_have_names() {
+        use super::normal_operation::NormalScenario;
+        for s in NormalScenario::all() {
+            assert!(!s.name().is_empty(), "{} must have a name", s.id());
+        }
+    }
+
+    #[test]
+    fn normal_operation_display_format() {
+        use super::normal_operation::NormalScenario;
+        let display = format!("{}", NormalScenario::BaselineSafeOperation);
+        assert_eq!(display, "A-01: Baseline safe operation");
+    }
+
+    #[test]
+    fn normal_operation_serialization_round_trip() {
+        use super::normal_operation::NormalScenario;
+        let s = NormalScenario::WalkingGaitCycle;
+        let json = serde_json::to_string(&s).expect("must serialize");
+        let back: NormalScenario = serde_json::from_str(&json).expect("must deserialize");
+        assert_eq!(back, s);
+    }
+
+    #[test]
+    fn normal_operation_all_scenarios_unique() {
+        use super::normal_operation::NormalScenario;
+        let scenarios: Vec<_> = NormalScenario::all().to_vec();
+        for (i, a) in scenarios.iter().enumerate() {
+            for (j, b) in scenarios.iter().enumerate() {
+                if i != j {
+                    assert_ne!(a, b, "scenarios must be unique");
+                }
+            }
+        }
     }
 }
