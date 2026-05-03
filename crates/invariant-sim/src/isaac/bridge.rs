@@ -207,9 +207,8 @@ pub async fn run_bridge(config: BridgeConfig) -> Result<BridgeStats, BridgeError
             Err(_) => {
                 // At capacity — reject with an error and close immediately.
                 let (_, mut writer) = stream.into_split();
-                let resp = BridgeResponse::error(
-                    "connection limit reached, try again later".into(),
-                );
+                let resp =
+                    BridgeResponse::error("connection limit reached, try again later".into());
                 let _ = write_response_with_timeout(&mut writer, &resp, write_timeout).await;
                 continue;
             }
@@ -249,10 +248,8 @@ pub async fn run_bridge(config: BridgeConfig) -> Result<BridgeStats, BridgeError
                         Err(_) => {
                             eprintln!("bridge: read timeout, disconnecting client");
                             let resp = BridgeResponse::error("read timeout".into());
-                            let _ = write_response_with_timeout(
-                                &mut writer, &resp, write_timeout,
-                            )
-                            .await;
+                            let _ = write_response_with_timeout(&mut writer, &resp, write_timeout)
+                                .await;
                             stats.lock().unwrap_or_else(|p| p.into_inner()).errors += 1;
                             break;
                         }
@@ -1128,8 +1125,7 @@ mod tests {
         match result {
             Ok(Ok(n)) => {
                 if n > 0 {
-                    let resp: BridgeResponse =
-                        serde_json::from_str(response_line.trim()).unwrap();
+                    let resp: BridgeResponse = serde_json::from_str(response_line.trim()).unwrap();
                     assert_eq!(resp.response_type, "error");
                     assert!(
                         resp.error.as_ref().unwrap().contains("timeout"),
@@ -1184,8 +1180,7 @@ mod tests {
         match result {
             Ok(Ok(n)) => {
                 assert!(n > 0, "expected an error response, got EOF");
-                let resp: BridgeResponse =
-                    serde_json::from_str(response_line.trim()).unwrap();
+                let resp: BridgeResponse = serde_json::from_str(response_line.trim()).unwrap();
                 assert_eq!(resp.response_type, "error");
                 assert!(
                     resp.error.as_ref().unwrap().contains("connection limit"),

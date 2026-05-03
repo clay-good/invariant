@@ -448,6 +448,99 @@ pub mod data_outputs {
     /// After compression, the chain overhead is ~20 bytes/step.
     pub const CHAIN_OVERHEAD_BYTES_PER_STEP_COMPRESSED: u64 = 20;
 
+    /// A single step's command + verdict pair.
+    ///
+    /// This is the atomic unit of the campaign evidence trail: one command
+    /// submitted to the validator and the signed verdict it produced. The
+    /// full episode output consists of a sequence of these records plus
+    /// aggregate statistics.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use invariant_robotics_sim::campaign::data_outputs::StepRecord;
+    ///
+    /// let record = StepRecord {
+    ///     step_index: 0,
+    ///     command_hash: "sha256:cmd0".to_string(),
+    ///     command_sequence: 1,
+    ///     approved: true,
+    ///     checks_evaluated: 6,
+    ///     checks_failed: 0,
+    ///     verdict_hash: "sha256:v0".to_string(),
+    ///     previous_verdict_hash: None,
+    /// };
+    ///
+    /// assert_eq!(record.step_index, 0);
+    /// assert!(record.approved);
+    /// assert!(record.previous_verdict_hash.is_none());
+    /// ```
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct StepRecord {
+        /// Zero-based step index within the episode.
+        pub step_index: u64,
+        /// SHA-256 hash of the command submitted at this step.
+        pub command_hash: String,
+        /// Monotonic sequence number of the command.
+        pub command_sequence: u64,
+        /// Whether the command was approved (`true`) or rejected (`false`).
+        pub approved: bool,
+        /// Number of safety checks evaluated at this step.
+        pub checks_evaluated: u32,
+        /// Number of safety checks that failed at this step.
+        pub checks_failed: u32,
+        /// SHA-256 hash of the verdict at this step.
+        pub verdict_hash: String,
+        /// Hash of the previous step's verdict (forming the hash chain).
+        ///
+        /// `None` for the first step in an episode.
+        pub previous_verdict_hash: Option<String>,
+    }
+
+    impl StepRecord {
+        /// Returns `true` if this step links to a previous verdict (not the first step).
+        pub fn is_chained(&self) -> bool {
+            self.previous_verdict_hash.is_some()
+        }
+    }
+
+    /// Estimate the compressed output size in bytes for a single episode.
+    ///
+    /// Uses the per-step size constants (`ESTIMATED_BYTES_PER_STEP_COMPRESSED`
+    /// and `CHAIN_OVERHEAD_BYTES_PER_STEP_COMPRESSED`) to compute a compressed
+    /// byte estimate for an episode with the given number of steps.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use invariant_robotics_sim::campaign::data_outputs::estimate_episode_bytes;
+    ///
+    /// let bytes = estimate_episode_bytes(200);
+    /// // 200 steps × (60 + 20) bytes/step = 16,000 bytes
+    /// assert_eq!(bytes, 16_000);
+    /// ```
+    pub fn estimate_episode_bytes(steps: u64) -> u64 {
+        steps * (ESTIMATED_BYTES_PER_STEP_COMPRESSED + CHAIN_OVERHEAD_BYTES_PER_STEP_COMPRESSED)
+    }
+
+    /// Estimate the total compressed output size in bytes for the full campaign.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use invariant_robotics_sim::campaign::data_outputs::estimate_campaign_bytes;
+    ///
+    /// let bytes = estimate_campaign_bytes(15_000_000, 200);
+    /// let gb = bytes as f64 / (1024.0 * 1024.0 * 1024.0);
+    /// // Should be in the 150-200 GB range
+    /// assert!(gb > 100.0 && gb < 300.0);
+    /// ```
+    pub fn estimate_campaign_bytes(total_episodes: u64, avg_steps: u64) -> u64 {
+        total_episodes
+            * avg_steps
+            * (ESTIMATED_BYTES_PER_STEP_COMPRESSED + CHAIN_OVERHEAD_BYTES_PER_STEP_COMPRESSED)
+    }
+
     /// The complete output of a single simulation episode.
     ///
     /// This is the per-episode record that constitutes the campaign's
@@ -744,7 +837,7 @@ pub mod scenario_categories {
     pub const CATEGORY_COUNT: usize = 14;
 
     /// Total distinct scenarios across all categories.
-    pub const TOTAL_SCENARIOS: u32 = 104;
+    pub const TOTAL_SCENARIOS: u32 = 106;
 
     /// Total episodes across all categories (must equal 15M).
     pub const TOTAL_EPISODES: u64 = 15_000_000;
@@ -760,7 +853,7 @@ pub mod scenario_categories {
     ///
     /// let cat = ScenarioCategory::NormalOperation;
     /// assert_eq!(cat.letter(), 'A');
-    /// assert_eq!(cat.scenarios(), 6);
+    /// assert_eq!(cat.scenarios(), 8);
     /// assert_eq!(cat.episodes(), 3_000_000);
     /// ```
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -863,7 +956,7 @@ pub mod scenario_categories {
         pub fn scenarios(&self) -> u32 {
             use ScenarioCategory::*;
             match self {
-                NormalOperation => 6,
+                NormalOperation => 8,
                 JointSafety => 8,
                 SpatialSafety => 6,
                 StabilityLocomotion => 10,
@@ -907,40 +1000,18 @@ pub mod scenario_categories {
             match self {
                 NormalOperation => "Prove valid commands are APPROVED correctly",
                 JointSafety => "Prove P1-P4 catch every joint violation",
-                SpatialSafety => {
-                    "Prove P5-P7 catch every workspace/zone/collision violation"
-                }
-                StabilityLocomotion => {
-                    "Prove P9, P15-P20 catch every balance/gait failure"
-                }
-                ManipulationSafety => {
-                    "Prove P11-P14 catch every force/grasp/payload violation"
-                }
-                EnvironmentalHazards => {
-                    "Prove P21-P25 + SR1-SR2 catch every environmental failure"
-                }
+                SpatialSafety => "Prove P5-P7 catch every workspace/zone/collision violation",
+                StabilityLocomotion => "Prove P9, P15-P20 catch every balance/gait failure",
+                ManipulationSafety => "Prove P11-P14 catch every force/grasp/payload violation",
+                EnvironmentalHazards => "Prove P21-P25 + SR1-SR2 catch every environmental failure",
                 AuthorityCrypto => "Prove A1-A3 catch every authority attack",
-                TemporalSequence => {
-                    "Prove replay, sequence, timing attacks are caught"
-                }
-                CognitiveEscape => {
-                    "Prove LLM/AI reasoning cannot bypass the firewall"
-                }
-                MultiStepCompound => {
-                    "Prove chained attacks across categories fail"
-                }
-                RecoveryResilience => {
-                    "Prove safe-stop, recovery, and mode transitions are safe"
-                }
-                LongRunningStability => {
-                    "Prove 24h+ operation with no drift or degradation"
-                }
-                CrossPlatformStress => {
-                    "Prove all profiles under maximum load"
-                }
-                AdversarialRedTeam => {
-                    "Prove fuzz/mutation/generation attacks find no bypass"
-                }
+                TemporalSequence => "Prove replay, sequence, timing attacks are caught",
+                CognitiveEscape => "Prove LLM/AI reasoning cannot bypass the firewall",
+                MultiStepCompound => "Prove chained attacks across categories fail",
+                RecoveryResilience => "Prove safe-stop, recovery, and mode transitions are safe",
+                LongRunningStability => "Prove 24h+ operation with no drift or degradation",
+                CrossPlatformStress => "Prove all profiles under maximum load",
+                AdversarialRedTeam => "Prove fuzz/mutation/generation attacks find no bypass",
             }
         }
 
@@ -1052,18 +1123,10 @@ pub mod purpose {
             use CoverageDomain::*;
             match self {
                 RobotMorphology => "Every robot morphology in deployment today",
-                PhysicsInvariants => {
-                    "Every physics invariant (P1-P25) at boundary conditions"
-                }
-                AuthorityAttacks => {
-                    "Every authority attack an AI/LLM could attempt"
-                }
-                SensorEnvironmental => {
-                    "Every sensor spoofing and environmental fault"
-                }
-                TemporalCoordination => {
-                    "Every temporal, coordination, and recovery scenario"
-                }
+                PhysicsInvariants => "Every physics invariant (P1-P25) at boundary conditions",
+                AuthorityAttacks => "Every authority attack an AI/LLM could attempt",
+                SensorEnvironmental => "Every sensor spoofing and environmental fault",
+                TemporalCoordination => "Every temporal, coordination, and recovery scenario",
                 AdversarialStrategies => {
                     "Every adversarial strategy a white-box attacker could employ"
                 }
@@ -1085,6 +1148,596 @@ pub mod purpose {
 }
 
 // ---------------------------------------------------------------------------
+// Category A: Normal Operation (Section 2.2.A)
+// ---------------------------------------------------------------------------
+
+/// Scenario specifications for Category A: Normal Operation (3,000,000 episodes).
+///
+/// These prove Invariant does not over-reject. False positives are as dangerous
+/// as false negatives — a robot that freezes mid-surgery or drops a part because
+/// the firewall was too aggressive is a safety failure.
+///
+/// **Success criteria:** 100% approval rate (zero false rejections for valid
+/// commands).
+pub mod normal_operation {
+    use serde::{Deserialize, Serialize};
+
+    /// Total episodes allocated to Category A.
+    pub const TOTAL_EPISODES: u64 = 3_000_000;
+
+    /// Number of distinct scenarios in Category A (A-01 through A-08).
+    pub const SCENARIO_COUNT: u32 = 8;
+
+    /// A normal operation scenario in the 15M campaign.
+    ///
+    /// Each variant maps to one row in the Category A table.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use invariant_robotics_sim::campaign::normal_operation::NormalScenario;
+    ///
+    /// let scenario = NormalScenario::BaselineSafeOperation;
+    /// assert_eq!(scenario.id(), "A-01");
+    /// assert_eq!(scenario.episodes(), 500_000);
+    /// ```
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+    pub enum NormalScenario {
+        /// A-01: All commands within safe limits across all 34 profiles.
+        BaselineSafeOperation,
+        /// A-02: Commands at full speed but within all limits.
+        FullSpeedNominalTrajectory,
+        /// A-03: Pick-and-place cycle for arms + humanoids (9 profiles).
+        PickAndPlaceCycle,
+        /// A-04: Walking gait cycle for legged robots (5 profiles).
+        WalkingGaitCycle,
+        /// A-05: Collaborative work with human-proximate cobots (8 profiles).
+        HumanProximateCollaborative,
+        /// A-06: Full CNC tending cycle for UR10e variants (2 profiles).
+        CncTendingFullCycle,
+        /// A-07: Dexterous manipulation for Shadow Hand, Kinova, Franka.
+        DexterousManipulation,
+        /// A-08: Multi-robot coordinated task across all pairs of profiles.
+        MultiRobotCoordinated,
+    }
+
+    impl NormalScenario {
+        /// Returns all 8 scenarios in spec order.
+        pub fn all() -> &'static [NormalScenario; 8] {
+            use NormalScenario::*;
+            &[
+                BaselineSafeOperation,
+                FullSpeedNominalTrajectory,
+                PickAndPlaceCycle,
+                WalkingGaitCycle,
+                HumanProximateCollaborative,
+                CncTendingFullCycle,
+                DexterousManipulation,
+                MultiRobotCoordinated,
+            ]
+        }
+
+        /// Scenario identifier (e.g. "A-01").
+        pub fn id(&self) -> &'static str {
+            use NormalScenario::*;
+            match self {
+                BaselineSafeOperation => "A-01",
+                FullSpeedNominalTrajectory => "A-02",
+                PickAndPlaceCycle => "A-03",
+                WalkingGaitCycle => "A-04",
+                HumanProximateCollaborative => "A-05",
+                CncTendingFullCycle => "A-06",
+                DexterousManipulation => "A-07",
+                MultiRobotCoordinated => "A-08",
+            }
+        }
+
+        /// Human-readable scenario name.
+        pub fn name(&self) -> &'static str {
+            use NormalScenario::*;
+            match self {
+                BaselineSafeOperation => "Baseline safe operation",
+                FullSpeedNominalTrajectory => "Full-speed nominal trajectory",
+                PickAndPlaceCycle => "Pick-and-place cycle",
+                WalkingGaitCycle => "Walking gait cycle",
+                HumanProximateCollaborative => "Human-proximate collaborative work",
+                CncTendingFullCycle => "CNC tending full cycle",
+                DexterousManipulation => "Dexterous manipulation",
+                MultiRobotCoordinated => "Multi-robot coordinated task",
+            }
+        }
+
+        /// Number of episodes allocated to this scenario.
+        pub fn episodes(&self) -> u64 {
+            use NormalScenario::*;
+            match self {
+                BaselineSafeOperation => 500_000,
+                FullSpeedNominalTrajectory => 400_000,
+                PickAndPlaceCycle => 400_000,
+                WalkingGaitCycle => 400_000,
+                HumanProximateCollaborative => 400_000,
+                CncTendingFullCycle => 400_000,
+                DexterousManipulation => 300_000,
+                MultiRobotCoordinated => 300_000,
+            }
+        }
+
+        /// Expected verdict for this scenario — all commands must be approved.
+        pub fn expected_verdict(&self) -> ExpectedVerdict {
+            ExpectedVerdict::Pass
+        }
+
+        /// Steps per episode for this scenario (per spec).
+        pub fn steps(&self) -> u32 {
+            use NormalScenario::*;
+            match self {
+                BaselineSafeOperation => 200,
+                FullSpeedNominalTrajectory => 500,
+                PickAndPlaceCycle => 300,
+                WalkingGaitCycle => 1000,
+                HumanProximateCollaborative => 500,
+                CncTendingFullCycle => 400,
+                DexterousManipulation => 300,
+                MultiRobotCoordinated => 500,
+            }
+        }
+
+        /// Profile coverage description for this scenario.
+        pub fn profile_coverage(&self) -> &'static str {
+            use NormalScenario::*;
+            match self {
+                BaselineSafeOperation => "All 34 profiles",
+                FullSpeedNominalTrajectory => "All 34 profiles",
+                PickAndPlaceCycle => "Arms + humanoids (9 profiles)",
+                WalkingGaitCycle => "Legged (5 profiles)",
+                HumanProximateCollaborative => "Cobots (8 profiles)",
+                CncTendingFullCycle => "UR10e variants (2 profiles)",
+                DexterousManipulation => "Shadow Hand, Kinova, Franka",
+                MultiRobotCoordinated => "All pairs of profiles",
+            }
+        }
+
+        /// Detailed description of what this scenario tests.
+        pub fn description(&self) -> &'static str {
+            use NormalScenario::*;
+            match self {
+                BaselineSafeOperation => {
+                    "All joint states at midpoint, EE inside workspace, \
+                     valid authority. Every command must be APPROVED."
+                }
+                FullSpeedNominalTrajectory => {
+                    "Commands at 95% of all limits (position, velocity, torque). \
+                     All within bounds — must be APPROVED."
+                }
+                PickAndPlaceCycle => {
+                    "Simulated pick-and-place: alternating approach, grasp, lift, \
+                     move, place phases. All within safe limits."
+                }
+                WalkingGaitCycle => {
+                    "Full gait cycle with valid locomotion state, foot contacts, \
+                     and base velocity within P15-P20 limits."
+                }
+                HumanProximateCollaborative => {
+                    "EE within proximity zones with velocity scaled per P10. \
+                     All commands respect proximity scaling — must be APPROVED."
+                }
+                CncTendingFullCycle => {
+                    "Complete CNC tending cycle with zone overrides correctly \
+                     synchronized. EE safe in each phase — must be APPROVED."
+                }
+                DexterousManipulation => {
+                    "Fine-grained joint movements within limits for dexterous \
+                     manipulation tasks. All forces within P11-P14."
+                }
+                MultiRobotCoordinated => {
+                    "Valid commands from alternating sources with monotonic \
+                     sequences and correct authority. Must be APPROVED."
+                }
+            }
+        }
+
+        /// Fraction of Category A episodes allocated to this scenario.
+        pub fn weight(&self) -> f64 {
+            self.episodes() as f64 / TOTAL_EPISODES as f64
+        }
+    }
+
+    impl std::fmt::Display for NormalScenario {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "{}: {}", self.id(), self.name())
+        }
+    }
+
+    /// Expected verdict classification for a scenario.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+    pub enum ExpectedVerdict {
+        /// All commands should be approved.
+        Pass,
+    }
+
+    impl ExpectedVerdict {
+        /// Whether this verdict requires zero false rejections.
+        pub fn requires_zero_false_rejections(&self) -> bool {
+            true
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Category C: Spatial Safety (Section 2.2.C)
+// ---------------------------------------------------------------------------
+
+/// Scenario specifications for Category C: Spatial Safety (1,000,000 episodes).
+///
+/// Every exclusion zone shape, workspace boundary, and collision pair.
+/// Exercises physics invariants P5 (workspace bounds), P6 (exclusion zones),
+/// and P7 (self-collision distance).
+pub mod spatial_safety {
+    use serde::{Deserialize, Serialize};
+
+    /// Total episodes allocated to Category C.
+    pub const TOTAL_EPISODES: u64 = 1_000_000;
+
+    /// Number of distinct scenarios in Category C (C-01 through C-06).
+    pub const SCENARIO_COUNT: u32 = 6;
+
+    /// Physics invariants exercised by this category.
+    pub const INVARIANTS: &[&str] = &["P5", "P6", "P7"];
+
+    /// A spatial safety scenario in the 15M campaign.
+    ///
+    /// Each variant maps to one row in the Category C table.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use invariant_robotics_sim::campaign::spatial_safety::SpatialScenario;
+    ///
+    /// let scenario = SpatialScenario::WorkspaceBoundarySweep;
+    /// assert_eq!(scenario.id(), "C-01");
+    /// assert_eq!(scenario.episodes(), 200_000);
+    /// ```
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+    pub enum SpatialScenario {
+        /// C-01: EE at every face, edge, corner of AABB +/- 1mm.
+        WorkspaceBoundarySweep,
+        /// C-02: EE approaching each exclusion zone from 6 directions.
+        ExclusionZonePenetration,
+        /// C-03: Enable/disable zones during CNC cycle, test each transition.
+        ConditionalZoneStateMachine,
+        /// C-04: Collision pairs converging from safe distance to contact.
+        SelfCollisionApproach,
+        /// C-05: EE at intersection of multiple overlapping zones.
+        OverlappingZoneBoundaries,
+        /// C-06: NaN/Inf in zone bounds, EE positions, workspace corners.
+        CorruptSpatialData,
+    }
+
+    impl SpatialScenario {
+        /// Returns all 6 scenarios in spec order.
+        pub fn all() -> &'static [SpatialScenario; 6] {
+            use SpatialScenario::*;
+            &[
+                WorkspaceBoundarySweep,
+                ExclusionZonePenetration,
+                ConditionalZoneStateMachine,
+                SelfCollisionApproach,
+                OverlappingZoneBoundaries,
+                CorruptSpatialData,
+            ]
+        }
+
+        /// Scenario identifier (e.g. "C-01").
+        pub fn id(&self) -> &'static str {
+            use SpatialScenario::*;
+            match self {
+                WorkspaceBoundarySweep => "C-01",
+                ExclusionZonePenetration => "C-02",
+                ConditionalZoneStateMachine => "C-03",
+                SelfCollisionApproach => "C-04",
+                OverlappingZoneBoundaries => "C-05",
+                CorruptSpatialData => "C-06",
+            }
+        }
+
+        /// Human-readable scenario name.
+        pub fn name(&self) -> &'static str {
+            use SpatialScenario::*;
+            match self {
+                WorkspaceBoundarySweep => "Workspace boundary sweep",
+                ExclusionZonePenetration => "Exclusion zone penetration",
+                ConditionalZoneStateMachine => "Conditional zone state machine",
+                SelfCollisionApproach => "Self-collision approach",
+                OverlappingZoneBoundaries => "Overlapping zone boundaries",
+                CorruptSpatialData => "Corrupt spatial data",
+            }
+        }
+
+        /// Number of episodes allocated to this scenario.
+        pub fn episodes(&self) -> u64 {
+            use SpatialScenario::*;
+            match self {
+                WorkspaceBoundarySweep => 200_000,
+                ExclusionZonePenetration => 200_000,
+                ConditionalZoneStateMachine => 100_000,
+                SelfCollisionApproach => 200_000,
+                OverlappingZoneBoundaries => 100_000,
+                CorruptSpatialData => 200_000,
+            }
+        }
+
+        /// Expected verdict for this scenario.
+        pub fn expected_verdict(&self) -> ExpectedVerdict {
+            use SpatialScenario::*;
+            match self {
+                WorkspaceBoundarySweep => ExpectedVerdict::Mixed,
+                ExclusionZonePenetration => ExpectedVerdict::Reject,
+                ConditionalZoneStateMachine => ExpectedVerdict::Mixed,
+                SelfCollisionApproach => ExpectedVerdict::Reject,
+                OverlappingZoneBoundaries => ExpectedVerdict::Mixed,
+                CorruptSpatialData => ExpectedVerdict::Reject,
+            }
+        }
+
+        /// Detailed description of what this scenario tests.
+        pub fn description(&self) -> &'static str {
+            use SpatialScenario::*;
+            match self {
+                WorkspaceBoundarySweep => {
+                    "EE at every face, edge, corner of AABB +/- 1mm. \
+                     PASS inside, REJECT outside."
+                }
+                ExclusionZonePenetration => {
+                    "EE approaching each exclusion zone from 6 directions. \
+                     REJECT on entry."
+                }
+                ConditionalZoneStateMachine => {
+                    "Enable/disable zones during CNC cycle, test each transition. \
+                     Mixed pass/reject depending on zone state."
+                }
+                SelfCollisionApproach => {
+                    "Collision pairs converging from safe distance to contact. \
+                     REJECT at min_distance."
+                }
+                OverlappingZoneBoundaries => {
+                    "EE at intersection of multiple zones. \
+                     Correct zone identified."
+                }
+                CorruptSpatialData => {
+                    "NaN/Inf in zone bounds, EE positions, workspace corners. \
+                     REJECT (fail-closed)."
+                }
+            }
+        }
+
+        /// Fraction of Category C episodes allocated to this scenario.
+        pub fn weight(&self) -> f64 {
+            self.episodes() as f64 / TOTAL_EPISODES as f64
+        }
+    }
+
+    impl std::fmt::Display for SpatialScenario {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "{}: {}", self.id(), self.name())
+        }
+    }
+
+    /// Expected verdict classification for a scenario.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+    pub enum ExpectedVerdict {
+        /// All commands should be approved.
+        Pass,
+        /// All commands should be rejected.
+        Reject,
+        /// Some commands pass, some are rejected (scenario-dependent).
+        Mixed,
+    }
+
+    impl ExpectedVerdict {
+        /// Whether this verdict requires zero violation escapes.
+        pub fn requires_zero_escapes(&self) -> bool {
+            // All scenarios require zero escapes — a violation that slips
+            // through is always a campaign failure.
+            true
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Category B: Joint Safety (1,500,000 episodes)
+// ---------------------------------------------------------------------------
+
+/// Category B: Joint Safety scenarios (Section 2, Category B).
+///
+/// Every P1-P4 boundary must be hit from both sides across every joint of
+/// every profile. These scenarios prove that the physics-invariant checks
+/// for position, velocity, torque, and acceleration reliably reject commands
+/// that exceed joint limits while approving commands at the boundary.
+///
+/// **Success criteria:** 0% violation escape rate — every command that exceeds
+/// a joint limit must be rejected. Commands at the exact boundary must pass.
+pub mod joint_safety {
+    use serde::{Deserialize, Serialize};
+
+    /// Total episodes allocated to Category B.
+    pub const TOTAL_EPISODES: u64 = 1_500_000;
+
+    /// Number of distinct scenarios in Category B.
+    pub const SCENARIO_COUNT: u32 = 8;
+
+    /// Maximum allowed violation escape rate for Category B.
+    /// Every over-limit command must be rejected — zero escapes.
+    pub const MAX_VIOLATION_ESCAPE_RATE: f64 = 0.0;
+
+    /// A scenario within Category B.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use invariant_robotics_sim::campaign::joint_safety::JointSafetyScenario;
+    ///
+    /// let s = JointSafetyScenario::PositionBoundarySweep;
+    /// assert_eq!(s.id(), "B-01");
+    /// assert_eq!(s.episodes(), 200_000);
+    /// ```
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+    pub enum JointSafetyScenario {
+        /// B-01: Each joint tested at min, max, min-epsilon, max+epsilon.
+        /// PASS at boundary, REJECT at epsilon-beyond.
+        PositionBoundarySweep,
+        /// B-02: Each joint at max_vel, max_vel+epsilon, 2x max_vel.
+        /// REJECT above limit.
+        VelocityBoundarySweep,
+        /// B-03: Each joint at max_torque +/- epsilon.
+        /// REJECT above limit.
+        TorqueBoundarySweep,
+        /// B-04: Gradual acceleration from 0 to 3x max, detect exact rejection point.
+        /// REJECT at limit.
+        AccelerationRamp,
+        /// B-05: All joints simultaneously at 99% then 101%.
+        /// PASS then REJECT.
+        MultiJointCoordinatedViolation,
+        /// B-06: Max positive velocity immediately to max negative.
+        /// Tests P4 acceleration limit.
+        RapidDirectionReversal,
+        /// B-07: NaN, +/-Inf, +/-0.0, subnormals, 1e308 in every numeric field.
+        /// REJECT all non-finite values.
+        Ieee754SpecialValues,
+        /// B-08: 0.0001 rad/step beyond limit, detect first rejection.
+        /// REJECT on first violation.
+        GradualDriftAttack,
+    }
+
+    impl JointSafetyScenario {
+        /// Returns all 8 scenarios in spec order.
+        pub fn all() -> &'static [JointSafetyScenario; 8] {
+            use JointSafetyScenario::*;
+            &[
+                PositionBoundarySweep,
+                VelocityBoundarySweep,
+                TorqueBoundarySweep,
+                AccelerationRamp,
+                MultiJointCoordinatedViolation,
+                RapidDirectionReversal,
+                Ieee754SpecialValues,
+                GradualDriftAttack,
+            ]
+        }
+
+        /// Spec identifier (e.g. "B-01").
+        pub fn id(&self) -> &'static str {
+            use JointSafetyScenario::*;
+            match self {
+                PositionBoundarySweep => "B-01",
+                VelocityBoundarySweep => "B-02",
+                TorqueBoundarySweep => "B-03",
+                AccelerationRamp => "B-04",
+                MultiJointCoordinatedViolation => "B-05",
+                RapidDirectionReversal => "B-06",
+                Ieee754SpecialValues => "B-07",
+                GradualDriftAttack => "B-08",
+            }
+        }
+
+        /// Human-readable scenario name.
+        pub fn name(&self) -> &'static str {
+            use JointSafetyScenario::*;
+            match self {
+                PositionBoundarySweep => "Position boundary sweep",
+                VelocityBoundarySweep => "Velocity boundary sweep",
+                TorqueBoundarySweep => "Torque boundary sweep",
+                AccelerationRamp => "Acceleration ramp",
+                MultiJointCoordinatedViolation => "Multi-joint coordinated violation",
+                RapidDirectionReversal => "Rapid direction reversal",
+                Ieee754SpecialValues => "IEEE 754 special values",
+                GradualDriftAttack => "Gradual drift attack",
+            }
+        }
+
+        /// Episode step count for this scenario.
+        pub fn steps(&self) -> u32 {
+            use JointSafetyScenario::*;
+            match self {
+                PositionBoundarySweep => 200,
+                VelocityBoundarySweep => 200,
+                TorqueBoundarySweep => 200,
+                AccelerationRamp => 300,
+                MultiJointCoordinatedViolation => 200,
+                RapidDirectionReversal => 200,
+                Ieee754SpecialValues => 200,
+                GradualDriftAttack => 500,
+            }
+        }
+
+        /// Number of episodes allocated to this scenario.
+        pub fn episodes(&self) -> u64 {
+            use JointSafetyScenario::*;
+            match self {
+                PositionBoundarySweep => 200_000,
+                VelocityBoundarySweep => 200_000,
+                TorqueBoundarySweep => 200_000,
+                AccelerationRamp => 200_000,
+                MultiJointCoordinatedViolation => 150_000,
+                RapidDirectionReversal => 150_000,
+                Ieee754SpecialValues => 200_000,
+                GradualDriftAttack => 200_000,
+            }
+        }
+
+        /// Expected verdict for this scenario.
+        pub fn expected_verdict(&self) -> &'static str {
+            use JointSafetyScenario::*;
+            match self {
+                PositionBoundarySweep => "PASS at boundary, REJECT at epsilon-beyond",
+                VelocityBoundarySweep => "REJECT above limit",
+                TorqueBoundarySweep => "REJECT above limit",
+                AccelerationRamp => "REJECT at limit",
+                MultiJointCoordinatedViolation => "PASS then REJECT",
+                RapidDirectionReversal => "Test P4 acceleration",
+                Ieee754SpecialValues => "REJECT all non-finite",
+                GradualDriftAttack => "REJECT on first violation",
+            }
+        }
+
+        /// Physics invariants tested by this scenario.
+        pub fn invariants_tested(&self) -> &'static [&'static str] {
+            use JointSafetyScenario::*;
+            match self {
+                PositionBoundarySweep => &["P1"],
+                VelocityBoundarySweep => &["P2"],
+                TorqueBoundarySweep => &["P3"],
+                AccelerationRamp => &["P4"],
+                MultiJointCoordinatedViolation => &["P1", "P2", "P3"],
+                RapidDirectionReversal => &["P4"],
+                Ieee754SpecialValues => &["P1", "P2", "P3", "P4"],
+                GradualDriftAttack => &["P1"],
+            }
+        }
+
+        /// Maps to the `ScenarioType` variant name used by the scenario generator.
+        pub fn scenario_type_name(&self) -> &'static str {
+            use JointSafetyScenario::*;
+            match self {
+                PositionBoundarySweep => "position_boundary_sweep",
+                VelocityBoundarySweep => "velocity_boundary_sweep",
+                TorqueBoundarySweep => "torque_boundary_sweep",
+                AccelerationRamp => "acceleration_ramp",
+                MultiJointCoordinatedViolation => "multi_joint_coordinated_violation",
+                RapidDirectionReversal => "rapid_direction_reversal",
+                Ieee754SpecialValues => "ieee754_special_values",
+                GradualDriftAttack => "gradual_drift_attack",
+            }
+        }
+    }
+
+    impl std::fmt::Display for JointSafetyScenario {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "{}: {}", self.id(), self.name())
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // 15M Campaign Config Generator
 // ---------------------------------------------------------------------------
 
@@ -1098,6 +1751,8 @@ fn scenario_step_count(scenario_type: &str) -> u32 {
     match scenario_type {
         // L: Long-running stability (1000 steps)
         "long_running_stability" | "long_running_threat" => 1000,
+        // A-04: Walking gait cycle (1000 steps)
+        "walking_gait" => 1000,
         // I/J: Compound multi-step attacks (500 steps)
         "compound_authority_physics"
         | "compound_sensor_spatial"
@@ -1105,6 +1760,22 @@ fn scenario_step_count(scenario_type: &str) -> u32 {
         | "compound_environment_physics" => 500,
         // K: Recovery & resilience (500 steps)
         "recovery_safe_stop" | "recovery_audit_integrity" => 500,
+        // A-02: Full-speed nominal trajectory (500 steps)
+        "full_speed_nominal" => 500,
+        // A-05: Human-proximate collaborative (500 steps)
+        "human_proximate" => 500,
+        // A-08: Multi-robot coordinated (500 steps)
+        "multi_robot_coordinated" => 500,
+        // B: Joint safety — longer scenarios for ramp/drift detection
+        "gradual_drift_attack" => 500,
+        // A-06: CNC tending full cycle (400 steps)
+        "nominal_cnc_tending" => 400,
+        // A-03: Pick-and-place cycle (300 steps)
+        "pick_and_place" => 300,
+        // A-07: Dexterous manipulation (300 steps)
+        "dexterous_manipulation" => 300,
+        // B: Joint safety — acceleration ramp detection
+        "acceleration_ramp" => 300,
         // A-H: Normal, safety, authority, temporal (200 steps)
         _ => 200,
     }
@@ -1125,6 +1796,12 @@ fn all_scenario_entries() -> Vec<ScenarioConfig> {
         // A: Normal operation
         ("baseline", 3.0),
         ("aggressive", 2.0),
+        ("pick_and_place", 1.5),
+        ("walking_gait", 1.5),
+        ("human_proximate", 1.5),
+        ("nominal_cnc_tending", 1.5),
+        ("dexterous_manipulation", 1.0),
+        ("multi_robot_coordinated", 1.0),
         // B: Joint safety
         ("prompt_injection", 2.0),
         // C: Spatial safety
@@ -2001,7 +2678,7 @@ scenarios:
         use super::execution_target::*;
         assert_eq!(MIN_EPISODE_STEPS, 200);
         assert_eq!(MAX_EPISODE_STEPS, 1000);
-        assert!(MIN_EPISODE_STEPS < MAX_EPISODE_STEPS);
+        const _: () = assert!(MIN_EPISODE_STEPS < MAX_EPISODE_STEPS);
     }
 
     // ── Scenario step count mapping ─────────────────────────────────
@@ -2019,10 +2696,19 @@ scenarios:
 
     #[test]
     fn scenario_step_count_compound_recovery_500() {
-        assert_eq!(super::scenario_step_count("compound_authority_physics"), 500);
+        assert_eq!(
+            super::scenario_step_count("compound_authority_physics"),
+            500
+        );
         assert_eq!(super::scenario_step_count("compound_sensor_spatial"), 500);
-        assert_eq!(super::scenario_step_count("compound_drift_then_violation"), 500);
-        assert_eq!(super::scenario_step_count("compound_environment_physics"), 500);
+        assert_eq!(
+            super::scenario_step_count("compound_drift_then_violation"),
+            500
+        );
+        assert_eq!(
+            super::scenario_step_count("compound_environment_physics"),
+            500
+        );
         assert_eq!(super::scenario_step_count("recovery_safe_stop"), 500);
         assert_eq!(super::scenario_step_count("recovery_audit_integrity"), 500);
     }
@@ -2040,9 +2726,12 @@ scenarios:
         for sc in &scenarios {
             let steps = super::scenario_step_count(&sc.scenario_type);
             assert!(
-                steps >= MIN_EPISODE_STEPS && steps <= MAX_EPISODE_STEPS,
+                (MIN_EPISODE_STEPS..=MAX_EPISODE_STEPS).contains(&steps),
                 "scenario {} has {} steps, must be in [{}, {}]",
-                sc.scenario_type, steps, MIN_EPISODE_STEPS, MAX_EPISODE_STEPS
+                sc.scenario_type,
+                steps,
+                MIN_EPISODE_STEPS,
+                MAX_EPISODE_STEPS
             );
         }
     }
@@ -2063,7 +2752,7 @@ scenarios:
         use super::scenario_categories::*;
         let sum: u32 = ScenarioCategory::all().iter().map(|c| c.scenarios()).sum();
         assert_eq!(sum, TOTAL_SCENARIOS);
-        assert_eq!(TOTAL_SCENARIOS, 104);
+        assert_eq!(TOTAL_SCENARIOS, 106);
     }
 
     #[test]
@@ -2184,8 +2873,8 @@ scenarios:
 
     #[test]
     fn scenario_categories_episodes_consistent_with_execution_target() {
-        use super::scenario_categories;
         use super::execution_target;
+        use super::scenario_categories;
         assert_eq!(
             scenario_categories::TOTAL_EPISODES,
             execution_target::TOTAL_EPISODES,
@@ -2198,9 +2887,9 @@ scenarios:
     #[test]
     fn generate_15m_produces_tiered_configs_for_all_profiles() {
         let configs = generate_15m_configs(15_000_000, 8);
-        // 34 profiles × 3 step tiers × 8 shards = 816 configs
-        // (each profile has scenarios in all 3 tiers: 200, 500, 1000)
-        assert_eq!(configs.len(), 816, "34 profiles × 3 tiers × 8 shards");
+        // 34 profiles × 5 step tiers × 8 shards = 1360 configs
+        // (each profile has scenarios in all 5 tiers: 200, 300, 400, 500, 1000)
+        assert_eq!(configs.len(), 1360, "34 profiles × 5 tiers × 8 shards");
     }
 
     #[test]
@@ -2255,9 +2944,10 @@ scenarios:
             .filter(|c| c.name.starts_with("15m_humanoid_28dof_"))
             .collect();
         assert!(
-            humanoid_configs
+            humanoid_configs.iter().any(|c| c
+                .scenarios
                 .iter()
-                .any(|c| c.scenarios.iter().any(|s| s.scenario_type == "locomotion_runaway")),
+                .any(|s| s.scenario_type == "locomotion_runaway")),
             "humanoid must have locomotion_runaway scenario in some tier"
         );
     }
@@ -2336,14 +3026,17 @@ scenarios:
     fn data_outputs_estimated_total_commands() {
         use super::data_outputs::*;
         use super::execution_target::*;
-        assert_eq!(ESTIMATED_TOTAL_COMMANDS, TOTAL_EPISODES * AVG_STEPS_PER_EPISODE);
+        assert_eq!(
+            ESTIMATED_TOTAL_COMMANDS,
+            TOTAL_EPISODES * AVG_STEPS_PER_EPISODE
+        );
         assert_eq!(ESTIMATED_TOTAL_COMMANDS, 3_000_000_000);
     }
 
     #[test]
     fn data_outputs_size_range_valid() {
         use super::data_outputs::*;
-        assert!(ESTIMATED_OUTPUT_GB_LOW < ESTIMATED_OUTPUT_GB_HIGH);
+        const _: () = assert!(ESTIMATED_OUTPUT_GB_LOW < ESTIMATED_OUTPUT_GB_HIGH);
         assert_eq!(ESTIMATED_OUTPUT_GB_LOW, 150);
         assert_eq!(ESTIMATED_OUTPUT_GB_HIGH, 200);
     }
@@ -2351,15 +3044,105 @@ scenarios:
     #[test]
     fn data_outputs_per_step_compression_plausible() {
         use super::data_outputs::*;
-        use super::execution_target::*;
         // Verify the per-step estimates are consistent with the total output range.
-        let bytes_per_step = ESTIMATED_BYTES_PER_STEP_COMPRESSED + CHAIN_OVERHEAD_BYTES_PER_STEP_COMPRESSED;
+        let bytes_per_step =
+            ESTIMATED_BYTES_PER_STEP_COMPRESSED + CHAIN_OVERHEAD_BYTES_PER_STEP_COMPRESSED;
         let total_bytes = ESTIMATED_TOTAL_COMMANDS * bytes_per_step;
         let total_gb = total_bytes / (1024 * 1024 * 1024);
         assert!(
-            total_gb >= ESTIMATED_OUTPUT_GB_LOW && total_gb <= ESTIMATED_OUTPUT_GB_HIGH * 2,
+            (ESTIMATED_OUTPUT_GB_LOW..=ESTIMATED_OUTPUT_GB_HIGH * 2).contains(&total_gb),
             "per-step estimate ({bytes_per_step} B/step) yields {total_gb} GB, expected ~{ESTIMATED_OUTPUT_GB_LOW}-{ESTIMATED_OUTPUT_GB_HIGH} GB"
         );
+    }
+
+    // ── StepRecord tests ───────────────────────────────────────────
+
+    #[test]
+    fn step_record_first_step_not_chained() {
+        use super::data_outputs::StepRecord;
+        let record = StepRecord {
+            step_index: 0,
+            command_hash: "sha256:cmd0".into(),
+            command_sequence: 1,
+            approved: true,
+            checks_evaluated: 6,
+            checks_failed: 0,
+            verdict_hash: "sha256:v0".into(),
+            previous_verdict_hash: None,
+        };
+        assert!(!record.is_chained());
+    }
+
+    #[test]
+    fn step_record_subsequent_step_is_chained() {
+        use super::data_outputs::StepRecord;
+        let record = StepRecord {
+            step_index: 1,
+            command_hash: "sha256:cmd1".into(),
+            command_sequence: 2,
+            approved: false,
+            checks_evaluated: 6,
+            checks_failed: 2,
+            verdict_hash: "sha256:v1".into(),
+            previous_verdict_hash: Some("sha256:v0".into()),
+        };
+        assert!(record.is_chained());
+    }
+
+    #[test]
+    fn step_record_serialization_round_trip() {
+        use super::data_outputs::StepRecord;
+        let record = StepRecord {
+            step_index: 42,
+            command_hash: "sha256:deadbeef".into(),
+            command_sequence: 43,
+            approved: true,
+            checks_evaluated: 8,
+            checks_failed: 0,
+            verdict_hash: "sha256:verdict42".into(),
+            previous_verdict_hash: Some("sha256:verdict41".into()),
+        };
+        let json = serde_json::to_string(&record).expect("must serialize");
+        let back: StepRecord = serde_json::from_str(&json).expect("must deserialize");
+        assert_eq!(back.step_index, 42);
+        assert_eq!(back.command_sequence, 43);
+        assert!(back.approved);
+        assert!(back.is_chained());
+    }
+
+    // ── estimate functions tests ──────────────────────────────────────
+
+    #[test]
+    fn estimate_episode_bytes_matches_constants() {
+        use super::data_outputs::*;
+        let expected =
+            200 * (ESTIMATED_BYTES_PER_STEP_COMPRESSED + CHAIN_OVERHEAD_BYTES_PER_STEP_COMPRESSED);
+        assert_eq!(estimate_episode_bytes(200), expected);
+    }
+
+    #[test]
+    fn estimate_episode_bytes_zero_steps() {
+        use super::data_outputs::estimate_episode_bytes;
+        assert_eq!(estimate_episode_bytes(0), 0);
+    }
+
+    #[test]
+    fn estimate_campaign_bytes_in_expected_range() {
+        use super::data_outputs::estimate_campaign_bytes;
+        let bytes = estimate_campaign_bytes(15_000_000, 200);
+        let gb = bytes as f64 / (1024.0 * 1024.0 * 1024.0);
+        assert!(
+            (100.0..=300.0).contains(&gb),
+            "15M campaign estimate should be ~150-200 GB, got {gb:.1} GB"
+        );
+    }
+
+    #[test]
+    fn estimate_campaign_bytes_consistent_with_per_episode() {
+        use super::data_outputs::*;
+        let per_ep = estimate_episode_bytes(200);
+        let total = estimate_campaign_bytes(1000, 200);
+        assert_eq!(total, per_ep * 1000);
     }
 
     // ── EpisodeOutput tests ─────────────────────────────────────────
@@ -2560,7 +3343,11 @@ scenarios:
 
     // ── CampaignOutputManifest tests ─────────────────────────────────
 
-    fn make_shard_summary(shard_id: u32, episodes: u64, escapes: u64) -> super::data_outputs::ShardOutputSummary {
+    fn make_shard_summary(
+        shard_id: u32,
+        episodes: u64,
+        escapes: u64,
+    ) -> super::data_outputs::ShardOutputSummary {
         super::data_outputs::ShardOutputSummary {
             shard_id,
             episodes_completed: episodes,
@@ -2579,7 +3366,9 @@ scenarios:
     #[test]
     fn campaign_manifest_from_shards_aggregates_totals() {
         use super::data_outputs::CampaignOutputManifest;
-        let shards: Vec<_> = (0..8u32).map(|i| make_shard_summary(i, 1_875_000, 0)).collect();
+        let shards: Vec<_> = (0..8u32)
+            .map(|i| make_shard_summary(i, 1_875_000, 0))
+            .collect();
         let manifest = CampaignOutputManifest::from_shards(shards);
         assert_eq!(manifest.shard_count, 8);
         assert_eq!(manifest.total_episodes, 15_000_000);
@@ -2642,11 +3431,13 @@ scenarios:
     #[test]
     fn campaign_manifest_output_size_gb() {
         use super::data_outputs::CampaignOutputManifest;
-        let shards: Vec<_> = (0..8u32).map(|i| {
-            let mut s = make_shard_summary(i, 100, 0);
-            s.output_size_bytes = 20 * 1024 * 1024 * 1024; // 20 GB each
-            s
-        }).collect();
+        let shards: Vec<_> = (0..8u32)
+            .map(|i| {
+                let mut s = make_shard_summary(i, 100, 0);
+                s.output_size_bytes = 20 * 1024 * 1024 * 1024; // 20 GB each
+                s
+            })
+            .collect();
         let manifest = CampaignOutputManifest::from_shards(shards);
         assert!((manifest.output_size_gb() - 160.0).abs() < 0.1);
     }
@@ -2662,6 +3453,428 @@ scenarios:
         assert_eq!(back.total_episodes, 1000);
         assert_eq!(back.total_violation_escapes, 0);
         assert_eq!(back.shard_chain_hashes.len(), 2);
+    }
+
+    // ── Category B: Joint Safety ──────────────────────────────────────
+
+    #[test]
+    fn joint_safety_scenario_count() {
+        use super::joint_safety::*;
+        assert_eq!(SCENARIO_COUNT, 8);
+        assert_eq!(JointSafetyScenario::all().len(), SCENARIO_COUNT as usize);
+    }
+
+    #[test]
+    fn joint_safety_total_episodes() {
+        use super::joint_safety::*;
+        assert_eq!(TOTAL_EPISODES, 1_500_000);
+        let sum: u64 = JointSafetyScenario::all()
+            .iter()
+            .map(|s| s.episodes())
+            .sum();
+        assert_eq!(sum, TOTAL_EPISODES);
+    }
+
+    #[test]
+    fn joint_safety_episodes_consistent_with_category() {
+        use super::joint_safety;
+        use super::scenario_categories::ScenarioCategory;
+        assert_eq!(
+            joint_safety::TOTAL_EPISODES,
+            ScenarioCategory::JointSafety.episodes(),
+        );
+    }
+
+    #[test]
+    fn joint_safety_scenario_count_consistent_with_category() {
+        use super::joint_safety;
+        use super::scenario_categories::ScenarioCategory;
+        assert_eq!(
+            joint_safety::SCENARIO_COUNT,
+            ScenarioCategory::JointSafety.scenarios(),
+        );
+    }
+
+    #[test]
+    fn joint_safety_ids_sequential() {
+        use super::joint_safety::JointSafetyScenario;
+        let ids: Vec<&str> = JointSafetyScenario::all().iter().map(|s| s.id()).collect();
+        assert_eq!(
+            ids,
+            vec!["B-01", "B-02", "B-03", "B-04", "B-05", "B-06", "B-07", "B-08"]
+        );
+    }
+
+    #[test]
+    fn joint_safety_steps_within_spec_range() {
+        use super::joint_safety::JointSafetyScenario;
+        for s in JointSafetyScenario::all() {
+            assert!(
+                s.steps() >= 200 && s.steps() <= 1000,
+                "{} has {} steps, must be in [200, 1000]",
+                s.id(),
+                s.steps()
+            );
+        }
+    }
+
+    #[test]
+    fn joint_safety_steps_match_scenario_step_count() {
+        use super::joint_safety::JointSafetyScenario;
+        for s in JointSafetyScenario::all() {
+            assert_eq!(
+                s.steps(),
+                super::scenario_step_count(s.scenario_type_name()),
+                "{} steps must match scenario_step_count(\"{}\")",
+                s.id(),
+                s.scenario_type_name()
+            );
+        }
+    }
+
+    #[test]
+    fn joint_safety_specific_episode_allocations() {
+        use super::joint_safety::JointSafetyScenario::*;
+        assert_eq!(PositionBoundarySweep.episodes(), 200_000);
+        assert_eq!(VelocityBoundarySweep.episodes(), 200_000);
+        assert_eq!(TorqueBoundarySweep.episodes(), 200_000);
+        assert_eq!(AccelerationRamp.episodes(), 200_000);
+        assert_eq!(MultiJointCoordinatedViolation.episodes(), 150_000);
+        assert_eq!(RapidDirectionReversal.episodes(), 150_000);
+        assert_eq!(Ieee754SpecialValues.episodes(), 200_000);
+        assert_eq!(GradualDriftAttack.episodes(), 200_000);
+    }
+
+    #[test]
+    fn joint_safety_specific_step_counts() {
+        use super::joint_safety::JointSafetyScenario::*;
+        assert_eq!(PositionBoundarySweep.steps(), 200);
+        assert_eq!(VelocityBoundarySweep.steps(), 200);
+        assert_eq!(TorqueBoundarySweep.steps(), 200);
+        assert_eq!(AccelerationRamp.steps(), 300);
+        assert_eq!(MultiJointCoordinatedViolation.steps(), 200);
+        assert_eq!(RapidDirectionReversal.steps(), 200);
+        assert_eq!(Ieee754SpecialValues.steps(), 200);
+        assert_eq!(GradualDriftAttack.steps(), 500);
+    }
+
+    #[test]
+    fn joint_safety_zero_escape_rate() {
+        use super::joint_safety::*;
+        assert!((MAX_VIOLATION_ESCAPE_RATE).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn joint_safety_all_scenarios_have_names() {
+        use super::joint_safety::JointSafetyScenario;
+        for s in JointSafetyScenario::all() {
+            assert!(!s.name().is_empty(), "{} must have a name", s.id());
+        }
+    }
+
+    #[test]
+    fn joint_safety_all_scenarios_have_expected_verdicts() {
+        use super::joint_safety::JointSafetyScenario;
+        for s in JointSafetyScenario::all() {
+            assert!(
+                !s.expected_verdict().is_empty(),
+                "{} must have an expected verdict",
+                s.id()
+            );
+        }
+    }
+
+    #[test]
+    fn joint_safety_all_scenarios_have_invariants() {
+        use super::joint_safety::JointSafetyScenario;
+        for s in JointSafetyScenario::all() {
+            assert!(
+                !s.invariants_tested().is_empty(),
+                "{} must test at least one invariant",
+                s.id()
+            );
+        }
+    }
+
+    #[test]
+    fn joint_safety_invariants_are_p1_through_p4() {
+        use super::joint_safety::JointSafetyScenario;
+        let valid = ["P1", "P2", "P3", "P4"];
+        for s in JointSafetyScenario::all() {
+            for inv in s.invariants_tested() {
+                assert!(
+                    valid.contains(inv),
+                    "{} references invariant {} which is not P1-P4",
+                    s.id(),
+                    inv
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn joint_safety_display_format() {
+        use super::joint_safety::JointSafetyScenario;
+        let display = format!("{}", JointSafetyScenario::PositionBoundarySweep);
+        assert_eq!(display, "B-01: Position boundary sweep");
+    }
+
+    #[test]
+    fn joint_safety_serialization_round_trip() {
+        use super::joint_safety::JointSafetyScenario;
+        let s = JointSafetyScenario::Ieee754SpecialValues;
+        let json = serde_json::to_string(&s).expect("must serialize");
+        let back: JointSafetyScenario = serde_json::from_str(&json).expect("must deserialize");
+        assert_eq!(back, s);
+    }
+
+    #[test]
+    fn joint_safety_all_scenarios_unique() {
+        use super::joint_safety::JointSafetyScenario;
+        let scenarios: Vec<_> = JointSafetyScenario::all().to_vec();
+        for (i, a) in scenarios.iter().enumerate() {
+            for (j, b) in scenarios.iter().enumerate() {
+                if i != j {
+                    assert_ne!(a, b, "scenarios must be unique");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn joint_safety_scenario_type_names_nonempty() {
+        use super::joint_safety::JointSafetyScenario;
+        for s in JointSafetyScenario::all() {
+            assert!(
+                !s.scenario_type_name().is_empty(),
+                "{} must have a scenario_type_name",
+                s.id()
+            );
+        }
+    }
+
+    #[test]
+    fn joint_safety_scenario_step_count_entries() {
+        assert_eq!(super::scenario_step_count("acceleration_ramp"), 300);
+        assert_eq!(super::scenario_step_count("gradual_drift_attack"), 500);
+        assert_eq!(super::scenario_step_count("position_boundary_sweep"), 200);
+        assert_eq!(super::scenario_step_count("velocity_boundary_sweep"), 200);
+        assert_eq!(super::scenario_step_count("torque_boundary_sweep"), 200);
+        assert_eq!(
+            super::scenario_step_count("multi_joint_coordinated_violation"),
+            200
+        );
+        assert_eq!(super::scenario_step_count("rapid_direction_reversal"), 200);
+        assert_eq!(super::scenario_step_count("ieee754_special_values"), 200);
+    }
+
+    // ── Category C: Spatial Safety ───────────────────────────────────
+
+    #[test]
+    fn spatial_safety_scenario_count() {
+        use super::spatial_safety::*;
+        assert_eq!(SpatialScenario::all().len(), SCENARIO_COUNT as usize);
+        assert_eq!(SCENARIO_COUNT, 6);
+    }
+
+    #[test]
+    fn spatial_safety_total_episodes() {
+        use super::spatial_safety::*;
+        let sum: u64 = SpatialScenario::all().iter().map(|s| s.episodes()).sum();
+        assert_eq!(sum, TOTAL_EPISODES);
+        assert_eq!(TOTAL_EPISODES, 1_000_000);
+    }
+
+    #[test]
+    fn spatial_safety_total_matches_category() {
+        use super::scenario_categories::ScenarioCategory;
+        use super::spatial_safety;
+        assert_eq!(
+            spatial_safety::TOTAL_EPISODES,
+            ScenarioCategory::SpatialSafety.episodes(),
+            "spatial_safety total must match ScenarioCategory::SpatialSafety"
+        );
+    }
+
+    #[test]
+    fn spatial_safety_scenario_count_matches_category() {
+        use super::scenario_categories::ScenarioCategory;
+        use super::spatial_safety;
+        assert_eq!(
+            spatial_safety::SCENARIO_COUNT,
+            ScenarioCategory::SpatialSafety.scenarios(),
+            "spatial_safety scenario count must match ScenarioCategory::SpatialSafety"
+        );
+    }
+
+    #[test]
+    fn spatial_safety_ids_sequential() {
+        use super::spatial_safety::SpatialScenario;
+        let ids: Vec<&str> = SpatialScenario::all().iter().map(|s| s.id()).collect();
+        assert_eq!(ids, vec!["C-01", "C-02", "C-03", "C-04", "C-05", "C-06"]);
+    }
+
+    #[test]
+    fn spatial_safety_all_have_nonzero_episodes() {
+        use super::spatial_safety::SpatialScenario;
+        for scenario in SpatialScenario::all() {
+            assert!(
+                scenario.episodes() > 0,
+                "scenario {} must have > 0 episodes",
+                scenario.id()
+            );
+        }
+    }
+
+    #[test]
+    fn spatial_safety_names_nonempty() {
+        use super::spatial_safety::SpatialScenario;
+        for scenario in SpatialScenario::all() {
+            assert!(
+                !scenario.name().is_empty(),
+                "scenario {} must have a name",
+                scenario.id()
+            );
+        }
+    }
+
+    #[test]
+    fn spatial_safety_descriptions_nonempty() {
+        use super::spatial_safety::SpatialScenario;
+        for scenario in SpatialScenario::all() {
+            assert!(
+                !scenario.description().is_empty(),
+                "scenario {} must have a description",
+                scenario.id()
+            );
+        }
+    }
+
+    #[test]
+    fn spatial_safety_weights_sum_to_one() {
+        use super::spatial_safety::SpatialScenario;
+        let sum: f64 = SpatialScenario::all().iter().map(|s| s.weight()).sum();
+        assert!(
+            (sum - 1.0).abs() < 1e-10,
+            "spatial safety weights must sum to 1.0, got {sum}"
+        );
+    }
+
+    #[test]
+    fn spatial_safety_expected_verdicts_correct() {
+        use super::spatial_safety::{ExpectedVerdict, SpatialScenario};
+        // C-01: Mixed (PASS inside, REJECT outside)
+        assert_eq!(
+            SpatialScenario::WorkspaceBoundarySweep.expected_verdict(),
+            ExpectedVerdict::Mixed
+        );
+        // C-02: REJECT on entry
+        assert_eq!(
+            SpatialScenario::ExclusionZonePenetration.expected_verdict(),
+            ExpectedVerdict::Reject
+        );
+        // C-03: Mixed (depends on zone state)
+        assert_eq!(
+            SpatialScenario::ConditionalZoneStateMachine.expected_verdict(),
+            ExpectedVerdict::Mixed
+        );
+        // C-04: REJECT at min_distance
+        assert_eq!(
+            SpatialScenario::SelfCollisionApproach.expected_verdict(),
+            ExpectedVerdict::Reject
+        );
+        // C-05: Mixed (correct zone identified)
+        assert_eq!(
+            SpatialScenario::OverlappingZoneBoundaries.expected_verdict(),
+            ExpectedVerdict::Mixed
+        );
+        // C-06: REJECT (fail-closed)
+        assert_eq!(
+            SpatialScenario::CorruptSpatialData.expected_verdict(),
+            ExpectedVerdict::Reject
+        );
+    }
+
+    #[test]
+    fn spatial_safety_all_require_zero_escapes() {
+        use super::spatial_safety::SpatialScenario;
+        for scenario in SpatialScenario::all() {
+            assert!(
+                scenario.expected_verdict().requires_zero_escapes(),
+                "scenario {} must require zero violation escapes",
+                scenario.id()
+            );
+        }
+    }
+
+    #[test]
+    fn spatial_safety_invariants_cover_p5_p6_p7() {
+        use super::spatial_safety::INVARIANTS;
+        assert!(
+            INVARIANTS.contains(&"P5"),
+            "must exercise P5 (workspace bounds)"
+        );
+        assert!(
+            INVARIANTS.contains(&"P6"),
+            "must exercise P6 (exclusion zones)"
+        );
+        assert!(
+            INVARIANTS.contains(&"P7"),
+            "must exercise P7 (self-collision)"
+        );
+    }
+
+    #[test]
+    fn spatial_safety_display_format() {
+        use super::spatial_safety::SpatialScenario;
+        let display = format!("{}", SpatialScenario::WorkspaceBoundarySweep);
+        assert_eq!(display, "C-01: Workspace boundary sweep");
+        let display = format!("{}", SpatialScenario::CorruptSpatialData);
+        assert_eq!(display, "C-06: Corrupt spatial data");
+    }
+
+    #[test]
+    fn spatial_safety_serialization_round_trip() {
+        use super::spatial_safety::SpatialScenario;
+        let scenario = SpatialScenario::SelfCollisionApproach;
+        let json = serde_json::to_string(&scenario).expect("must serialize");
+        let back: SpatialScenario = serde_json::from_str(&json).expect("must deserialize");
+        assert_eq!(back, scenario);
+    }
+
+    #[test]
+    fn spatial_safety_episode_distribution() {
+        use super::spatial_safety::SpatialScenario;
+        // Verify specific episode counts from the spec table
+        assert_eq!(SpatialScenario::WorkspaceBoundarySweep.episodes(), 200_000);
+        assert_eq!(
+            SpatialScenario::ExclusionZonePenetration.episodes(),
+            200_000
+        );
+        assert_eq!(
+            SpatialScenario::ConditionalZoneStateMachine.episodes(),
+            100_000
+        );
+        assert_eq!(SpatialScenario::SelfCollisionApproach.episodes(), 200_000);
+        assert_eq!(
+            SpatialScenario::OverlappingZoneBoundaries.episodes(),
+            100_000
+        );
+        assert_eq!(SpatialScenario::CorruptSpatialData.episodes(), 200_000);
+    }
+
+    #[test]
+    fn spatial_safety_expected_verdict_serialization() {
+        use super::spatial_safety::ExpectedVerdict;
+        for verdict in [
+            ExpectedVerdict::Pass,
+            ExpectedVerdict::Reject,
+            ExpectedVerdict::Mixed,
+        ] {
+            let json = serde_json::to_string(&verdict).expect("must serialize");
+            let back: ExpectedVerdict = serde_json::from_str(&json).expect("must deserialize");
+            assert_eq!(back, verdict);
+        }
     }
 
     // ── Purpose & statistical claims (Purpose section) ────────────────
@@ -2684,30 +3897,16 @@ scenarios:
     fn purpose_confidence_bounds_ordered() {
         use super::purpose::*;
         // Tighter confidence requires a wider bound
-        assert!(
-            BYPASS_RATE_UPPER_95 < BYPASS_RATE_UPPER_99,
-            "95% bound must be tighter than 99%"
-        );
-        assert!(
-            BYPASS_RATE_UPPER_99 < BYPASS_RATE_UPPER_999,
-            "99% bound must be tighter than 99.9%"
-        );
+        const _: () = assert!(BYPASS_RATE_UPPER_95 < BYPASS_RATE_UPPER_99);
+        const _: () = assert!(BYPASS_RATE_UPPER_99 < BYPASS_RATE_UPPER_999);
     }
 
     #[test]
     fn purpose_999_bound_matches_spec_claim() {
         use super::purpose::*;
         // Spec claims < 0.0000461% = 4.61e-7
-        assert!(
-            BYPASS_RATE_UPPER_999 < 4.62e-7,
-            "99.9% bound must be < 4.62e-7 (got {})",
-            BYPASS_RATE_UPPER_999
-        );
-        assert!(
-            BYPASS_RATE_UPPER_999 > 4.60e-7,
-            "99.9% bound must be > 4.60e-7 (got {})",
-            BYPASS_RATE_UPPER_999
-        );
+        const _: () = assert!(BYPASS_RATE_UPPER_999 < 4.62e-7);
+        const _: () = assert!(BYPASS_RATE_UPPER_999 > 4.60e-7);
     }
 
     #[test]
@@ -2817,9 +4016,9 @@ scenarios:
     #[test]
     fn purpose_audit_trail_properties() {
         use super::purpose::audit_trail;
-        assert!(audit_trail::SIGNED);
-        assert!(audit_trail::HASH_CHAINED);
-        assert!(audit_trail::TAMPER_PROOF);
+        const _: () = assert!(audit_trail::SIGNED);
+        const _: () = assert!(audit_trail::HASH_CHAINED);
+        const _: () = assert!(audit_trail::TAMPER_PROOF);
         assert_eq!(audit_trail::SIGNATURE_ALGORITHM, "Ed25519");
     }
 }
