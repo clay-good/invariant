@@ -24,7 +24,7 @@ categories = ["aerospace", "cryptography", "embedded", "science", "simulation"]
 [workspace.dependencies]
 # Crypto
 ed25519-dalek = { version = "2.1", features = ["rand_core"] }
-coset = "0.3"
+coset = "0.4"
 sha2 = "0.11"
 
 # Serialization
