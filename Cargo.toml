@@ -41,7 +41,7 @@ thiserror = "2.0"
 quick-xml = "0.39"
 
 # CLI & server
-clap = { version = "4.5", features = ["derive"] }
+clap = { version = "4.6", features = ["derive"] }
 tokio = { version = "1.52" }
 axum = "0.8"
 tracing = "0.1"
