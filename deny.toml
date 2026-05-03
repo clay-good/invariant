@@ -1,14 +1,10 @@
-# cargo-deny configuration
-# Run: cargo install cargo-deny && cargo deny check
-# https://embarkstudios.github.io/cargo-deny/
-
 [advisories]
-vulnerability = "deny"
-unmaintained = "warn"
+version = 2
 yanked = "warn"
+unmaintained = "workspace"
 
 [licenses]
-unlicensed = "deny"
+version = 2
 allow = [
     "MIT",
     "Apache-2.0",
@@ -18,7 +14,6 @@ allow = [
     "Unicode-3.0",
     "Unicode-DFS-2016",
 ]
-copyleft = "deny"
 
 [[licenses.clarify]]
 name = "ring"

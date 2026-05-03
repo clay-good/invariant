@@ -9,8 +9,8 @@ use std::borrow::Cow;
 use axum::error_handling::HandleErrorLayer;
 use axum::extract::State;
 use axum::http::{HeaderMap, StatusCode};
-use axum::routing::{get, post};
 use axum::response::IntoResponse;
+use axum::routing::{get, post};
 use axum::{BoxError, Json, Router};
 use chrono::Utc;
 use clap::Args;
@@ -333,10 +333,7 @@ fn check_rate_limit(
     client_ip: IpAddr,
 ) -> Result<(), (StatusCode, Json<ErrorResponse>)> {
     let now = Instant::now();
-    let mut limiter = state
-        .rate_limiter
-        .lock()
-        .unwrap_or_else(|p| p.into_inner());
+    let mut limiter = state.rate_limiter.lock().unwrap_or_else(|p| p.into_inner());
     let entry = limiter.entry(client_ip).or_insert((now, 0));
     if now.duration_since(entry.0) >= Duration::from_secs(1) {
         // New window — reset counter.
@@ -530,10 +527,10 @@ async fn handle_validate(
             if let Some(ref dt_mutex) = state.digital_twin {
                 if let Some(ref audit_cmd) = cmd_for_audit {
                     {
-                    let mut dt = dt_mutex.lock().unwrap_or_else(|p| {
-                        eprintln!("digital-twin: mutex poisoned, recovering");
-                        p.into_inner()
-                    });
+                        let mut dt = dt_mutex.lock().unwrap_or_else(|p| {
+                            eprintln!("digital-twin: mutex poisoned, recovering");
+                            p.into_inner()
+                        });
                         let current_joints = &audit_cmd.joint_states;
                         if let Some(prev_joints) = dt.previous_joints.take() {
                             let snapshot = dt.detector.observe(&prev_joints, current_joints);
@@ -908,10 +905,15 @@ async fn run_server(args: &ServeArgs) -> i32 {
                     .rate_limiter
                     .lock()
                     .unwrap_or_else(|p| p.into_inner());
-                limiter.retain(|_, (window_start, _)| now.duration_since(*window_start) < Duration::from_secs(60));
+                limiter.retain(|_, (window_start, _)| {
+                    now.duration_since(*window_start) < Duration::from_secs(60)
+                });
             }
         });
-        eprintln!("info: rate limiting enabled ({} req/s per IP)", args.rate_limit);
+        eprintln!(
+            "info: rate limiting enabled ({} req/s per IP)",
+            args.rate_limit
+        );
     }
 
     // Spawn a background task that periodically calls watchdog.check() so that
@@ -1082,29 +1084,31 @@ async fn run_server(args: &ServeArgs) -> i32 {
         .route("/validate", post(handle_validate))
         .route("/heartbeat", post(handle_heartbeat))
         .route("/health", get(handle_health))
-        .layer(axum::middleware::from_fn(move |req: axum::extract::Request, next: axum::middleware::Next| {
-            let rl_state = Arc::clone(&rate_limit_state);
-            async move {
-                if rl_state.rate_limit_rps > 0 {
-                    let client_ip = req
-                        .extensions()
-                        .get::<axum::extract::ConnectInfo<SocketAddr>>()
-                        .map(|ci| ci.0.ip())
-                        .unwrap_or(IpAddr::V4(std::net::Ipv4Addr::LOCALHOST));
-                    if let Err((status, json_body)) = check_rate_limit(&rl_state, client_ip) {
-                        let body = serde_json::to_string(&json_body.0).unwrap_or_default();
-                        return axum::http::Response::builder()
-                            .status(status)
-                            .header("content-type", "application/json")
-                            .header("retry-after", "1")
-                            .body(axum::body::Body::from(body))
-                            .unwrap()
-                            .into_response();
+        .layer(axum::middleware::from_fn(
+            move |req: axum::extract::Request, next: axum::middleware::Next| {
+                let rl_state = Arc::clone(&rate_limit_state);
+                async move {
+                    if rl_state.rate_limit_rps > 0 {
+                        let client_ip = req
+                            .extensions()
+                            .get::<axum::extract::ConnectInfo<SocketAddr>>()
+                            .map(|ci| ci.0.ip())
+                            .unwrap_or(IpAddr::V4(std::net::Ipv4Addr::LOCALHOST));
+                        if let Err((status, json_body)) = check_rate_limit(&rl_state, client_ip) {
+                            let body = serde_json::to_string(&json_body.0).unwrap_or_default();
+                            return axum::http::Response::builder()
+                                .status(status)
+                                .header("content-type", "application/json")
+                                .header("retry-after", "1")
+                                .body(axum::body::Body::from(body))
+                                .unwrap()
+                                .into_response();
+                        }
                     }
+                    next.run(req).await.into_response()
                 }
-                next.run(req).await.into_response()
-            }
-        }))
+            },
+        ))
         .layer(
             // HandleErrorLayer must wrap TimeoutLayer so the BoxError from a
             // timeout is converted to a well-formed HTTP 408 response before
@@ -1288,29 +1292,32 @@ mod tests {
             .route("/validate", post(handle_validate))
             .route("/heartbeat", post(handle_heartbeat))
             .route("/health", get(handle_health))
-            .layer(axum::middleware::from_fn(move |req: axum::extract::Request, next: axum::middleware::Next| {
-                let rl_state = Arc::clone(&rate_limit_state);
-                async move {
-                    if rl_state.rate_limit_rps > 0 {
-                        let client_ip = req
-                            .extensions()
-                            .get::<axum::extract::ConnectInfo<SocketAddr>>()
-                            .map(|ci| ci.0.ip())
-                            .unwrap_or(IpAddr::V4(std::net::Ipv4Addr::LOCALHOST));
-                        if let Err((status, json_body)) = check_rate_limit(&rl_state, client_ip) {
-                            let body = serde_json::to_string(&json_body.0).unwrap_or_default();
-                            return axum::http::Response::builder()
-                                .status(status)
-                                .header("content-type", "application/json")
-                                .header("retry-after", "1")
-                                .body(axum::body::Body::from(body))
-                                .unwrap()
-                                .into_response();
+            .layer(axum::middleware::from_fn(
+                move |req: axum::extract::Request, next: axum::middleware::Next| {
+                    let rl_state = Arc::clone(&rate_limit_state);
+                    async move {
+                        if rl_state.rate_limit_rps > 0 {
+                            let client_ip = req
+                                .extensions()
+                                .get::<axum::extract::ConnectInfo<SocketAddr>>()
+                                .map(|ci| ci.0.ip())
+                                .unwrap_or(IpAddr::V4(std::net::Ipv4Addr::LOCALHOST));
+                            if let Err((status, json_body)) = check_rate_limit(&rl_state, client_ip)
+                            {
+                                let body = serde_json::to_string(&json_body.0).unwrap_or_default();
+                                return axum::http::Response::builder()
+                                    .status(status)
+                                    .header("content-type", "application/json")
+                                    .header("retry-after", "1")
+                                    .body(axum::body::Body::from(body))
+                                    .unwrap()
+                                    .into_response();
+                            }
                         }
+                        next.run(req).await.into_response()
                     }
-                    next.run(req).await.into_response()
-                }
-            }))
+                },
+            ))
             .with_state(state)
     }
 
@@ -2337,7 +2344,8 @@ mod tests {
                 "previous_joints must still be set after rejected command"
             );
             assert_eq!(
-                prev.as_ref().unwrap()[0].position, 999.0,
+                prev.as_ref().unwrap()[0].position,
+                999.0,
                 "previous_joints must reflect the rejected command's joints"
             );
         }

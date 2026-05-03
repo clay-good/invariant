@@ -124,7 +124,10 @@ fn safe_command(profile: &RobotProfile, chain_b64: &str, ops: Vec<Operation>) ->
     // If an entry already exists (e.g. from collision pairs), update its
     // grasp_force to the profile minimum; otherwise add a new entry.
     for ee_config in &profile.end_effectors {
-        if let Some(existing) = end_effector_forces.iter_mut().find(|f| f.name == ee_config.name) {
+        if let Some(existing) = end_effector_forces
+            .iter_mut()
+            .find(|f| f.name == ee_config.name)
+        {
             existing.grasp_force = Some(ee_config.min_grasp_force_n);
         } else {
             end_effector_forces.push(invariant_core::models::command::EndEffectorForce {
