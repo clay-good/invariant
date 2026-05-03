@@ -20,7 +20,7 @@ invariant-eval = { package = "invariant-robotics-eval", path = "../invariant-eva
 invariant-fuzz = { package = "invariant-robotics-fuzz", path = "../invariant-fuzz", version = "0.0.3" }
 invariant-sim = { package = "invariant-robotics-sim", path = "../invariant-sim", version = "0.0.3" }
 clap.workspace = true
-clap_complete = "4.5"
+clap_complete = "4.6"
 tracing.workspace = true
 tracing-subscriber.workspace = true
 # Minimal tokio feature set: rt-multi-thread + macros for serve mode (P2-14).
