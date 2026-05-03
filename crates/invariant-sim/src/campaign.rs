@@ -799,40 +799,18 @@ pub mod scenario_categories {
             match self {
                 NormalOperation => "Prove valid commands are APPROVED correctly",
                 JointSafety => "Prove P1-P4 catch every joint violation",
-                SpatialSafety => {
-                    "Prove P5-P7 catch every workspace/zone/collision violation"
-                }
-                StabilityLocomotion => {
-                    "Prove P9, P15-P20 catch every balance/gait failure"
-                }
-                ManipulationSafety => {
-                    "Prove P11-P14 catch every force/grasp/payload violation"
-                }
-                EnvironmentalHazards => {
-                    "Prove P21-P25 + SR1-SR2 catch every environmental failure"
-                }
+                SpatialSafety => "Prove P5-P7 catch every workspace/zone/collision violation",
+                StabilityLocomotion => "Prove P9, P15-P20 catch every balance/gait failure",
+                ManipulationSafety => "Prove P11-P14 catch every force/grasp/payload violation",
+                EnvironmentalHazards => "Prove P21-P25 + SR1-SR2 catch every environmental failure",
                 AuthorityCrypto => "Prove A1-A3 catch every authority attack",
-                TemporalSequence => {
-                    "Prove replay, sequence, timing attacks are caught"
-                }
-                CognitiveEscape => {
-                    "Prove LLM/AI reasoning cannot bypass the firewall"
-                }
-                MultiStepCompound => {
-                    "Prove chained attacks across categories fail"
-                }
-                RecoveryResilience => {
-                    "Prove safe-stop, recovery, and mode transitions are safe"
-                }
-                LongRunningStability => {
-                    "Prove 24h+ operation with no drift or degradation"
-                }
-                CrossPlatformStress => {
-                    "Prove all profiles under maximum load"
-                }
-                AdversarialRedTeam => {
-                    "Prove fuzz/mutation/generation attacks find no bypass"
-                }
+                TemporalSequence => "Prove replay, sequence, timing attacks are caught",
+                CognitiveEscape => "Prove LLM/AI reasoning cannot bypass the firewall",
+                MultiStepCompound => "Prove chained attacks across categories fail",
+                RecoveryResilience => "Prove safe-stop, recovery, and mode transitions are safe",
+                LongRunningStability => "Prove 24h+ operation with no drift or degradation",
+                CrossPlatformStress => "Prove all profiles under maximum load",
+                AdversarialRedTeam => "Prove fuzz/mutation/generation attacks find no bypass",
             }
         }
 
@@ -1981,10 +1959,19 @@ scenarios:
 
     #[test]
     fn scenario_step_count_compound_recovery_500() {
-        assert_eq!(super::scenario_step_count("compound_authority_physics"), 500);
+        assert_eq!(
+            super::scenario_step_count("compound_authority_physics"),
+            500
+        );
         assert_eq!(super::scenario_step_count("compound_sensor_spatial"), 500);
-        assert_eq!(super::scenario_step_count("compound_drift_then_violation"), 500);
-        assert_eq!(super::scenario_step_count("compound_environment_physics"), 500);
+        assert_eq!(
+            super::scenario_step_count("compound_drift_then_violation"),
+            500
+        );
+        assert_eq!(
+            super::scenario_step_count("compound_environment_physics"),
+            500
+        );
         assert_eq!(super::scenario_step_count("recovery_safe_stop"), 500);
         assert_eq!(super::scenario_step_count("recovery_audit_integrity"), 500);
     }
@@ -2004,7 +1991,10 @@ scenarios:
             assert!(
                 (MIN_EPISODE_STEPS..=MAX_EPISODE_STEPS).contains(&steps),
                 "scenario {} has {} steps, must be in [{}, {}]",
-                sc.scenario_type, steps, MIN_EPISODE_STEPS, MAX_EPISODE_STEPS
+                sc.scenario_type,
+                steps,
+                MIN_EPISODE_STEPS,
+                MAX_EPISODE_STEPS
             );
         }
     }
@@ -2146,8 +2136,8 @@ scenarios:
 
     #[test]
     fn scenario_categories_episodes_consistent_with_execution_target() {
-        use super::scenario_categories;
         use super::execution_target;
+        use super::scenario_categories;
         assert_eq!(
             scenario_categories::TOTAL_EPISODES,
             execution_target::TOTAL_EPISODES,
@@ -2217,9 +2207,10 @@ scenarios:
             .filter(|c| c.name.starts_with("15m_humanoid_28dof_"))
             .collect();
         assert!(
-            humanoid_configs
+            humanoid_configs.iter().any(|c| c
+                .scenarios
                 .iter()
-                .any(|c| c.scenarios.iter().any(|s| s.scenario_type == "locomotion_runaway")),
+                .any(|s| s.scenario_type == "locomotion_runaway")),
             "humanoid must have locomotion_runaway scenario in some tier"
         );
     }
@@ -2298,7 +2289,10 @@ scenarios:
     fn data_outputs_estimated_total_commands() {
         use super::data_outputs::*;
         use super::execution_target::*;
-        assert_eq!(ESTIMATED_TOTAL_COMMANDS, TOTAL_EPISODES * AVG_STEPS_PER_EPISODE);
+        assert_eq!(
+            ESTIMATED_TOTAL_COMMANDS,
+            TOTAL_EPISODES * AVG_STEPS_PER_EPISODE
+        );
         assert_eq!(ESTIMATED_TOTAL_COMMANDS, 3_000_000_000);
     }
 
@@ -2314,7 +2308,8 @@ scenarios:
     fn data_outputs_per_step_compression_plausible() {
         use super::data_outputs::*;
         // Verify the per-step estimates are consistent with the total output range.
-        let bytes_per_step = ESTIMATED_BYTES_PER_STEP_COMPRESSED + CHAIN_OVERHEAD_BYTES_PER_STEP_COMPRESSED;
+        let bytes_per_step =
+            ESTIMATED_BYTES_PER_STEP_COMPRESSED + CHAIN_OVERHEAD_BYTES_PER_STEP_COMPRESSED;
         let total_bytes = ESTIMATED_TOTAL_COMMANDS * bytes_per_step;
         let total_gb = total_bytes / (1024 * 1024 * 1024);
         assert!(
@@ -2532,7 +2527,10 @@ scenarios:
     fn joint_safety_total_episodes() {
         use super::joint_safety::*;
         assert_eq!(TOTAL_EPISODES, 1_500_000);
-        let sum: u64 = JointSafetyScenario::all().iter().map(|s| s.episodes()).sum();
+        let sum: u64 = JointSafetyScenario::all()
+            .iter()
+            .map(|s| s.episodes())
+            .sum();
         assert_eq!(sum, TOTAL_EPISODES);
     }
 
@@ -2721,7 +2719,10 @@ scenarios:
         assert_eq!(super::scenario_step_count("position_boundary_sweep"), 200);
         assert_eq!(super::scenario_step_count("velocity_boundary_sweep"), 200);
         assert_eq!(super::scenario_step_count("torque_boundary_sweep"), 200);
-        assert_eq!(super::scenario_step_count("multi_joint_coordinated_violation"), 200);
+        assert_eq!(
+            super::scenario_step_count("multi_joint_coordinated_violation"),
+            200
+        );
         assert_eq!(super::scenario_step_count("rapid_direction_reversal"), 200);
         assert_eq!(super::scenario_step_count("ieee754_special_values"), 200);
     }

@@ -471,10 +471,7 @@ impl AuditLogger<std::fs::File> {
 
         // Record the current file size so max_file_bytes tracking starts
         // from the correct offset when resuming an existing log.
-        let file_size = file
-            .metadata()
-            .map(|m| m.len())
-            .unwrap_or(0);
+        let file_size = file.metadata().map(|m| m.len()).unwrap_or(0);
 
         if next_sequence == 0 {
             let mut logger = Self::new(file, signing_key, signer_kid);
@@ -544,8 +541,8 @@ fn read_last_line(file: &mut std::fs::File) -> Result<(u64, String), AuditError>
         reason: format!("last audit log line is not valid UTF-8: {e}"),
     })?;
 
-    let signed: crate::models::audit::SignedAuditEntry =
-        serde_json::from_str(line.trim()).map_err(|e| AuditError::Serialization {
+    let signed: crate::models::audit::SignedAuditEntry = serde_json::from_str(line.trim())
+        .map_err(|e| AuditError::Serialization {
             reason: format!("failed to parse last audit log entry: {e}"),
         })?;
 
@@ -1617,7 +1614,10 @@ mod tests {
         let (verdict, _) = make_simple_signed_verdict();
         let result = logger.log(&cmd, &verdict);
 
-        assert!(result.is_err(), "write must fail when it would exceed limit");
+        assert!(
+            result.is_err(),
+            "write must fail when it would exceed limit"
+        );
         match result.unwrap_err() {
             AuditError::LogFull {
                 current_bytes,
@@ -1663,8 +1663,7 @@ mod tests {
         // Write one entry to a scratch buffer to measure its size.
         let entry_size = {
             let mut scratch = Vec::new();
-            let mut scratch_logger =
-                AuditLogger::new(&mut scratch, sign_sk.clone(), "test".into());
+            let mut scratch_logger = AuditLogger::new(&mut scratch, sign_sk.clone(), "test".into());
             scratch_logger.log(&cmd, &verdict).unwrap();
             scratch.len() as u64
         };
@@ -1743,8 +1742,7 @@ mod tests {
         let expected_sequence;
         let expected_hash;
         {
-            let mut logger =
-                AuditLogger::open_file(&path, sign_sk.clone(), "test".into()).unwrap();
+            let mut logger = AuditLogger::open_file(&path, sign_sk.clone(), "test".into()).unwrap();
             for _ in 0..200 {
                 logger.log(&cmd, &verdict).unwrap();
             }
@@ -1798,8 +1796,7 @@ mod tests {
         let (verdict, _) = make_simple_signed_verdict();
 
         {
-            let mut logger =
-                AuditLogger::open_file(&path, sign_sk.clone(), "test".into()).unwrap();
+            let mut logger = AuditLogger::open_file(&path, sign_sk.clone(), "test".into()).unwrap();
             logger.log(&cmd, &verdict).unwrap();
             logger.log(&cmd, &verdict).unwrap();
         }
