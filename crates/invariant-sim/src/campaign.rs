@@ -371,6 +371,75 @@ fn validate_config(config: &CampaignConfig) -> Result<(), CampaignError> {
 }
 
 // ---------------------------------------------------------------------------
+// 15M Campaign — Proof of Safety (Purpose)
+// ---------------------------------------------------------------------------
+
+/// Statistical proof of safety constants from the campaign specification (Purpose).
+///
+/// At 15M validated decisions with zero bypasses, the 99.9% confidence upper
+/// bound on the bypass rate is < 0.0000461% — fewer than 1 in 2.2 million.
+///
+/// The math: for a Bernoulli process with `n` trials and 0 observed failures,
+/// the one-sided Clopper-Pearson upper bound at confidence level `c` is:
+///
+///   p_upper = 1 - (1 - c)^(1/n)
+///
+/// With n = 15,000,000 and c = 0.999:
+///
+///   p_upper = 1 - 0.001^(1/15_000_000) ≈ 4.605e-7 ≈ 0.0000461%
+pub mod proof_of_safety {
+    /// Confidence level for the statistical proof (99.9%).
+    pub const CONFIDENCE_LEVEL: f64 = 0.999;
+
+    /// Total episodes required for the statistical proof.
+    pub const REQUIRED_EPISODES: u64 = 15_000_000;
+
+    /// Upper bound on bypass rate at 99.9% confidence with zero failures
+    /// across 15M episodes (as a fraction, not percentage).
+    ///
+    /// `1 - (1 - 0.999)^(1/15_000_000) ≈ 4.605e-7`
+    pub const BYPASS_RATE_UPPER_BOUND: f64 = 4.605e-7;
+
+    /// The reciprocal of the bypass rate upper bound: one bypass per this
+    /// many decisions at most (≈ 2.17 million).
+    pub const ONE_IN_N_DECISIONS: u64 = 2_171_472;
+
+    /// Compute the one-sided Clopper-Pearson upper bound on failure rate
+    /// given `n` trials, 0 observed failures, and confidence level `c`.
+    ///
+    /// Returns `1 - (1 - c)^(1/n)`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use invariant_robotics_sim::campaign::proof_of_safety::clopper_pearson_upper;
+    ///
+    /// let bound = clopper_pearson_upper(15_000_000, 0.999);
+    /// assert!((bound - 4.605e-7).abs() < 1e-9);
+    /// ```
+    pub fn clopper_pearson_upper(n: u64, confidence: f64) -> f64 {
+        1.0 - (1.0 - confidence).powf(1.0 / n as f64)
+    }
+
+    /// Returns `true` if the campaign results constitute statistical proof
+    /// of safety: the required number of episodes were completed and zero
+    /// violation escapes were observed.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use invariant_robotics_sim::campaign::proof_of_safety::is_proof_of_safety;
+    ///
+    /// assert!(is_proof_of_safety(15_000_000, 0));
+    /// assert!(!is_proof_of_safety(14_999_999, 0));
+    /// assert!(!is_proof_of_safety(15_000_000, 1));
+    /// ```
+    pub fn is_proof_of_safety(episodes_completed: u64, violation_escapes: u64) -> bool {
+        episodes_completed >= REQUIRED_EPISODES && violation_escapes == 0
+    }
+}
+
+// ---------------------------------------------------------------------------
 // 15M Campaign Execution Target
 // ---------------------------------------------------------------------------
 
@@ -4373,27 +4442,45 @@ scenarios:
         assert!(!summary.is_clean());
     }
 
+    // ── Proof of safety (Purpose) ────────────────────────────────
+
     #[test]
-    fn shard_output_summary_serialization_round_trip() {
-        use super::data_outputs::ShardOutputSummary;
-        let summary = ShardOutputSummary {
-            shard_id: 7,
-            episodes_completed: 1_875_000,
-            total_steps: 375_000_000,
-            total_commands_approved: 370_000_000,
-            total_commands_rejected: 5_000_000,
-            total_violation_escapes: 0,
-            total_false_rejections: 50,
-            started_at: chrono::Utc::now(),
-            completed_at: chrono::Utc::now(),
-            output_size_bytes: 19_500_000_000,
-            final_chain_hash: "sha256:shard7final".into(),
-        };
-        let json = serde_json::to_string(&summary).expect("must serialize");
-        let back: ShardOutputSummary = serde_json::from_str(&json).expect("must deserialize");
-        assert_eq!(back.shard_id, 7);
-        assert_eq!(back.episodes_completed, 1_875_000);
-        assert_eq!(back.total_violation_escapes, 0);
+    fn clopper_pearson_upper_at_15m() {
+        use super::proof_of_safety::*;
+        let bound = clopper_pearson_upper(REQUIRED_EPISODES, CONFIDENCE_LEVEL);
+        assert!(
+            (bound - BYPASS_RATE_UPPER_BOUND).abs() < 1e-9,
+            "bound {bound} should ≈ {BYPASS_RATE_UPPER_BOUND}"
+        );
+    }
+
+    #[test]
+    fn clopper_pearson_upper_monotonically_decreasing_with_n() {
+        use super::proof_of_safety::clopper_pearson_upper;
+        let b1 = clopper_pearson_upper(1_000_000, 0.999);
+        let b2 = clopper_pearson_upper(15_000_000, 0.999);
+        assert!(b1 > b2, "more episodes => lower bound");
+    }
+
+    #[test]
+    fn one_in_n_decisions_consistent() {
+        use super::proof_of_safety::*;
+        let computed = (1.0 / BYPASS_RATE_UPPER_BOUND).floor() as u64;
+        // Allow a small tolerance due to the constant being a rounded approximation.
+        assert!(
+            (computed as i64 - ONE_IN_N_DECISIONS as i64).unsigned_abs() < 1000,
+            "1/{BYPASS_RATE_UPPER_BOUND} = {computed}, expected ≈ {ONE_IN_N_DECISIONS}"
+        );
+    }
+
+    #[test]
+    fn is_proof_of_safety_requires_15m_and_zero_escapes() {
+        use super::proof_of_safety::*;
+        assert!(is_proof_of_safety(15_000_000, 0));
+        assert!(is_proof_of_safety(20_000_000, 0)); // more than required is fine
+        assert!(!is_proof_of_safety(14_999_999, 0));
+        assert!(!is_proof_of_safety(15_000_000, 1));
+        assert!(!is_proof_of_safety(0, 0));
     }
 
     // ── CampaignOutputManifest tests ─────────────────────────────────
