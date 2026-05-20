@@ -71,25 +71,32 @@ Robotics:
 # Generate an operator keypair.
 invariant keys generate --kid alice --output alice.key
 
-# Validate a motion command against a robot profile.
-invariant robotics validate cmd.json \
-    --profile ur10e_cnc_tending \
-    --chain chain.cose
+# Validate a single motion command against a robot profile.
+invariant robotics validate \
+    --profile profiles/robotics/ur10e_cnc_tending.json \
+    --command cmd.json \
+    --key alice.key
 
 # Run the embedded Trust Plane server with the Isaac Sim bridge.
-invariant robotics serve --profile ur10e_cnc_tending --key alice.key --bridge
+invariant robotics serve \
+    --profile profiles/robotics/ur10e_cnc_tending.json \
+    --key alice.key \
+    --bridge
 ```
 
 Biosynthesis:
 
 ```sh
 # Validate a synthesis bundle against a BSL2 DNA-synth profile.
-invariant biosynthesis validate bundle.json \
-    --profile university_bsl2_dna \
-    --chain chain.cose
+invariant biosynthesis validate \
+    --bundle bundle.json \
+    --profile profiles/biosynthesis/university_bsl2_dna.json \
+    --hazard-db hazards.json \
+    --hazard-db-issuer-pub issuer.pub
 
 # Inspect what a profile authorises.
-invariant biosynthesis inspect --profile industry_peptide
+invariant biosynthesis inspect \
+    --profile profiles/biosynthesis/industry_peptide.json
 ```
 
 `invariant <domain> --help` lists every subcommand. Built-in profiles
