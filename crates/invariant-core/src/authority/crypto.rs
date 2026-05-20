@@ -4,7 +4,7 @@ use coset::{iana, CborSerializable, CoseSign1, CoseSign1Builder, HeaderBuilder};
 use ed25519_dalek::{Signature, SigningKey, VerifyingKey};
 
 use crate::models::authority::{Pca, SignedPca};
-use crate::models::error::AuthorityError;
+use crate::models::error::{AuthorityError, CoseDecodeReason};
 
 /// Empty AAD — we don't use additional authenticated data.
 const AAD: &[u8] = b"";
@@ -47,9 +47,9 @@ pub fn sign_pca(claim: &Pca, signing_key: &SigningKey) -> Result<SignedPca, Auth
 /// `verify_signed_pca_parsed`, and `decode_pca_payload_parsed` can all operate
 /// on the same already-parsed value, avoiding redundant CBOR decoding.
 pub(crate) fn parse_cose(raw: &[u8], hop: usize) -> Result<CoseSign1, AuthorityError> {
-    CoseSign1::from_slice(raw).map_err(|e| AuthorityError::CoseError {
+    CoseSign1::from_slice(raw).map_err(|e| AuthorityError::CoseDecode {
         hop,
-        reason: e.to_string(),
+        reason: CoseDecodeReason::CborInvalid(e.to_string()),
     })
 }
 
@@ -97,14 +97,14 @@ pub(crate) fn extract_kid_from_parsed(
 ) -> Result<String, AuthorityError> {
     let kid_bytes = &cose.protected.header.key_id;
     if kid_bytes.is_empty() {
-        return Err(AuthorityError::CoseError {
+        return Err(AuthorityError::CoseDecode {
             hop,
-            reason: "missing key id in protected header".into(),
+            reason: CoseDecodeReason::MissingKid,
         });
     }
-    String::from_utf8(kid_bytes.clone()).map_err(|e| AuthorityError::CoseError {
+    String::from_utf8(kid_bytes.clone()).map_err(|e| AuthorityError::CoseDecode {
         hop,
-        reason: format!("invalid key id encoding: {e}"),
+        reason: CoseDecodeReason::InvalidKidEncoding(e.to_string()),
     })
 }
 
@@ -115,16 +115,13 @@ pub(crate) fn decode_pca_payload_from_parsed(
     cose: &CoseSign1,
     hop: usize,
 ) -> Result<Pca, AuthorityError> {
-    let payload = cose
-        .payload
-        .as_deref()
-        .ok_or_else(|| AuthorityError::CoseError {
-            hop,
-            reason: "missing payload".into(),
-        })?;
-    serde_json::from_slice(payload).map_err(|e| AuthorityError::CoseError {
+    let payload = cose.payload.as_deref().ok_or(AuthorityError::CoseDecode {
         hop,
-        reason: format!("payload deserialization failed: {e}"),
+        reason: CoseDecodeReason::MissingPayload,
+    })?;
+    serde_json::from_slice(payload).map_err(|e| AuthorityError::CoseDecode {
+        hop,
+        reason: CoseDecodeReason::PayloadDecode(e.to_string()),
     })
 }
 
@@ -172,6 +169,7 @@ mod tests {
             kid: kid.into(),
             exp: None,
             nbf: None,
+            predecessor_digest: [0u8; 32],
         }
     }
 
@@ -202,13 +200,13 @@ mod tests {
         let result = decode_pca_payload_from_parsed(&cose, 0);
         assert!(result.is_err());
         match result.unwrap_err() {
-            AuthorityError::CoseError { reason, .. } => {
-                assert!(
-                    reason.contains("missing payload"),
-                    "expected 'missing payload' in reason, got: {reason}"
-                );
+            AuthorityError::CoseDecode {
+                reason: CoseDecodeReason::MissingPayload,
+                hop,
+            } => {
+                assert_eq!(hop, 0);
             }
-            other => panic!("expected CoseError, got {other:?}"),
+            other => panic!("expected CoseDecode::MissingPayload, got {other:?}"),
         }
     }
 
@@ -238,13 +236,19 @@ mod tests {
         let result = extract_kid_from_parsed(&cose, 0);
         assert!(result.is_err());
         match result.unwrap_err() {
-            AuthorityError::CoseError { reason, .. } => {
+            AuthorityError::CoseDecode {
+                reason: CoseDecodeReason::InvalidKidEncoding(detail),
+                hop,
+            } => {
+                assert_eq!(hop, 0);
                 assert!(
-                    reason.contains("invalid key id encoding"),
-                    "expected 'invalid key id encoding' in reason, got: {reason}"
+                    detail.contains("invalid utf-8")
+                        || detail.contains("invalid UTF-8")
+                        || detail.contains("Utf8"),
+                    "expected utf-8 error detail, got: {detail}"
                 );
             }
-            other => panic!("expected CoseError, got {other:?}"),
+            other => panic!("expected CoseDecode::InvalidKidEncoding, got {other:?}"),
         }
     }
 

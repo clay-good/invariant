@@ -16,7 +16,7 @@ use std::path::Path;
 /// ```
 /// use base64::{engine::general_purpose::STANDARD, Engine};
 /// use ed25519_dalek::SigningKey;
-/// use invariant_robotics::key_file::KeyFile;
+/// use invariant_cli::key_file::KeyFile;
 ///
 /// // Build a key file from raw Ed25519 key material.
 /// let sk_bytes = [0x42u8; 32];
@@ -57,7 +57,7 @@ pub struct KeyFile {
 /// # Examples
 ///
 /// ```
-/// use invariant_robotics::key_file::validate_kid;
+/// use invariant_cli::key_file::validate_kid;
 ///
 /// // Valid KIDs.
 /// assert!(validate_kid("my-key-1").is_ok());
@@ -107,7 +107,7 @@ pub fn validate_kid(kid: &str) -> Result<(), String> {
 /// ```
 /// use base64::{engine::general_purpose::STANDARD, Engine};
 /// use ed25519_dalek::SigningKey;
-/// use invariant_robotics::key_file::{fingerprint, KeyFile};
+/// use invariant_cli::key_file::{fingerprint, KeyFile};
 ///
 /// let sk = SigningKey::from_bytes(&[0x42u8; 32]);
 /// let vk = sk.verifying_key();
@@ -161,7 +161,7 @@ pub fn fingerprint(kf: &KeyFile) -> Result<String, String> {
 /// ```
 /// use base64::{engine::general_purpose::STANDARD, Engine};
 /// use ed25519_dalek::SigningKey;
-/// use invariant_robotics::key_file::{export_public_key, KeyFile};
+/// use invariant_cli::key_file::{export_public_key, KeyFile};
 ///
 /// let sk_bytes = [0x7Fu8; 32];
 /// let sk = SigningKey::from_bytes(&sk_bytes);

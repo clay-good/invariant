@@ -14,8 +14,221 @@ use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
 
 use crate::util::sha256_hex;
+
+// ---------------------------------------------------------------------------
+// Format-version constants (v12 N-5)
+// ---------------------------------------------------------------------------
+
+/// Pre-N-5 proof package format. Manifests without a `format_version` field
+/// deserialize as this version. Lacks Merkle root and signed manifest fields.
+pub const FORMAT_VERSION_V1: u32 = 1;
+
+/// Format version that new packages are written with today. Bumps to `2` once
+/// v11 1.3 (Merkle root) and v11 1.4 (signed manifest) land.
+pub const CURRENT_FORMAT_VERSION: u32 = FORMAT_VERSION_V1;
+
+/// Lowest format version accepted by [`verify_format_version`].
+pub const MIN_SUPPORTED_FORMAT_VERSION: u32 = FORMAT_VERSION_V1;
+
+/// Highest format version accepted by [`verify_format_version`].
+pub const MAX_SUPPORTED_FORMAT_VERSION: u32 = FORMAT_VERSION_V1;
+
+fn default_format_version() -> u32 {
+    FORMAT_VERSION_V1
+}
+
+// ---------------------------------------------------------------------------
+// Error type
+// ---------------------------------------------------------------------------
+
+/// Errors returned when validating a proof package.
+#[derive(Debug, Error, PartialEq, Eq)]
+pub enum ProofPackageError {
+    /// The manifest's `format_version` falls outside the supported range.
+    #[error(
+        "unsupported proof-package format_version {found} (supported range: {expected_min}..={expected_max})"
+    )]
+    UnsupportedFormat {
+        /// The version that was read from the manifest.
+        found: u32,
+        /// Minimum version the verifier accepts.
+        expected_min: u32,
+        /// Maximum version the verifier accepts.
+        expected_max: u32,
+    },
+
+    /// `manifest_signature` is missing when a signed package was expected,
+    /// is malformed, or did not verify against the supplied public key.
+    #[error("manifest signature invalid: {reason}")]
+    SignatureInvalid {
+        /// Human-readable failure reason (decoding, key length, verification).
+        reason: String,
+    },
+
+    /// JCS canonicalization failed while computing the signing preimage.
+    #[error("manifest canonicalization failed: {reason}")]
+    Canonicalization {
+        /// Underlying serialization error.
+        reason: String,
+    },
+}
+
+/// Check that `format_version` is in the inclusive
+/// `[MIN_SUPPORTED_FORMAT_VERSION, MAX_SUPPORTED_FORMAT_VERSION]` range.
+///
+/// Emits a `tracing::warn!` when the package is still on the pre-Merkle v1
+/// format so operators are nudged to regenerate once v11 1.3 + 1.4 land.
+pub fn verify_format_version(format_version: u32) -> Result<(), ProofPackageError> {
+    if !(MIN_SUPPORTED_FORMAT_VERSION..=MAX_SUPPORTED_FORMAT_VERSION).contains(&format_version) {
+        return Err(ProofPackageError::UnsupportedFormat {
+            found: format_version,
+            expected_min: MIN_SUPPORTED_FORMAT_VERSION,
+            expected_max: MAX_SUPPORTED_FORMAT_VERSION,
+        });
+    }
+    if format_version == FORMAT_VERSION_V1 {
+        tracing::warn!(
+            "proof package on legacy format_version 1 — Merkle root and manifest signature land in v11 1.3 / 1.4"
+        );
+    }
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// JCS canonicalization + manifest signing (v11 1.4)
+// ---------------------------------------------------------------------------
+
+/// Produce the JCS (RFC 8785) canonical-JSON encoding of `manifest` with
+/// `manifest_signature` cleared.
+///
+/// Used as the Ed25519 signing preimage and as the verification message.
+/// The implementation is the subset of RFC 8785 that this struct actually
+/// exercises: every object's keys are emitted in lexicographic order, the
+/// separators are compact (`,` and `:` with no whitespace), and numeric
+/// formatting is delegated to `serde_json` — which already produces the
+/// shortest round-trip-safe decimal for `f64` inputs and which never emits
+/// NaN/∞ (those serialize as `null` and the manifest never carries them).
+/// `manifest_signature` is excluded from the preimage so that a manifest
+/// can be signed without first generating the very value being signed.
+pub fn canonical_json(manifest: &ProofPackageManifest) -> Result<Vec<u8>, ProofPackageError> {
+    let mut value = serde_json::to_value(manifest).map_err(|e| ProofPackageError::Canonicalization {
+        reason: format!("serialize manifest: {e}"),
+    })?;
+    // Strip the signature so the preimage is independent of any pre-existing
+    // signature on the manifest (RFC 8032 best practice — sign over a value
+    // that excludes the signature field).
+    if let Some(obj) = value.as_object_mut() {
+        obj.remove("manifest_signature");
+        obj.remove("manifest_signer_kid");
+    }
+    let mut buf = Vec::with_capacity(512);
+    write_canonical(&value, &mut buf);
+    Ok(buf)
+}
+
+fn write_canonical(value: &serde_json::Value, out: &mut Vec<u8>) {
+    use serde_json::Value;
+    match value {
+        Value::Null => out.extend_from_slice(b"null"),
+        Value::Bool(true) => out.extend_from_slice(b"true"),
+        Value::Bool(false) => out.extend_from_slice(b"false"),
+        Value::Number(n) => {
+            // serde_json's Display impl for Number already emits the
+            // shortest-round-trip decimal for f64 and the plain integer
+            // form for i64/u64 — both match RFC 8785 §3.2.2.3 for the
+            // values this manifest carries.
+            out.extend_from_slice(n.to_string().as_bytes());
+        }
+        Value::String(s) => out.extend_from_slice(serde_json::to_string(s).expect("string").as_bytes()),
+        Value::Array(items) => {
+            out.push(b'[');
+            for (i, item) in items.iter().enumerate() {
+                if i > 0 {
+                    out.push(b',');
+                }
+                write_canonical(item, out);
+            }
+            out.push(b']');
+        }
+        Value::Object(map) => {
+            // RFC 8785 §3.2.3: keys in code-point lexicographic order.
+            // `serde_json::Map` is insertion-ordered, so we sort explicitly.
+            let mut keys: Vec<&String> = map.keys().collect();
+            keys.sort();
+            out.push(b'{');
+            for (i, key) in keys.iter().enumerate() {
+                if i > 0 {
+                    out.push(b',');
+                }
+                out.extend_from_slice(
+                    serde_json::to_string(key).expect("string-key").as_bytes(),
+                );
+                out.push(b':');
+                write_canonical(&map[*key], out);
+            }
+            out.push(b'}');
+        }
+    }
+}
+
+/// Sign `manifest` with `signing_key` and stamp `manifest_signature` /
+/// `manifest_signer_kid` on it in place. `signer_kid` is recorded so a
+/// downstream verifier can look up the right public key from
+/// `integrity/public_keys.json` without trial-and-error.
+pub fn sign_manifest(
+    manifest: &mut ProofPackageManifest,
+    signing_key: &ed25519_dalek::SigningKey,
+    signer_kid: String,
+) -> Result<(), ProofPackageError> {
+    use base64::{engine::general_purpose::STANDARD_NO_PAD, Engine};
+    use ed25519_dalek::Signer;
+    // Clear any pre-existing signature so we always sign the unsigned form.
+    manifest.manifest_signature = None;
+    manifest.manifest_signer_kid = None;
+    let preimage = canonical_json(manifest)?;
+    let sig = signing_key.sign(&preimage);
+    manifest.manifest_signature = Some(STANDARD_NO_PAD.encode(sig.to_bytes()));
+    manifest.manifest_signer_kid = Some(signer_kid);
+    Ok(())
+}
+
+/// Verify the Ed25519 signature on `manifest` against `verifying_key`.
+///
+/// Returns `Ok(())` only when (1) `manifest_signature` is present, (2) it
+/// decodes as base64-no-padding to exactly 64 bytes, and (3) the canonical
+/// JCS bytes of the manifest (with the signature field stripped) verify
+/// under `verifying_key` via `verify_strict` (RFC 8032 §5.1.7, cofactor-
+/// attack mitigation).
+pub fn verify_manifest(
+    manifest: &ProofPackageManifest,
+    verifying_key: &ed25519_dalek::VerifyingKey,
+) -> Result<(), ProofPackageError> {
+    use base64::{engine::general_purpose::STANDARD_NO_PAD, Engine};
+    let Some(sig_b64) = manifest.manifest_signature.as_deref() else {
+        return Err(ProofPackageError::SignatureInvalid {
+            reason: "manifest_signature field absent".into(),
+        });
+    };
+    let sig_bytes = STANDARD_NO_PAD
+        .decode(sig_b64)
+        .map_err(|e| ProofPackageError::SignatureInvalid {
+            reason: format!("base64 decode: {e}"),
+        })?;
+    let sig = ed25519_dalek::Signature::from_slice(&sig_bytes).map_err(|e| {
+        ProofPackageError::SignatureInvalid {
+            reason: format!("signature shape: {e}"),
+        }
+    })?;
+    let preimage = canonical_json(manifest)?;
+    verifying_key
+        .verify_strict(&preimage, &sig)
+        .map_err(|e| ProofPackageError::SignatureInvalid {
+            reason: format!("verify_strict: {e}"),
+        })
+}
 
 // ---------------------------------------------------------------------------
 // Manifest
@@ -24,7 +237,12 @@ use crate::util::sha256_hex;
 /// Signed manifest describing the proof package contents (Section 20.1).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProofPackageManifest {
-    /// Package format version.
+    /// Numeric on-disk format discriminator. Bumps when the package layout
+    /// changes incompatibly (e.g. when Merkle root + manifest signature
+    /// land in v11 1.3 / 1.4). Missing on disk → `1` (legacy).
+    #[serde(default = "default_format_version")]
+    pub format_version: u32,
+    /// Human-readable semver of the package contract.
     pub version: String,
     /// When the package was generated.
     pub generated_at: DateTime<Utc>,
@@ -42,6 +260,20 @@ pub struct ProofPackageManifest {
     pub summary: CampaignSummary,
     /// SHA-256 hashes of all files in the package (path → hash).
     pub file_hashes: HashMap<String, String>,
+    /// RFC 6962 Merkle root over the audit log's `entry_hash` sequence
+    /// (lowercase hex). `None` for packages that pre-date v11 1.3.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub merkle_root: Option<String>,
+    /// Ed25519 signature over the canonical JCS bytes of the manifest with
+    /// this field set to `None` (RFC 8785 / v11 1.4). Base64-encoded
+    /// (standard alphabet, no padding). `None` for packages that pre-date
+    /// v11 1.4 or were assembled without a signing key.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub manifest_signature: Option<String>,
+    /// `signer_kid` of the Ed25519 key that produced `manifest_signature`.
+    /// Set together with `manifest_signature`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub manifest_signer_kid: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -233,6 +465,19 @@ pub struct PackageInputs {
     pub binary_hash: String,
     /// Summary statistics.
     pub summary: CampaignSummary,
+    /// Optional RFC 6962 Merkle root over the audit log's `entry_hash`
+    /// sequence (lowercase hex, no `sha256:` prefix). When set, `assemble`
+    /// writes the value to `integrity/merkle_root.txt` and records it on
+    /// the manifest. v11 1.3.
+    pub merkle_root_hex: Option<String>,
+    /// Optional Ed25519 signing key + KID for the manifest signature
+    /// (v11 1.4). When `Some`, `assemble` JCS-canonicalizes the manifest
+    /// (with `manifest_signature` cleared), signs the preimage, stamps
+    /// `manifest_signature` / `manifest_signer_kid` on the manifest, and
+    /// writes `manifest.sig` (base64-no-padding, no trailing newline)
+    /// alongside `manifest.json`. When `None`, the manifest is left
+    /// unsigned and `assemble` logs a `tracing::warn!`.
+    pub signing_key: Option<(ed25519_dalek::SigningKey, String)>,
 }
 
 /// Assemble a proof package directory from the given inputs.
@@ -305,6 +550,18 @@ pub fn assemble(inputs: &PackageInputs, output_dir: &Path) -> Result<ProofPackag
         )?;
     }
 
+    // Write Merkle root (v11 1.3) — lowercase hex, no trailing newline,
+    // matches the format consumed by `invariant audit verify --merkle-root`.
+    if let Some(root_hex) = &inputs.merkle_root_hex {
+        let merkle_path = output_dir.join("integrity/merkle_root.txt");
+        std::fs::write(&merkle_path, root_hex.as_bytes())
+            .map_err(|e| format!("write merkle_root.txt: {e}"))?;
+        file_hashes.insert(
+            "integrity/merkle_root.txt".into(),
+            sha256_hex(root_hex.as_bytes()),
+        );
+    }
+
     // Write binary hash.
     let binary_hash_path = output_dir.join("integrity/binary_hash.txt");
     std::fs::write(&binary_hash_path, &inputs.binary_hash)
@@ -325,7 +582,8 @@ pub fn assemble(inputs: &PackageInputs, output_dir: &Path) -> Result<ProofPackag
     );
 
     // Build manifest.
-    let manifest = ProofPackageManifest {
+    let mut manifest = ProofPackageManifest {
+        format_version: CURRENT_FORMAT_VERSION,
         version: "1.0.0".into(),
         generated_at: Utc::now(),
         campaign_name: inputs.campaign_name.clone(),
@@ -340,7 +598,27 @@ pub fn assemble(inputs: &PackageInputs, output_dir: &Path) -> Result<ProofPackag
         invariant_version: env!("CARGO_PKG_VERSION").into(),
         summary: inputs.summary.clone(),
         file_hashes,
+        merkle_root: inputs.merkle_root_hex.clone(),
+        manifest_signature: None,
+        manifest_signer_kid: None,
     };
+
+    // v11 1.4: optionally sign the manifest (JCS canonicalization →
+    // Ed25519 → base64-no-padding) and write `manifest.sig` alongside.
+    if let Some((key, kid)) = &inputs.signing_key {
+        sign_manifest(&mut manifest, key, kid.clone())
+            .map_err(|e| format!("sign manifest: {e}"))?;
+        let sig = manifest
+            .manifest_signature
+            .as_deref()
+            .expect("sign_manifest must populate manifest_signature");
+        std::fs::write(output_dir.join("manifest.sig"), sig.as_bytes())
+            .map_err(|e| format!("write manifest.sig: {e}"))?;
+    } else {
+        tracing::warn!(
+            "proof package assembled without a signing key — manifest.sig will be absent"
+        );
+    }
 
     // Write manifest.
     let manifest_json =
@@ -650,6 +928,8 @@ mod tests {
             profile_name: "test_robot".into(),
             binary_hash: "sha256:abc123".into(),
             summary,
+            merkle_root_hex: None,
+            signing_key: None,
         };
 
         let manifest = assemble(&inputs, &output).unwrap();
@@ -691,6 +971,8 @@ mod tests {
             profile_name: "test".into(),
             binary_hash: "sha256:def456".into(),
             summary,
+            merkle_root_hex: None,
+            signing_key: None,
         };
 
         let manifest = assemble(&inputs, &output).unwrap();
@@ -726,6 +1008,8 @@ mod tests {
             profile_name: "test".into(),
             binary_hash: "sha256:000".into(),
             summary,
+            merkle_root_hex: None,
+            signing_key: None,
         };
 
         let manifest = assemble(&inputs, &output).unwrap();
@@ -740,6 +1024,7 @@ mod tests {
     #[test]
     fn readme_contains_summary_stats() {
         let manifest = ProofPackageManifest {
+            format_version: CURRENT_FORMAT_VERSION,
             version: "1.0.0".into(),
             generated_at: Utc::now(),
             campaign_name: "readme_test".into(),
@@ -749,6 +1034,9 @@ mod tests {
             invariant_version: "0.1.0".into(),
             summary: CampaignSummary::compute(10_000, 9_500, 500, 0, 2_000, 0, 100.0),
             file_hashes: HashMap::new(),
+            merkle_root: None,
+            manifest_signature: None,
+            manifest_signer_kid: None,
         };
 
         let readme = generate_readme(&manifest);
@@ -760,6 +1048,7 @@ mod tests {
     #[test]
     fn manifest_serde_round_trip() {
         let manifest = ProofPackageManifest {
+            format_version: CURRENT_FORMAT_VERSION,
             version: "1.0.0".into(),
             generated_at: Utc::now(),
             campaign_name: "serde_test".into(),
@@ -769,6 +1058,9 @@ mod tests {
             invariant_version: "0.1.0".into(),
             summary: CampaignSummary::compute(100, 90, 10, 0, 0, 0, 100.0),
             file_hashes: HashMap::new(),
+            merkle_root: None,
+            manifest_signature: None,
+            manifest_signer_kid: None,
         };
 
         let json = serde_json::to_string(&manifest).unwrap();
@@ -821,6 +1113,8 @@ mod tests {
             campaign_name: "test".into(),
             profile_name: "test".into(),
             summary: CampaignSummary::compute(100, 100, 0, 0, 0, 0, 100.0),
+            merkle_root_hex: None,
+            signing_key: None,
         };
 
         let result = assemble(&inputs, &output);
@@ -830,5 +1124,78 @@ mod tests {
         );
         let err = result.unwrap_err();
         assert!(err.contains("path traversal"), "error: {err}");
+    }
+
+    // ── v12 N-5: format_version + typed UnsupportedFormat rejection ────────
+
+    #[test]
+    fn format_version_defaults_to_v1_when_missing_on_disk() {
+        // The fixture under tests/fixtures/proof_package_v1/manifest.json has
+        // no `format_version` key (it represents a pre-N-5 manifest).
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/proof_package_v1/manifest.json");
+        let raw = std::fs::read_to_string(&path).expect("fixture readable");
+        let manifest: ProofPackageManifest =
+            serde_json::from_str(&raw).expect("v1 manifest deserializes");
+        assert_eq!(
+            manifest.format_version, FORMAT_VERSION_V1,
+            "missing format_version must default to v1"
+        );
+        assert_eq!(verify_format_version(manifest.format_version), Ok(()));
+    }
+
+    #[test]
+    fn assemble_writes_current_format_version() {
+        let dir = tempfile::tempdir().unwrap();
+        let output = dir.path().join("proof-package");
+
+        let inputs = PackageInputs {
+            campaign_config: None,
+            profile: None,
+            audit_log: None,
+            adversarial_reports: HashMap::new(),
+            compliance_mappings: HashMap::new(),
+            public_keys: None,
+            campaign_name: "fv_test".into(),
+            profile_name: "test".into(),
+            binary_hash: "sha256:abc".into(),
+            summary: CampaignSummary::compute(100, 90, 10, 0, 0, 0, 100.0),
+            merkle_root_hex: None,
+            signing_key: None,
+        };
+
+        let manifest = assemble(&inputs, &output).unwrap();
+        assert_eq!(manifest.format_version, CURRENT_FORMAT_VERSION);
+
+        // The on-disk JSON includes the field explicitly so a reader on a
+        // future MIN_SUPPORTED bump can fail-fast rather than silent-default.
+        let on_disk = std::fs::read_to_string(output.join("manifest.json")).unwrap();
+        assert!(
+            on_disk.contains("\"format_version\""),
+            "manifest.json must record format_version: {on_disk}"
+        );
+    }
+
+    #[test]
+    fn verify_format_version_rejects_future_version() {
+        // A manifest claiming format_version above MAX_SUPPORTED must be
+        // rejected with the typed UnsupportedFormat error, never silently
+        // accepted.
+        let future = MAX_SUPPORTED_FORMAT_VERSION + 1;
+        let err = verify_format_version(future).unwrap_err();
+        assert_eq!(
+            err,
+            ProofPackageError::UnsupportedFormat {
+                found: future,
+                expected_min: MIN_SUPPORTED_FORMAT_VERSION,
+                expected_max: MAX_SUPPORTED_FORMAT_VERSION,
+            }
+        );
+    }
+
+    #[test]
+    fn verify_format_version_rejects_zero() {
+        let err = verify_format_version(0).unwrap_err();
+        assert!(matches!(err, ProofPackageError::UnsupportedFormat { found: 0, .. }));
     }
 }

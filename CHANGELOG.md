@@ -5,6 +5,82 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.2.0] - 2026-05-14
+
+### Changed
+- **Workspace version bumped to 0.2.0.** Marks the first published release
+  from the unified Invariant workspace. The two previously-standalone
+  crates `invariant-robotics` and `invariant-biosynthesis` now ship from
+  this monorepo at https://github.com/clay-good/invariant; their
+  `description`, `repository`, and `homepage` fields advertise the move so
+  the canonical source is unambiguous on crates.io. Older standalone
+  publishes (`invariant-robotics` ≤ 0.0.x, `invariant-biosynthesis` ≤
+  0.0.x) remain installable but should be considered superseded.
+- All eight workspace crates now ship explicit `keywords`, `categories`,
+  `repository`, and `homepage` metadata for crates.io discoverability.
+
+### Changed (Phase 1b generification)
+- **Phase 1b generification.** The audit logger and differential comparison
+  logic — previously duplicated between `invariant-robotics` and
+  `invariant-biosynthesis` — now live in `invariant-core`:
+  - `invariant_core::models::audit::{AuditEntry, SignedAuditEntry}` are
+    parameterized over the input type `I` and verdict type `V`. JSONL
+    on-disk format unchanged (the input is serialized under the legacy
+    field name `command`).
+  - `invariant_core::audit::{AuditError, AuditVerifyError, AuditLogger,
+    verify_log}` carries the hash-chain, Ed25519 signing, and O_APPEND
+    file-backed flavor.
+  - `invariant_core::differential::{CheckDisagreement, DifferentialResult,
+    compare_verdicts, VerdictView, CheckView}` carries the pure
+    comparison logic; domain crates implement the two trait pair on their
+    concrete `Verdict` / `CheckResult`.
+  - Domain crates retain the same public API via thin shims (type aliases
+    for `AuditLogger<W>` and `AuditEntry`, a `verify_log` wrapper that
+    fixes the generics, and a per-domain `DifferentialValidator<'a>`
+    composing two domain `ValidatorConfig`s). Downstream code does not
+    need to change.
+
+## [0.1.0] - 2026-05-14
+
+### Changed
+- Unified `invariant-robotics` and `invariant-biosynthesis` into a single
+  Cargo workspace. The two products now share a common
+  `invariant-core` crate (PIC/PCA chain, audit log, key management,
+  intent narrowing, monitors, replication, proof-package generation,
+  incident response) and a keystone `ValidationInput` /
+  `DomainCheck` / `DomainProfile` trait surface.
+- Single CLI binary `invariant` replaces `invariant-robotics-cli` and
+  `invariant-bio`. Dispatch is `invariant <domain> <subcommand>` —
+  `invariant robotics validate ...`, `invariant biosynthesis validate ...`,
+  `invariant keys generate ...`. The full subcommand surface from both
+  source CLIs is preserved (19 robotics + 12 biosynthesis subcommands).
+- Merged `invariant-sim`, `invariant-eval`, `invariant-fuzz` crates carry
+  per-domain modules (`pub mod robotics;` + `pub mod biosynthesis;`).
+- `invariant-coordinator` (multi-robot coordination) is robotics-only
+  and depends on `invariant-robotics`.
+- Built-in profiles relocated: `profiles/robotics/` (34 robot JSONs)
+  and `profiles/biosynthesis/` (6 synthesizer JSONs).
+- Coset upgraded from 0.3 → 0.4 across the unified workspace
+  (biosynthesis was on 0.3; the wire format is stable across the bump
+  but the API surface changed slightly).
+
+### Migration notes
+- Downstream code: rename `invariant_robotics_core::*` →
+  `invariant_robotics::*` and `invariant_biosynthesis_core::*` →
+  `invariant_biosynthesis::*`. The shared protocol modules
+  (`authority`, `keys`, `monitors`, `proof_package`, `replication`,
+  `incident`, `util`) are re-exported from both domain crates so most
+  imports change only the crate prefix.
+- Bio's `ValidationError` retains its bio-specific variants
+  (`ProfileFieldInvalid`, `BundleFieldInvalid`); only `AuthorityError`
+  is shared via `invariant-core`.
+- Bio's intent templates (`synthesize_dna_fragment`, etc.) are exposed
+  via `invariant_biosynthesis::intent`; robotics templates
+  (`pick_and_place`, etc.) via `invariant_core::intent` (re-exported as
+  `invariant_robotics::intent`).
+
+## Pre-unification history (robotics)
+
 ## [0.0.3] - 2026-04-16
 
 ### Added
@@ -113,3 +189,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Adversarial testing framework (protocol, system, cognitive attacks)
 - 4 built-in robot profiles (humanoid, Franka Panda, quadruped, UR10)
 - MIT license
+
+## Pre-unification history (biosynthesis)
+
+The `invariant-biosynthesis` source repo was at `0.0.1` before unification
+and shipped these capabilities (preserved verbatim in
+`crates/invariant-biosynthesis/`):
+
+- Synthesis bundle schema (`SynthesisBundle`) with DNA / peptide /
+  chemical / protocol payloads.
+- D1–D10 DNA invariants, P1–P10 peptide invariants, C1–C10 chemical
+  invariants, plus homology, molecule, protocol, and stateful checks.
+- Hazard screening framework with pluggable databases.
+- BSL2 / BSL3 / BSL4 profile gating.
+- Attestation primitives for HSM-backed key signing.
+- Bio-specific intent templates (`synthesize_dna_fragment`,
+  `run_peptide_coupling`, `dispense_reagent`, …).
+- CLI with validate, audit, verify, inspect, eval, differential, intent,
+  campaign, keygen, adversarial subcommands (`invariant-bio` binary).

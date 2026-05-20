@@ -1,6 +1,8 @@
 [workspace]
 members = [
     "crates/invariant-core",
+    "crates/invariant-robotics",
+    "crates/invariant-biosynthesis",
     "crates/invariant-cli",
     "crates/invariant-sim",
     "crates/invariant-eval",
@@ -10,19 +12,16 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "0.0.3"
+version = "0.2.0"
 authors = ["Clay Good <hi@claygood.com>"]
 edition = "2021"
 rust-version = "1.75"
 license = "MIT"
 repository = "https://github.com/clay-good/invariant"
 homepage = "https://github.com/clay-good/invariant"
-documentation = "https://docs.rs/invariant-robotics-core"
-keywords = ["robotics", "safety", "cryptography", "ed25519", "real-time"]
-categories = ["aerospace", "cryptography", "embedded", "science", "simulation"]
 
 [workspace.dependencies]
-# Crypto
+# Crypto — coset 0.4 (robotics is newer; biosynthesis on 0.3 must upgrade)
 ed25519-dalek = { version = "2.1", features = ["rand_core"] }
 coset = "0.4"
 sha2 = "0.10"
@@ -46,3 +45,8 @@ tokio = { version = "1.52" }
 axum = "0.8"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Internal
+invariant-core = { path = "crates/invariant-core", version = "0.2.0" }
+invariant-robotics = { path = "crates/invariant-robotics", version = "0.2.0" }
+invariant-biosynthesis = { path = "crates/invariant-biosynthesis", version = "0.2.0" }

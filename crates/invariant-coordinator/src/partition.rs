@@ -63,7 +63,7 @@ pub enum PartitionError {
 /// # Examples
 ///
 /// ```
-/// use invariant_robotics_coordinator::partition::WorkspacePartition;
+/// use invariant_coordinator::partition::WorkspacePartition;
 ///
 /// let partition = WorkspacePartition {
 ///     name: "cell-1-zone".into(),
@@ -130,7 +130,7 @@ impl WorkspacePartition {
 /// # Examples
 ///
 /// ```
-/// use invariant_robotics_coordinator::partition::{WorkspacePartition, WorkspacePartitionConfig};
+/// use invariant_coordinator::partition::{WorkspacePartition, WorkspacePartitionConfig};
 ///
 /// // Two non-overlapping partitions — one per robot.
 /// let config = WorkspacePartitionConfig::new(vec![

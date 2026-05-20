@@ -1,0 +1,18 @@
+{
+  "timestamp": "2026-04-24T12:00:00Z",
+  "source": "demo-cognitive-layer",
+  "sequence": 2,
+  "payload": {
+    "kind": "dna",
+    "sequence": "AAATGCATGCATGC_REPLACE_WITH_KNOWN_TOXIN_FRAGMENT_FOR_STEP3"
+  },
+  "delta_time": 0.0,
+  "authority": {
+    "pca_chain": "",
+    "required_ops": ["synthesize:dna:fragment"]
+  },
+  "metadata": {
+    "project": "demo-adversarial",
+    "note": "placeholder for a bundle that should fail screening once Step 3 screening is live"
+  }
+}

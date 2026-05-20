@@ -1,10 +1,21 @@
 /-
-  Invariant — Formal Specification: Domain Types
-  Step 42: Lean 4 formalization of all 29 invariants.
+  Invariant — Formal Specification: Robotics Domain Types
+  Step 42 / Phase 6b.
 
-  These types model the core domains of the Invariant safety firewall:
-  joints, workspaces, authority chains, commands, and verdicts.
+  These types model the robotics domain of the Invariant safety firewall:
+  joints, workspaces, authority chains, commands, and verdicts. They
+  correspond to the concrete types in `invariant-robotics::models::*`
+  (`Command`, `RobotProfile`, `JointState`, …) and are the robotics
+  instance of the abstract `Invariant.Core.ValidationInput` /
+  `DomainProfile` typeclasses defined in `Invariant/Core.lean`.
+
+  The `Authority` chain types are defined here (rather than in `Core`)
+  for backward compatibility with the existing `Invariant.Authority`
+  module; the Rust implementation has hoisted them to `invariant-core`
+  but the Lean structure is unchanged so existing proofs remain valid.
 -/
+
+import Invariant.Core
 
 namespace Invariant
 
@@ -178,5 +189,21 @@ structure Verdict where
   approved : Bool
   checks : List CheckResult
   deriving Repr
+
+-- ════════════════════════════════════════════════════════════════════
+-- Phase 6b: register the robotics domain with the core trait surface.
+-- These instances mirror the Rust `impl ValidationInput for Command`
+-- and `impl DomainProfile for RobotProfile` blocks in
+-- `invariant-robotics::models::{command, profile}`.
+-- ════════════════════════════════════════════════════════════════════
+
+instance : Invariant.Core.ValidationInput Command where
+  domain _ := "robotics"
+  operations cmd := cmd.requiredOps
+  contentHash _ := ""   -- placeholder; the Rust impl is SHA-256 of canonical JSON
+
+instance : Invariant.Core.DomainProfile RobotProfile where
+  id _ := "robot"        -- placeholder; the Rust impl exposes profile.name
+  domain _ := "robotics"
 
 end Invariant

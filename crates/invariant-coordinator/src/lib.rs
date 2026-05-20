@@ -25,7 +25,7 @@ pub mod monitor;
 pub mod partition;
 
 pub use monitor::{
-    CoordinationMonitor, CoordinationVerdict, CrossRobotCheck, RobotState, StaleRobotPolicy,
-    UpdateResult,
+    CoordinationMonitor, CoordinationVerdict, CrossRobotCheck, FleetSnapshot, RobotState,
+    StaleRobotPolicy, UpdateResult,
 };
 pub use partition::{WorkspacePartition, WorkspacePartitionConfig};

@@ -1,10 +1,13 @@
 /-
   Invariant — Formal Specification: Physical Invariants P1–P25
-  Step 42+94: Lean 4 formalization (P21–P25 environmental added in Step 94).
+  Step 42+94 / Phase 6b.
 
   Each invariant is expressed as a decidable proposition (predicate) over
-  a Command and RobotProfile. The validator approves a command iff ALL
-  physical invariants hold simultaneously.
+  a robotics `Command` and `RobotProfile`. The validator approves a
+  command iff ALL physical invariants hold simultaneously. In the
+  unified workspace these checks live in `invariant-robotics::physics`
+  (P1–P25 are robotics-only — biosynthesis has its own D/P/C
+  invariant set, sketched in `Invariant/Biosynthesis.lean`).
 -/
 
 import Invariant.Types

@@ -1,0 +1,29 @@
+[package]
+name = "invariant-robotics"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords = ["robotics", "safety", "validation", "ed25519", "audit"]
+categories = ["science::robotics"]
+description = "Robotics safety engine for Invariant: physics checks, URDF kinematics, robot profiles, sensor attestation. As of 0.2.0 this crate ships from the unified Invariant workspace at https://github.com/clay-good/invariant — the standalone invariant-robotics repo has been merged in."
+
+[dependencies]
+invariant-core.workspace = true
+ed25519-dalek.workspace = true
+coset.workspace = true
+sha2.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+chrono.workspace = true
+base64.workspace = true
+rand.workspace = true
+regex.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+quick-xml.workspace = true
+
+[dev-dependencies]
+tempfile = "3"

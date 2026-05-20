@@ -1,3 +1,9 @@
-/// Key-file helpers: serialization, validation, and cryptographic utilities for
-/// Ed25519 key files used by the Invariant CLI.
+//! Unified Invariant CLI library.
+//!
+//! Top-level dispatch: `invariant <domain> <subcommand>`.
+
+#![forbid(unsafe_code)]
+
+pub mod biosynthesis;
 pub mod key_file;
+pub mod robotics;

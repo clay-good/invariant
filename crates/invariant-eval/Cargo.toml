@@ -1,16 +1,23 @@
 [package]
-name = "invariant-robotics-eval"
+name = "invariant-eval"
 version.workspace = true
+authors.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "Trace evaluation engine for Invariant (presets, rubrics, guardrails, differ)."
-readme = "../../README.md"
+repository.workspace = true
+homepage.workspace = true
+keywords = ["evaluation", "trace", "audit", "robotics", "biosynthesis"]
+categories = ["development-tools"]
+description = "Trace evaluation engine for Invariant — robotics and biosynthesis verdict/audit-log analysis. Part of the unified Invariant workspace at https://github.com/clay-good/invariant."
 
 [dependencies]
-invariant-core = { package = "invariant-robotics-core", path = "../invariant-core", version = "0.0.3" }
+invariant-core.workspace = true
+invariant-robotics.workspace = true
+invariant-biosynthesis.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+chrono.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
-chrono.workspace = true
+tempfile = "3"

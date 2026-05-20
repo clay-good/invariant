@@ -1,0 +1,18 @@
+{
+  "timestamp": "2026-04-25T12:00:00Z",
+  "source": "demo-cognitive-layer",
+  "sequence": 1,
+  "payload": {
+    "kind": "peptide",
+    "sequence": "MAGYKSTNDQ"
+  },
+  "delta_time": 0.0,
+  "authority": {
+    "pca_chain": "",
+    "required_ops": ["synthesize:peptide:fragment"]
+  },
+  "metadata": {
+    "project": "demo-safe-peptide",
+    "note": "short benign peptide for dry-run example"
+  }
+}

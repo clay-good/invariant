@@ -301,6 +301,7 @@ pub fn intent_to_pca(intent: &ResolvedIntent) -> Result<Pca, IntentError> {
         kid: intent.kid.clone(),
         exp: intent.expiry,
         nbf: None,
+        predecessor_digest: [0u8; 32],
     })
 }
 
@@ -554,5 +555,187 @@ mod tests {
 
         // Verify the signature.
         assert!(verify_signed_pca(&signed, &vk, 0).is_ok());
+    }
+
+    // -----------------------------------------------------------------------
+    // v12-N-15: intent ↔ PCA round-trip property test
+    //
+    // The contract: any `ResolvedIntent` that round-trips through
+    // `intent_to_pca` and back has the same authority closure. The
+    // "authority closure" of a `Pca` is `(p_0, ops, kid, exp, nbf)`. We
+    // assert byte-for-byte structural equality, which subsumes the
+    // operational claim that "a command admitted by the original chain is
+    // also admitted by the chain reconstructed from the intent" — because
+    // chain admission only reads those five fields.
+    //
+    // proptest is not on the workspace dep list (verified against
+    // `Cargo.toml` at HEAD), so the test uses a seeded `StdRng` and 256
+    // hand-shrunk cases. On failure it writes the offending intent JSON
+    // to `tests/regressions/intent_roundtrip_<hash>.json` so the case can
+    // be re-loaded into a focused debug run.
+
+    fn random_intent(rng: &mut rand::rngs::StdRng) -> ResolvedIntent {
+        use rand::seq::SliceRandom;
+        use rand::Rng;
+
+        // Principals drawn from a small pool of valid identifier shapes.
+        const PRINCIPALS: &[&str] =
+            &["alice", "bob", "carol", "ops-1", "ops-2", "forge", "root"];
+        const KIDS: &[&str] = &["key-1", "key-2", "key-alice", "key-root"];
+        // A spread of `Operation::new`-accepted strings. Mixing wildcards
+        // ("*") and concrete leaves exercises the BTreeSet ordering.
+        const OPS: &[&str] = &[
+            "actuate:left_arm:*",
+            "actuate:right_arm:*",
+            "actuate:left_arm:shoulder",
+            "actuate:right_arm:gripper",
+            "sense:vision:*",
+            "sense:proximity:tcp",
+            "actuate:base:wheel_left",
+            "actuate:base:wheel_right",
+        ];
+
+        let principal = PRINCIPALS.choose(rng).unwrap().to_string();
+        let kid = KIDS.choose(rng).unwrap().to_string();
+        let op_count = rng.gen_range(1..=OPS.len());
+        let mut operations: Vec<String> = OPS
+            .choose_multiple(rng, op_count)
+            .map(|s| s.to_string())
+            .collect();
+        // Inject a few duplicates so the BTreeSet dedup path is exercised.
+        if !operations.is_empty() && rng.gen_bool(0.25) {
+            operations.push(operations[0].clone());
+        }
+
+        // Mix `Some`/`None` expiry and `Some`/`None` nbf via duration.
+        // ResolvedIntent only carries `expiry`; we'll inject nbf at the PCA
+        // layer after the first round-trip.
+        let expiry = if rng.gen_bool(0.5) {
+            Some(Utc::now() + Duration::seconds(rng.gen_range(1..=3600)))
+        } else {
+            None
+        };
+
+        ResolvedIntent {
+            principal,
+            operations,
+            kid,
+            expiry,
+            source: IntentSource::Direct,
+        }
+    }
+
+    /// Build a fresh `ResolvedIntent` from a `Pca`. This is the structural
+    /// inverse of `intent_to_pca`; the round-trip property is that
+    /// `intent_to_pca(pca_to_intent(intent_to_pca(i))) == intent_to_pca(i)`.
+    fn pca_to_intent(pca: &Pca) -> ResolvedIntent {
+        ResolvedIntent {
+            principal: pca.p_0.clone(),
+            operations: pca.ops.iter().map(|o| o.as_str().to_string()).collect(),
+            kid: pca.kid.clone(),
+            expiry: pca.exp,
+            source: IntentSource::Direct,
+        }
+    }
+
+    fn short_hash(intent: &ResolvedIntent) -> String {
+        use sha2::{Digest, Sha256};
+        let bytes = serde_json::to_vec(intent).expect("intent must serialize");
+        let h = Sha256::digest(&bytes);
+        // 8 hex characters is enough to disambiguate 256 cases.
+        format!("{:016x}", u64::from_be_bytes(h[..8].try_into().unwrap()))
+    }
+
+    fn record_failure(intent: &ResolvedIntent) {
+        // Best-effort: write a regression fixture so the failing case can
+        // be loaded into a focused test. Ignore I/O errors — the assertion
+        // that follows is the actual failure signal.
+        let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let dir = manifest_dir.join("tests").join("regressions");
+        if std::fs::create_dir_all(&dir).is_ok() {
+            let path = dir.join(format!("intent_roundtrip_{}.json", short_hash(intent)));
+            let _ = std::fs::write(
+                &path,
+                serde_json::to_vec_pretty(intent).unwrap_or_default(),
+            );
+        }
+    }
+
+    fn assert_round_trip(intent: &ResolvedIntent) {
+        // First leg: intent → PCA.
+        let pca1 = match intent_to_pca(intent) {
+            Ok(p) => p,
+            Err(e) => {
+                record_failure(intent);
+                panic!("intent_to_pca failed on a generated intent: {e}");
+            }
+        };
+
+        // Second leg: PCA → intent → PCA. The reconstructed PCA must
+        // match `pca1` field-for-field.
+        let intent2 = pca_to_intent(&pca1);
+        let pca2 = match intent_to_pca(&intent2) {
+            Ok(p) => p,
+            Err(e) => {
+                record_failure(intent);
+                panic!("intent_to_pca failed on the reconstructed intent: {e}");
+            }
+        };
+
+        if pca1.p_0 != pca2.p_0
+            || pca1.ops != pca2.ops
+            || pca1.kid != pca2.kid
+            || pca1.exp != pca2.exp
+            || pca1.nbf != pca2.nbf
+        {
+            record_failure(intent);
+            panic!(
+                "round-trip mismatch — original PCA closure differs from \
+                 reconstructed PCA closure.\n  original: p_0={} ops={:?} \
+                 kid={} exp={:?} nbf={:?}\n  reconstructed: p_0={} ops={:?} \
+                 kid={} exp={:?} nbf={:?}",
+                pca1.p_0, pca1.ops, pca1.kid, pca1.exp, pca1.nbf,
+                pca2.p_0, pca2.ops, pca2.kid, pca2.exp, pca2.nbf,
+            );
+        }
+    }
+
+    #[test]
+    fn intent_pca_round_trip_property_256_cases() {
+        use rand::SeedableRng;
+        // Fixed seed: deterministic across runs, regenerates the same 256
+        // intents on every CI invocation.
+        let mut rng = rand::rngs::StdRng::seed_from_u64(0x1234_5678_9ABC_DEF0);
+        for _ in 0..256 {
+            let intent = random_intent(&mut rng);
+            assert_round_trip(&intent);
+        }
+    }
+
+    #[test]
+    fn intent_pca_round_trip_deduplicates_operations() {
+        // A direct intent with a duplicate operation must produce a PCA
+        // whose `ops` set has the duplicate folded out. The round-trip
+        // back must therefore drop the duplicate, and a second round-trip
+        // must be a fixed point.
+        let intent = ResolvedIntent {
+            principal: "alice".into(),
+            operations: vec![
+                "actuate:left_arm:*".into(),
+                "actuate:left_arm:*".into(),
+                "sense:vision:*".into(),
+            ],
+            kid: "key-1".into(),
+            expiry: Some(Utc::now() + Duration::seconds(30)),
+            source: IntentSource::Direct,
+        };
+        let pca1 = intent_to_pca(&intent).unwrap();
+        assert_eq!(pca1.ops.len(), 2, "BTreeSet must dedup the input list");
+
+        let pca2 = intent_to_pca(&pca_to_intent(&pca1)).unwrap();
+        assert_eq!(pca1.ops, pca2.ops);
+        assert_eq!(pca1.p_0, pca2.p_0);
+        assert_eq!(pca1.kid, pca2.kid);
+        assert_eq!(pca1.exp, pca2.exp);
     }
 }

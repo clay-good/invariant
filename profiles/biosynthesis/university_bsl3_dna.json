@@ -1,0 +1,15 @@
+{
+  "name": "university_bsl3_dna",
+  "version": "0.1.0",
+  "bsl_level": 3,
+  "allowed_substrates": ["dna"],
+  "max_synthesis_volume_ml": 2.0,
+  "export_controlled": false,
+  "codon_usage_organism": "e_coli",
+  "protein_kmer_k": 5,
+  "protein_kmer_threshold": 0.25,
+  "max_authority_chain_depth": 4,
+  "max_dna_length_bp": 250000,
+  "max_peptide_length_aa": 25000,
+  "max_smiles_length_chars": 25000
+}

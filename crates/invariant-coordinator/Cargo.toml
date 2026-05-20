@@ -1,13 +1,18 @@
 [package]
-name = "invariant-robotics-coordinator"
+name = "invariant-coordinator"
 version.workspace = true
+authors.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "Multi-robot coordination safety monitor for Invariant."
-readme = "../../README.md"
+repository.workspace = true
+homepage.workspace = true
+keywords = ["robotics", "coordination", "safety", "multi-robot"]
+categories = ["science::robotics"]
+description = "Multi-robot coordination safety (separation, partitioning) for Invariant. Part of the unified Invariant workspace at https://github.com/clay-good/invariant."
 
 [dependencies]
-invariant-core = { package = "invariant-robotics-core", path = "../invariant-core", version = "0.0.3" }
+invariant-core.workspace = true
+invariant-robotics.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 chrono.workspace = true

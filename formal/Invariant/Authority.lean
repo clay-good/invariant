@@ -1,10 +1,17 @@
 /-
   Invariant — Formal Specification: Authority Invariants A1–A3
-  Step 42: Lean 4 formalization.
+  Step 42 / Phase 6b.
 
   The PIC (Provenance, Identity, Continuity) authority model ensures that
-  every motor command traces back to a human operator through a
-  cryptographically signed chain of capability assertions.
+  every input (robotics `Command` or biosynthesis `SynthesisBundle`)
+  traces back to a human operator through a cryptographically signed
+  chain of capability assertions. In the unified Rust workspace this
+  logic lives in `invariant-core::authority` and is shared by both
+  domains.
+
+  The Lean formalization here predates the unification but only
+  references `Command` for the `RequiredOpsCovered` predicate; A1–A3
+  themselves operate on `AuthorityChain`, which is domain-agnostic.
 -/
 
 import Invariant.Types

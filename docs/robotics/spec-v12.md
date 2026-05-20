@@ -1,0 +1,1 @@
+> Superseded by [docs/robotics/spec.md](spec.md) as of 2026-05-19. The archived v12 tracking document is at [docs/history/robotics/spec-v12.md](../history/robotics/spec-v12.md); the v12 closure report is at [docs/spec-v12-verification.md](../spec-v12-verification.md).

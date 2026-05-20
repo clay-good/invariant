@@ -9,8 +9,10 @@ cargo-fuzz = true
 
 [dependencies]
 libfuzzer-sys = "0.4"
-invariant-core = { package = "invariant-robotics-core", path = "../crates/invariant-core" }
-invariant-fuzz = { package = "invariant-robotics-fuzz", path = "../crates/invariant-fuzz" }
+invariant-core = { path = "../crates/invariant-core" }
+invariant-robotics = { path = "../crates/invariant-robotics" }
+invariant-fuzz = { path = "../crates/invariant-fuzz" }
+invariant-sim = { path = "../crates/invariant-sim" }
 serde_json = "1.0"
 chrono = { version = "0.4", features = ["serde"] }
 ed25519-dalek = { version = "2.1", features = ["rand_core"] }
@@ -39,4 +41,19 @@ doc = false
 [[bin]]
 name = "fuzz_validate_pipeline"
 path = "fuzz_targets/fuzz_validate_pipeline.rs"
+doc = false
+
+[[bin]]
+name = "bridge_handle_line"
+path = "fuzz_targets/bridge_handle_line.rs"
+doc = false
+
+[[bin]]
+name = "fuzz_cose_envelope"
+path = "fuzz_targets/fuzz_cose_envelope.rs"
+doc = false
+
+[[bin]]
+name = "fuzz_json_bomb"
+path = "fuzz_targets/fuzz_json_bomb.rs"
 doc = false

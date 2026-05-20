@@ -20,7 +20,9 @@ from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-_PROFILES_DIR = _REPO_ROOT / "profiles"
+# After the workspace unification (Phase 5), built-in profiles moved from
+# the flat `profiles/` directory to a per-domain `profiles/robotics/`.
+_PROFILES_DIR = _REPO_ROOT / "profiles" / "robotics"
 
 DEXTEROUS_PROFILES = ["shadow_hand", "kinova_gen3", "franka_panda"]
 STEPS_PER_EPISODE = 300

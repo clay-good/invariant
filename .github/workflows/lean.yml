@@ -1,0 +1,57 @@
+name: Lean
+
+# Build the Lean 4 formalisation under formal/. Pinned via
+# formal/lean-toolchain (v4.8.0). v11-5.9.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "formal/**"
+      - ".github/workflows/lean.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "formal/**"
+      - ".github/workflows/lean.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: lake build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: formal
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install elan + Lean toolchain
+        run: |
+          curl -sSf https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh \
+            -o elan-init.sh
+          # Non-interactive install pinned at the version recorded in
+          # formal/lean-toolchain.
+          bash elan-init.sh -y --default-toolchain none
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+
+      - name: Show toolchain
+        run: |
+          lean --version
+          lake --version
+
+      - name: Cache .lake build artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            formal/.lake
+            formal/lakefile.lean
+          key: ${{ runner.os }}-lake-${{ hashFiles('formal/lean-toolchain', 'formal/lakefile.lean') }}
+          restore-keys: |
+            ${{ runner.os }}-lake-
+
+      - name: lake build
+        run: lake build

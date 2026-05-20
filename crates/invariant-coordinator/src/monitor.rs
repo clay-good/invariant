@@ -44,7 +44,7 @@ pub enum CoordinatorError {
 /// # Examples
 ///
 /// ```
-/// use invariant_robotics_coordinator::monitor::{RobotState, EndEffectorState};
+/// use invariant_coordinator::monitor::{RobotState, EndEffectorState};
 /// use chrono::Utc;
 ///
 /// let state = RobotState {
@@ -78,7 +78,7 @@ pub struct RobotState {
 /// # Examples
 ///
 /// ```
-/// use invariant_robotics_coordinator::monitor::EndEffectorState;
+/// use invariant_coordinator::monitor::EndEffectorState;
 ///
 /// let ee = EndEffectorState {
 ///     name: "tcp".into(),
@@ -107,7 +107,7 @@ pub struct EndEffectorState {
 /// # Examples
 ///
 /// ```
-/// use invariant_robotics_coordinator::monitor::StaleRobotPolicy;
+/// use invariant_coordinator::monitor::StaleRobotPolicy;
 ///
 /// // Both variants are available and can be compared.
 /// assert_ne!(StaleRobotPolicy::TreatAsObstacle, StaleRobotPolicy::RejectAll);
@@ -132,7 +132,7 @@ pub enum StaleRobotPolicy {
 /// # Examples
 ///
 /// ```
-/// use invariant_robotics_coordinator::monitor::{CoordinationConfig, StaleRobotPolicy};
+/// use invariant_coordinator::monitor::{CoordinationConfig, StaleRobotPolicy};
 ///
 /// // Default configuration: 0.5m separation, 200ms stale timeout.
 /// let config = CoordinationConfig::default();
@@ -205,7 +205,7 @@ impl Default for CoordinationConfig {
 /// # Examples
 ///
 /// ```
-/// use invariant_robotics_coordinator::monitor::CrossRobotCheck;
+/// use invariant_coordinator::monitor::CrossRobotCheck;
 ///
 /// // A passing separation check.
 /// let passing = CrossRobotCheck {
@@ -248,7 +248,7 @@ pub struct CrossRobotCheck {
 /// # Examples
 ///
 /// ```
-/// use invariant_robotics_coordinator::monitor::{
+/// use invariant_coordinator::monitor::{
 ///     CoordinationVerdict, CrossRobotCheck, CoordinationMonitor,
 ///     CoordinationConfig, RobotState, EndEffectorState,
 /// };
@@ -313,7 +313,7 @@ const MAX_EE_PER_ROBOT: usize = 64;
 /// # Examples
 ///
 /// ```
-/// use invariant_robotics_coordinator::monitor::{
+/// use invariant_coordinator::monitor::{
 ///     CoordinationMonitor, CoordinationConfig, RobotState, EndEffectorState,
 /// };
 /// use chrono::Utc;
@@ -342,7 +342,7 @@ pub struct UpdateResult {
 /// # Examples
 ///
 /// ```
-/// use invariant_robotics_coordinator::monitor::{
+/// use invariant_coordinator::monitor::{
 ///     CoordinationMonitor, CoordinationConfig, RobotState, EndEffectorState,
 ///     StaleRobotPolicy,
 /// };
@@ -444,6 +444,29 @@ impl CoordinationMonitor {
     /// Number of currently tracked robots.
     pub fn robot_count(&self) -> usize {
         self.states.len()
+    }
+
+    /// Serializable snapshot of every tracked robot's last-known state
+    /// together with the active configuration. Used by `invariant
+    /// robotics fleet status` (v11 5.5) to dump a monitor's view to
+    /// JSON without holding a reference to the live monitor.
+    ///
+    /// The states are sorted by `robot_id` so the snapshot bytes are
+    /// stable across runs with the same inputs (HashMap iteration
+    /// order would otherwise be non-deterministic).
+    pub fn snapshot(&self, as_of: DateTime<Utc>) -> FleetSnapshot {
+        let mut states: Vec<RobotState> = self.states.values().cloned().collect();
+        states.sort_by(|a, b| a.robot_id.cmp(&b.robot_id));
+        FleetSnapshot {
+            config: self.config.clone(),
+            as_of,
+            states,
+        }
+    }
+
+    /// Read-only view of the monitor's configuration.
+    pub fn config(&self) -> &CoordinationConfig {
+        &self.config
     }
 
     /// Check whether a robot's proposed state is safe relative to all other
@@ -584,6 +607,21 @@ impl CoordinationMonitor {
             details,
         }
     }
+}
+
+/// Point-in-time snapshot of every tracked robot's last-known state plus the
+/// monitor's active coordination configuration. Emitted by
+/// [`CoordinationMonitor::snapshot`] and consumed by `invariant robotics
+/// fleet status` (v11 5.5). `states` is sorted by `robot_id` so the JSON
+/// bytes are reproducible across runs with the same inputs.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FleetSnapshot {
+    /// The active coordination configuration when the snapshot was taken.
+    pub config: CoordinationConfig,
+    /// Wall-clock time the snapshot was requested.
+    pub as_of: DateTime<Utc>,
+    /// Last-known state for every tracked robot, sorted by `robot_id`.
+    pub states: Vec<RobotState>,
 }
 
 /// Euclidean distance between two 3D points.

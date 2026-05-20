@@ -1,0 +1,12 @@
+{
+  "name": "industry_peptide",
+  "version": "0.1.0",
+  "bsl_level": 2,
+  "allowed_substrates": ["peptide"],
+  "max_synthesis_volume_ml": 25.0,
+  "export_controlled": false,
+  "max_authority_chain_depth": 5,
+  "max_dna_length_bp": 500000,
+  "max_peptide_length_aa": 100000,
+  "max_smiles_length_chars": 50000
+}

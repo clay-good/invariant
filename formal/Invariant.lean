@@ -1,24 +1,43 @@
 /-
   Invariant — Formal Specification
-  Step 42+94: Lean 4 formalization of all 34 invariants with proof sketches.
+  Step 42+94 / Phase 6b: Lean 4 formalization of all 34 invariants with
+  proof sketches, refactored to mirror the unified Rust workspace.
 
-  This is the top-level entry point. It imports all invariant modules and
-  states the master safety theorem: a command is approved if and only if
-  ALL 29 invariants hold simultaneously.
+  This is the top-level entry point. It imports all invariant modules
+  and states the master safety theorem (currently robotics-specific).
 
-  Structure:
-    Invariant/Types.lean     — Domain types (joints, commands, profiles, verdicts)
-    Invariant/Physics.lean   — P1–P25: Physical safety invariants (incl. P21–P25 environmental)
-    Invariant/Authority.lean — A1–A3: PIC authority chain invariants
-    Invariant/Audit.lean     — L1–L4: Audit log invariants, M1: Actuation, W1: Liveness
+  Structure (mirrors the Rust crate split):
+    Invariant/Core.lean         — Abstract trait surface
+                                  (`ValidationInput`, `DomainCheck`,
+                                  `DomainProfile`, `VerdictView`,
+                                  `CheckView`); mirrors `invariant-core::traits`.
+    Invariant/Types.lean        — Robotics domain types (joints,
+                                  commands, profiles, verdicts);
+                                  mirrors `invariant-robotics::models::*`.
+    Invariant/Physics.lean      — P1–P25: robotics physical safety
+                                  invariants (incl. P21–P25
+                                  environmental).
+    Invariant/Authority.lean    — A1–A3: PIC authority chain invariants
+                                  (domain-agnostic in Rust; lives in
+                                  `invariant-core::authority`).
+    Invariant/Audit.lean        — L1–L4: audit log invariants
+                                  (domain-generic; the Rust audit logger
+                                  is now `AuditLogger<W, I, V>` in
+                                  `invariant-core::audit`); plus M1
+                                  (signed actuation, robotics-only) and
+                                  W1 (watchdog liveness, robotics-only).
+    Invariant/Biosynthesis.lean — Biosynthesis domain stub (D/P/C
+                                  invariant proofs deferred).
 
-  To check: install Lean 4, then `cd formal && lake build`
+  To check: install Lean 4 (v4.8.0+), then `cd formal && lake build`.
 -/
 
+import Invariant.Core
 import Invariant.Types
 import Invariant.Physics
 import Invariant.Authority
 import Invariant.Audit
+import Invariant.Biosynthesis
 
 namespace Invariant
 

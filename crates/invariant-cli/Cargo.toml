@@ -1,13 +1,17 @@
 [package]
-name = "invariant-robotics"
+name = "invariant-cli"
 version.workspace = true
+authors.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "Command-line interface for Invariant."
-readme = "../../README.md"
+repository.workspace = true
+homepage.workspace = true
+keywords = ["cli", "safety", "validation", "robotics", "biosynthesis"]
+categories = ["command-line-utilities"]
+description = "Unified command-line interface for Invariant — robotics and biosynthesis safety validation. Part of the unified Invariant workspace at https://github.com/clay-good/invariant."
 
 [lib]
-name = "invariant_robotics"
+name = "invariant_cli"
 path = "src/lib.rs"
 
 [[bin]]
@@ -15,18 +19,21 @@ name = "invariant"
 path = "src/main.rs"
 
 [dependencies]
-invariant-core = { package = "invariant-robotics-core", path = "../invariant-core", version = "0.0.3" }
-invariant-eval = { package = "invariant-robotics-eval", path = "../invariant-eval", version = "0.0.3" }
-invariant-fuzz = { package = "invariant-robotics-fuzz", path = "../invariant-fuzz", version = "0.0.3" }
-invariant-sim = { package = "invariant-robotics-sim", path = "../invariant-sim", version = "0.0.3" }
+invariant-core.workspace = true
+invariant-robotics.workspace = true
+invariant-biosynthesis.workspace = true
+invariant-eval = { path = "../invariant-eval", version = "0.2.0" }
+invariant-sim = { path = "../invariant-sim", version = "0.2.0" }
+invariant-fuzz = { path = "../invariant-fuzz", version = "0.2.0" }
+invariant-coordinator = { path = "../invariant-coordinator", version = "0.2.0" }
 clap.workspace = true
 clap_complete = "4.6"
 tracing.workspace = true
 tracing-subscriber.workspace = true
-# Minimal tokio feature set: rt-multi-thread + macros for serve mode (P2-14).
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net", "signal", "time"] }
 serde.workspace = true
 serde_json.workspace = true
+serde_yaml.workspace = true
 base64.workspace = true
 ed25519-dalek.workspace = true
 sha2.workspace = true
@@ -34,6 +41,7 @@ rand.workspace = true
 chrono.workspace = true
 axum.workspace = true
 tower = { version = "0.5", features = ["timeout", "util", "limit"] }
+tempfile = "3"
 
 [dev-dependencies]
 tempfile = "3"

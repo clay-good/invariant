@@ -1,0 +1,25 @@
+{
+  "timestamp": "2026-03-28T10:00:01Z",
+  "source": "demo",
+  "sequence": 2,
+  "joint_states": [
+    {
+      "name": "left_hip_yaw",
+      "position": 5.0,
+      "velocity": 50.0,
+      "effort": 500.0
+    }
+  ],
+  "delta_time": 0.01,
+  "end_effector_positions": [
+    {
+      "name": "left_hand",
+      "position": [5.0, 5.0, 5.0]
+    }
+  ],
+  "authority": {
+    "pca_chain": "SELF_SIGNED",
+    "required_ops": ["actuate:humanoid_28dof:left_hip_yaw:position"]
+  },
+  "metadata": {}
+}

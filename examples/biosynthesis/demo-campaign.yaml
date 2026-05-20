@@ -1,0 +1,114 @@
+# Demo campaign for invariant-biosynthesis.
+#
+# This file documents the schema consumed by `invariant-bio campaign`.
+# The hazard-database and issuer-pub fixtures referenced below must be
+# generated locally (the harness expects signed files), so this YAML is
+# illustrative — runnable copies live in `crates/invariant-biosynthesis-sim/`
+# integration tests.
+
+name: demo-campaign
+description: End-to-end demo covering all four substrates and two attack scenarios
+
+scenarios:
+  - name: safe-short-dna-fragment
+    description: Short benign DNA fragment with no hazard hits; rejected only because the example bundle has an empty PCA chain.
+    bundle: safe-bundle.json
+    hazard_db: hazard-db.json
+    hazard_db_issuer_pub: hazard-issuer.pub.json
+    expect: rejected
+
+  - name: dangerous-toxin-fragment
+    description: DNA payload that should fire a select-agent screen hit when the hazard DB is loaded with the matching pattern.
+    bundle: dangerous-bundle.json
+    hazard_db: hazard-db.json
+    hazard_db_issuer_pub: hazard-issuer.pub.json
+    expect: rejected
+
+  - name: safe-peptide
+    description: Polar peptide payload, no hits, rejected by empty PCA chain.
+    bundle: safe-peptide-bundle.json
+    hazard_db: hazard-db.json
+    hazard_db_issuer_pub: hazard-issuer.pub.json
+    expect: rejected
+
+  - name: safe-dna
+    description: Benign DNA fragment
+    bundle:
+      timestamp: "2026-04-26T00:00:00Z"
+      source: demo
+      sequence: 1
+      payload:
+        kind: dna
+        sequence: ATGAAAGCTGGCGTTTTTTGCCTG
+      delta_time: 0.0
+      authority:
+        pca_chain: ""
+        required_ops: []
+      metadata: {}
+    expect: rejected
+
+  - name: safe-peptide-inline
+    description: Short benign peptide
+    bundle:
+      timestamp: "2026-04-26T00:00:00Z"
+      source: demo
+      sequence: 2
+      payload:
+        kind: peptide
+        sequence: MKAIFVLK
+      delta_time: 0.0
+      authority:
+        pca_chain: ""
+        required_ops: []
+      metadata: {}
+    expect: rejected
+
+  - name: safe-chemical
+    description: Benign ethanol
+    bundle:
+      timestamp: "2026-04-26T00:00:00Z"
+      source: demo
+      sequence: 3
+      payload:
+        kind: chemical
+        smiles: CCO
+      delta_time: 0.0
+      authority:
+        pca_chain: ""
+        required_ops: []
+      metadata: {}
+    expect: rejected
+
+  - name: safe-protocol
+    description: Simple two-step protocol
+    bundle:
+      timestamp: "2026-04-26T00:00:00Z"
+      source: demo
+      sequence: 4
+      payload:
+        kind: protocol
+        steps:
+          - "aspirate 10uL"
+          - "dispense 10uL"
+      delta_time: 0.0
+      authority:
+        pca_chain: ""
+        required_ops: []
+      metadata: {}
+    expect: rejected
+
+  - name: dangerous-chemical-explosive
+    description: Explosive SMILES with nitro groups and peroxide
+    bundle:
+      timestamp: "2026-04-26T00:00:00Z"
+      source: demo
+      sequence: 5
+      payload:
+        kind: chemical
+        smiles: "[N+](=O)[O-]CC[N+](=O)[O-]CC[N+](=O)[O-]OO"
+      delta_time: 0.0
+      authority:
+        pca_chain: ""
+        required_ops: []
+      metadata: {}
+    expect: rejected

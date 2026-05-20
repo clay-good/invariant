@@ -12,8 +12,8 @@ use libfuzzer_sys::fuzz_target;
 use base64::{engine::general_purpose::STANDARD, Engine};
 use chrono::Utc;
 use ed25519_dalek::SigningKey;
-use invariant_core::authority::chain::verify_chain;
-use invariant_core::models::authority::SignedPca;
+use invariant_robotics::authority::chain::verify_chain;
+use invariant_robotics::models::authority::SignedPca;
 use std::collections::HashMap;
 
 fuzz_target!(|data: &[u8]| {

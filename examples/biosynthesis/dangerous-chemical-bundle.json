@@ -1,0 +1,15 @@
+{
+  "timestamp": "2026-04-26T00:00:00Z",
+  "source": "example",
+  "sequence": 101,
+  "payload": {
+    "kind": "chemical",
+    "smiles": "[N+](=O)[O-]CC[N+](=O)[O-]CC[N+](=O)[O-]OO"
+  },
+  "delta_time": 0.0,
+  "authority": {
+    "pca_chain": "",
+    "required_ops": []
+  },
+  "metadata": {}
+}

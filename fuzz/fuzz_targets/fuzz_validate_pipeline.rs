@@ -18,8 +18,8 @@ use libfuzzer_sys::fuzz_target;
 
 use chrono::Utc;
 use ed25519_dalek::SigningKey;
-use invariant_core::models::command::Command;
-use invariant_core::validator::ValidatorConfig;
+use invariant_robotics::models::command::Command;
+use invariant_robotics::validator::ValidatorConfig;
 use std::collections::HashMap;
 
 /// Build a validator config once.  `cargo-fuzz` calls the fuzz target
@@ -27,8 +27,8 @@ use std::collections::HashMap;
 ///
 /// Uses `std::sync::LazyLock` (stable since Rust 1.80) to initialize once.
 static VALIDATOR: std::sync::LazyLock<ValidatorConfig> = std::sync::LazyLock::new(|| {
-    let profile_name = invariant_core::profiles::list_builtins()[0];
-    let profile = invariant_core::profiles::load_builtin(profile_name).unwrap();
+    let profile_name = invariant_robotics::profiles::list_builtins()[0];
+    let profile = invariant_robotics::profiles::load_builtin(profile_name).unwrap();
 
     let sk = SigningKey::from_bytes(&[0x42; 32]);
     let vk = sk.verifying_key();

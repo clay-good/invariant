@@ -5,7 +5,7 @@ use thiserror::Error;
 /// # Examples
 ///
 /// ```
-/// use invariant_robotics_core::models::error::AuthorityError;
+/// use invariant_core::models::error::AuthorityError;
 ///
 /// let err = AuthorityError::EmptyChain;
 /// assert_eq!(err.to_string(), "authority chain must have at least one hop");
@@ -20,6 +20,7 @@ use thiserror::Error;
 /// assert!(matches!(err, AuthorityError::Expired { hop: 0, .. }));
 /// ```
 #[derive(Debug, Error, PartialEq)]
+#[non_exhaustive]
 pub enum AuthorityError {
     /// The authority chain contains no hops.
     #[error("authority chain must have at least one hop")]
@@ -67,6 +68,22 @@ pub enum AuthorityError {
         op: String,
     },
 
+    /// A3 causal binding violation (v11 1.2): the `predecessor_digest` at a
+    /// hop does not match `sha256(canonical_bytes(parent))`. Defends against
+    /// cross-chain splice attacks (G-09) where an attacker stitches a hop
+    /// from one valid chain into another with a different parent.
+    #[error("A3 causal binding: hop {hop} predecessor_digest does not match parent")]
+    PredecessorDigestMismatch {
+        /// Index of the hop whose `predecessor_digest` is wrong.
+        hop: usize,
+    },
+
+    /// A3 causal binding violation (v11 1.2): the root hop (index 0) carries
+    /// a non-zero `predecessor_digest`. Roots, by construction, have no
+    /// parent and must stamp the all-zero sentinel.
+    #[error("A3 causal binding: root hop carries non-zero predecessor_digest")]
+    PredecessorDigestNonZeroAtRoot,
+
     /// A3 continuity violation: the cryptographic signature at a hop failed verification.
     #[error("A3 continuity: signature verification failed at hop {hop}: {reason}")]
     SignatureInvalid {
@@ -106,12 +123,31 @@ pub enum AuthorityError {
     },
 
     /// COSE decoding of a token at the given hop failed.
+    ///
+    /// Kept for backwards compatibility with downstream consumers that may
+    /// still pattern-match this variant. Internal call sites in
+    /// `authority/crypto.rs` were migrated to [`AuthorityError::CoseDecode`]
+    /// in v10-14 (2026-05-17) so a forensic auditor can distinguish
+    /// "garbage CBOR" from "missing kid" from "wrong COSE tag" etc.
+    /// New call sites should prefer `CoseDecode` with a typed
+    /// [`CoseDecodeReason`].
     #[error("COSE decoding error at hop {hop}: {reason}")]
     CoseError {
         /// Index of the hop that failed to decode.
         hop: usize,
         /// Reason the COSE decode failed.
         reason: String,
+    },
+
+    /// COSE decoding of a token at the given hop failed with a *granular*
+    /// typed reason (v10-14). Forensic auditors can match on the inner
+    /// [`CoseDecodeReason`] without parsing a free-form string.
+    #[error("COSE decoding error at hop {hop}: {reason}")]
+    CoseDecode {
+        /// Index of the hop that failed to decode.
+        hop: usize,
+        /// Typed reason describing what specifically went wrong.
+        reason: CoseDecodeReason,
     },
 
     /// The command requests an operation that is not covered by the granted op set.
@@ -122,12 +158,71 @@ pub enum AuthorityError {
     },
 }
 
+/// Structured reason for a COSE_Sign1 decode failure (v10-14).
+///
+/// Used by [`AuthorityError::CoseDecode`]. Each variant pinpoints a
+/// specific class of malformation so audit consumers can route failures
+/// without parsing free-form strings. The enum is `#[non_exhaustive]` —
+/// new reasons can be added without breaking downstream matchers that
+/// include a catch-all arm.
+#[derive(Debug, thiserror::Error, PartialEq, Eq, Clone)]
+#[non_exhaustive]
+pub enum CoseDecodeReason {
+    /// The outer CBOR / COSE_Sign1 envelope failed to parse.
+    #[error("CBOR/COSE envelope invalid: {0}")]
+    CborInvalid(String),
+    /// The COSE_Sign1 envelope had no protected header (or it could not be
+    /// extracted). Reserved for envelopes whose protected header is
+    /// detached or empty — present in the variant set for forensic
+    /// completeness even though `coset` currently surfaces this case
+    /// through [`CborInvalid`](CoseDecodeReason::CborInvalid).
+    #[error("missing COSE protected header")]
+    MissingProtectedHeader,
+    /// The protected header was present but carried no `kid` (key id).
+    #[error("missing key id in protected header")]
+    MissingKid,
+    /// The `kid` bytes were not valid UTF-8 and cannot be interpreted as
+    /// a key identifier string.
+    #[error("invalid key id encoding: {0}")]
+    InvalidKidEncoding(String),
+    /// The COSE_Sign1 envelope carried no inline payload (e.g. detached-
+    /// payload mode is not supported by Invariant). Distinct from
+    /// `SignatureSlotEmpty` — that refers to the signature slot being
+    /// empty, this refers to the payload slot.
+    #[error("missing COSE payload")]
+    MissingPayload,
+    /// The payload was present but did not deserialize as a `Pca` claim.
+    #[error("payload deserialization failed: {0}")]
+    PayloadDecode(String),
+    /// The COSE_Sign1 envelope had an empty signature slot (defence-in-
+    /// depth: `coset` should already reject this during outer parsing).
+    /// Reserved for completeness so a downstream tool can distinguish
+    /// "no signature on the envelope" from "signature did not verify".
+    #[error("COSE signature slot is empty")]
+    SignatureSlotEmpty,
+    /// The envelope carried a CBOR tag other than the expected COSE_Sign1
+    /// tag (RFC 9052 §4.2 — tag 18). Reserved for forensic completeness;
+    /// `coset` typically surfaces this through `CborInvalid`.
+    #[error("wrong COSE tag: expected {expected}, got {got}")]
+    WrongTag {
+        /// Tag we expected (typically 18 for COSE_Sign1).
+        expected: u64,
+        /// Tag actually observed in the envelope.
+        got: u64,
+    },
+    /// Catch-all for COSE-decode failures that don't fit the above
+    /// variants. Prefer adding a specific variant when a new failure
+    /// class emerges.
+    #[error("{0}")]
+    Other(String),
+}
+
 /// Errors produced when validating model types.
 ///
 /// # Examples
 ///
 /// ```
-/// use invariant_robotics_core::models::error::ValidationError;
+/// use invariant_core::models::error::ValidationError;
 ///
 /// let err = ValidationError::InvalidOperation("bad op".into());
 /// assert!(err.to_string().contains("bad op"));
@@ -144,6 +239,7 @@ pub enum AuthorityError {
 /// assert_eq!(err.to_string(), "profile must have at least one joint");
 /// ```
 #[derive(Debug, Error, PartialEq)]
+#[non_exhaustive]
 pub enum ValidationError {
     /// An operation string is empty, all-whitespace, or contains disallowed characters.
     #[error("operation string is invalid (empty, whitespace, or disallowed characters): {0:?}")]
@@ -312,37 +408,9 @@ pub enum ValidationError {
 
 /// Types that can be checked for semantic correctness after construction.
 ///
-/// # Examples
-///
-/// ```
-/// use invariant_robotics_core::models::error::{Validate, ValidationError};
-/// use invariant_robotics_core::models::profile::{JointDefinition, JointType};
-///
-/// let joint = JointDefinition {
-///     name: "elbow_flex".into(),
-///     joint_type: JointType::Revolute,
-///     min: -2.094,  // -120 degrees
-///     max:  2.094,  //  120 degrees
-///     max_velocity: 3.14,   // rad/s
-///     max_torque: 150.0,    // N·m
-///     max_acceleration: 10.0, // rad/s²
-/// };
-/// assert!(joint.validate().is_ok());
-///
-/// let bad_joint = JointDefinition {
-///     name: "bad_joint".into(),
-///     joint_type: JointType::Revolute,
-///     min: 1.0,
-///     max: 0.0,  // inverted limits
-///     max_velocity: 1.0,
-///     max_torque: 1.0,
-///     max_acceleration: 1.0,
-/// };
-/// assert!(matches!(
-///     bad_joint.validate(),
-///     Err(ValidationError::JointLimitsInverted { .. })
-/// ));
-/// ```
+/// Concrete implementors live in the domain crates (e.g.
+/// `invariant_robotics::profiles::RobotProfile`). The trait itself is
+/// domain-agnostic.
 pub trait Validate {
     /// Checks this value for semantic correctness, returning an error if any constraint is violated.
     fn validate(&self) -> Result<(), ValidationError>;

@@ -1,0 +1,12 @@
+{
+  "name": "export_controlled_chemical",
+  "version": "0.1.0",
+  "bsl_level": 2,
+  "allowed_substrates": ["chemical"],
+  "max_synthesis_volume_ml": 10.0,
+  "export_controlled": true,
+  "max_authority_chain_depth": 4,
+  "max_dna_length_bp": 250000,
+  "max_peptide_length_aa": 25000,
+  "max_smiles_length_chars": 50000
+}

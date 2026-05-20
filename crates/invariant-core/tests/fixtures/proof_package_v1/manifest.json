@@ -1,0 +1,24 @@
+{
+  "version": "1.0.0",
+  "generated_at": "2026-05-02T12:00:00Z",
+  "campaign_name": "fixture_v1",
+  "profile_name": "ur10e_safety_v1",
+  "profile_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+  "binary_hash": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+  "invariant_version": "0.0.3",
+  "summary": {
+    "total_commands": 1000,
+    "commands_approved": 990,
+    "commands_rejected": 10,
+    "violation_escapes": 0,
+    "adversarial_commands": 100,
+    "adversarial_escapes": 0,
+    "escape_rate_point": 0.0,
+    "escape_rate_upper_95": 0.0029906,
+    "escape_rate_upper_99": 0.0045949,
+    "escape_rate_upper_999": 0.0068897,
+    "mtbf_hours": null,
+    "control_frequency_hz": 100.0
+  },
+  "file_hashes": {}
+}

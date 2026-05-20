@@ -39,42 +39,55 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
 
-      - name: Publish invariant-robotics-core
-        run: cargo publish -p invariant-robotics-core
+      - name: Publish invariant-core
+        run: cargo publish -p invariant-core
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
       - name: Wait for crates.io index
         run: sleep 30
 
-      - name: Publish invariant-robotics-eval
-        run: cargo publish -p invariant-robotics-eval
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-
-      - name: Publish invariant-robotics-sim
-        run: cargo publish -p invariant-robotics-sim
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-
-      - name: Publish invariant-robotics-coordinator
-        run: cargo publish -p invariant-robotics-coordinator
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-
-      - name: Wait for crates.io index
-        run: sleep 30
-
-      - name: Publish invariant-robotics-fuzz
-        run: cargo publish -p invariant-robotics-fuzz
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-
-      - name: Wait for crates.io index
-        run: sleep 30
-
-      - name: Publish invariant-robotics (CLI)
+      - name: Publish invariant-robotics
         run: cargo publish -p invariant-robotics
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+      - name: Publish invariant-biosynthesis
+        run: cargo publish -p invariant-biosynthesis
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+      - name: Wait for crates.io index
+        run: sleep 30
+
+      - name: Publish invariant-eval
+        run: cargo publish -p invariant-eval
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+      - name: Publish invariant-sim
+        run: cargo publish -p invariant-sim
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+      - name: Publish invariant-coordinator
+        run: cargo publish -p invariant-coordinator
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+      - name: Wait for crates.io index
+        run: sleep 30
+
+      - name: Publish invariant-fuzz
+        run: cargo publish -p invariant-fuzz
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+      - name: Wait for crates.io index
+        run: sleep 30
+
+      - name: Publish invariant-cli (binary `invariant`)
+        run: cargo publish -p invariant-cli
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
@@ -211,7 +224,7 @@ jobs:
           For release notes see the [${VERSION} release](https://github.com/${{ github.repository }}/releases/tag/${VERSION}).
 
           \`\`\`sh
-          cargo install invariant-robotics
+          cargo install invariant-cli
           \`\`\`
           EOF
           )"

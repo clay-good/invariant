@@ -25,7 +25,7 @@ use sha2::{Digest, Sha256};
 /// # Examples
 ///
 /// ```
-/// use invariant_robotics_core::replication::merkle_root;
+/// use invariant_core::replication::merkle_root;
 ///
 /// // Empty set returns None.
 /// assert!(merkle_root(&[]).is_none());
@@ -79,7 +79,7 @@ pub fn merkle_root(leaves: &[String]) -> Option<String> {
 /// # Examples
 ///
 /// ```
-/// use invariant_robotics_core::replication::merkle_root_from_log;
+/// use invariant_core::replication::merkle_root_from_log;
 ///
 /// let log = r#"{"entry_hash":"sha256:aaa","sequence":0}
 /// {"entry_hash":"sha256:bbb","sequence":1}
@@ -116,7 +116,7 @@ pub fn merkle_root_from_log(jsonl: &str) -> Option<String> {
 /// # Examples
 ///
 /// ```
-/// use invariant_robotics_core::replication::WitnessRecord;
+/// use invariant_core::replication::WitnessRecord;
 ///
 /// let record = WitnessRecord {
 ///     merkle_root: "sha256:abc123".to_string(),

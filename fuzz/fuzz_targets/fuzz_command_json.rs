@@ -10,7 +10,7 @@
 
 use libfuzzer_sys::fuzz_target;
 
-use invariant_core::models::command::Command;
+use invariant_robotics::models::command::Command;
 
 fuzz_target!(|data: &[u8]| {
     // Reject extremely large inputs early (mirrors the real pipeline's 4 KB limit).

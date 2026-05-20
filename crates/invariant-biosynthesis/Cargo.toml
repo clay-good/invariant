@@ -1,0 +1,31 @@
+[package]
+name = "invariant-biosynthesis"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords = ["biosynthesis", "biosecurity", "safety", "validation", "screening"]
+categories = ["science"]
+description = "Biosynthesis safety engine for Invariant: synthesis bundles, D/P/C invariants, hazard screening, attestation. As of 0.2.0 this crate ships from the unified Invariant workspace at https://github.com/clay-good/invariant — the standalone invariant-biosynthesis repo has been merged in."
+
+[features]
+default = []
+hmmer = []
+
+[dependencies]
+invariant-core.workspace = true
+ed25519-dalek.workspace = true
+coset.workspace = true
+sha2.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+chrono.workspace = true
+base64.workspace = true
+rand.workspace = true
+regex.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+tempfile = "3"

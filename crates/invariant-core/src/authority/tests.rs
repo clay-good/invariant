@@ -7,7 +7,7 @@ mod tests {
     use ed25519_dalek::SigningKey;
     use rand::rngs::OsRng;
 
-    use crate::authority::chain::{check_required_ops, verify_chain};
+    use crate::authority::chain::{check_required_ops, link_chain_digests, verify_chain};
     use crate::authority::crypto::{
         decode_pca_payload, generate_keypair, sign_pca, verify_signed_pca,
     };
@@ -40,6 +40,7 @@ mod tests {
             kid: kid.into(),
             exp: None,
             nbf: None,
+            predecessor_digest: [0u8; 32],
         }
     }
 
@@ -334,7 +335,10 @@ mod tests {
         let result = decode_pca_payload(&[0xFF, 0x00, 0x01], 0);
         assert!(matches!(
             result,
-            Err(AuthorityError::CoseError { hop: 0, .. })
+            Err(AuthorityError::CoseDecode {
+                hop: 0,
+                reason: crate::models::error::CoseDecodeReason::CborInvalid(_),
+            })
         ));
     }
 
@@ -379,15 +383,18 @@ mod tests {
         let (sk1, vk1) = make_keypair();
         let (sk2, vk2) = make_keypair();
 
-        let claim0 = make_pca("alice", "key-1", &["actuate:arm:*", "actuate:leg:*"]);
-        let claim1 = make_pca(
-            "alice",
-            "key-2",
-            &["actuate:arm:shoulder", "actuate:arm:elbow"],
-        );
+        let mut claims = vec![
+            make_pca("alice", "key-1", &["actuate:arm:*", "actuate:leg:*"]),
+            make_pca(
+                "alice",
+                "key-2",
+                &["actuate:arm:shoulder", "actuate:arm:elbow"],
+            ),
+        ];
+        link_chain_digests(&mut claims);
 
-        let signed0 = sign_pca(&claim0, &sk1).unwrap();
-        let signed1 = sign_pca(&claim1, &sk2).unwrap();
+        let signed0 = sign_pca(&claims[0], &sk1).unwrap();
+        let signed1 = sign_pca(&claims[1], &sk2).unwrap();
 
         let keys = trusted_keys(&[("key-1", &vk1), ("key-2", &vk2)]);
         let chain = verify_chain(&[signed0, signed1], &keys, Utc::now()).unwrap();
@@ -406,13 +413,16 @@ mod tests {
         let (sk2, vk2) = make_keypair();
         let (sk3, vk3) = make_keypair();
 
-        let claim0 = make_pca("alice", "key-1", &["actuate:*"]);
-        let claim1 = make_pca("alice", "key-2", &["actuate:arm:*"]);
-        let claim2 = make_pca("alice", "key-3", &["actuate:arm:shoulder"]);
+        let mut claims = vec![
+            make_pca("alice", "key-1", &["actuate:*"]),
+            make_pca("alice", "key-2", &["actuate:arm:*"]),
+            make_pca("alice", "key-3", &["actuate:arm:shoulder"]),
+        ];
+        link_chain_digests(&mut claims);
 
-        let signed0 = sign_pca(&claim0, &sk1).unwrap();
-        let signed1 = sign_pca(&claim1, &sk2).unwrap();
-        let signed2 = sign_pca(&claim2, &sk3).unwrap();
+        let signed0 = sign_pca(&claims[0], &sk1).unwrap();
+        let signed1 = sign_pca(&claims[1], &sk2).unwrap();
+        let signed2 = sign_pca(&claims[2], &sk3).unwrap();
 
         let keys = trusted_keys(&[("key-1", &vk1), ("key-2", &vk2), ("key-3", &vk3)]);
         let chain = verify_chain(&[signed0, signed1, signed2], &keys, Utc::now()).unwrap();
@@ -524,6 +534,7 @@ mod tests {
             kid: "key-1".into(),
             exp: Some(Utc::now() - Duration::seconds(10)),
             nbf: None,
+            predecessor_digest: [0u8; 32],
         };
         let signed = sign_pca(&claim, &sk).unwrap();
 
@@ -545,6 +556,7 @@ mod tests {
             kid: "key-1".into(),
             exp: None,
             nbf: Some(Utc::now() + Duration::seconds(3600)),
+            predecessor_digest: [0u8; 32],
         };
         let signed = sign_pca(&claim, &sk).unwrap();
 
@@ -567,6 +579,7 @@ mod tests {
             kid: "key-1".into(),
             exp: Some(now + Duration::seconds(3600)),
             nbf: Some(now - Duration::seconds(60)),
+            predecessor_digest: [0u8; 32],
         };
         let signed = sign_pca(&claim, &sk).unwrap();
 
@@ -586,6 +599,7 @@ mod tests {
             kid: "key-1".into(),
             exp: Some(now),
             nbf: None,
+            predecessor_digest: [0u8; 32],
         };
         let signed = sign_pca(&claim, &sk).unwrap();
 
@@ -609,6 +623,7 @@ mod tests {
             kid: "key-1".into(),
             exp: Some(now + Duration::seconds(3600)),
             nbf: Some(now),
+            predecessor_digest: [0u8; 32],
         };
         let signed = sign_pca(&claim, &sk).unwrap();
 
@@ -673,11 +688,14 @@ mod tests {
         let (sk1, vk1) = make_keypair();
         let (sk2, vk2) = make_keypair();
 
-        let claim0 = make_pca("alice", "key-1", &["actuate:arm:shoulder"]);
-        let claim1 = make_pca("alice", "key-2", &["actuate:arm:shoulder"]); // same ops = valid subset
+        let mut claims = vec![
+            make_pca("alice", "key-1", &["actuate:arm:shoulder"]),
+            make_pca("alice", "key-2", &["actuate:arm:shoulder"]), // same ops = valid subset
+        ];
+        link_chain_digests(&mut claims);
 
-        let signed0 = sign_pca(&claim0, &sk1).unwrap();
-        let signed1 = sign_pca(&claim1, &sk2).unwrap();
+        let signed0 = sign_pca(&claims[0], &sk1).unwrap();
+        let signed1 = sign_pca(&claims[1], &sk2).unwrap();
 
         let keys = trusted_keys(&[("key-1", &vk1), ("key-2", &vk2)]);
         assert!(verify_chain(&[signed0, signed1], &keys, Utc::now()).is_ok());
@@ -688,17 +706,21 @@ mod tests {
         let (sk1, vk1) = make_keypair();
         let (sk2, vk2) = make_keypair();
 
-        let claim0 = make_pca("alice", "key-1", &["actuate:arm:*"]);
-        let claim1 = Pca {
-            p_0: "alice".into(),
-            ops: BTreeSet::new(), // empty set is a subset of anything
-            kid: "key-2".into(),
-            exp: None,
-            nbf: None,
-        };
+        let mut claims = vec![
+            make_pca("alice", "key-1", &["actuate:arm:*"]),
+            Pca {
+                p_0: "alice".into(),
+                ops: BTreeSet::new(), // empty set is a subset of anything
+                kid: "key-2".into(),
+                exp: None,
+                nbf: None,
+                predecessor_digest: [0u8; 32],
+            },
+        ];
+        link_chain_digests(&mut claims);
 
-        let signed0 = sign_pca(&claim0, &sk1).unwrap();
-        let signed1 = sign_pca(&claim1, &sk2).unwrap();
+        let signed0 = sign_pca(&claims[0], &sk1).unwrap();
+        let signed1 = sign_pca(&claims[1], &sk2).unwrap();
 
         let keys = trusted_keys(&[("key-1", &vk1), ("key-2", &vk2)]);
         let chain = verify_chain(&[signed0, signed1], &keys, Utc::now()).unwrap();
@@ -839,11 +861,14 @@ mod tests {
     #[test]
     fn exactly_max_hops_succeeds() {
         let (sk, vk) = make_keypair();
-        let mut hops = Vec::new();
-        for _ in 0..16 {
-            let claim = make_pca("alice", "key-1", &["actuate:arm:*"]);
-            hops.push(sign_pca(&claim, &sk).unwrap());
-        }
+        let mut claims: Vec<Pca> = (0..16)
+            .map(|_| make_pca("alice", "key-1", &["actuate:arm:*"]))
+            .collect();
+        link_chain_digests(&mut claims);
+        let hops: Vec<_> = claims
+            .iter()
+            .map(|c| sign_pca(c, &sk).unwrap())
+            .collect();
 
         let keys = trusted_keys(&[("key-1", &vk)]);
         let result = verify_chain(&hops, &keys, Utc::now());
@@ -863,10 +888,10 @@ mod tests {
         let keys = trusted_keys(&[("key-1", &vk)]);
         let result = verify_chain(&hops, &keys, Utc::now());
         assert!(result.is_err(), "empty COSE bytes must return error");
-        // Should be a CoseError, not a panic.
+        // Should be a CoseDecode (granular variant), not a panic.
         match result.unwrap_err() {
-            AuthorityError::CoseError { hop: 0, .. } => {}
-            other => panic!("expected CoseError at hop 0, got {other:?}"),
+            AuthorityError::CoseDecode { hop: 0, .. } => {}
+            other => panic!("expected CoseDecode at hop 0, got {other:?}"),
         }
     }
 

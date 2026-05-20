@@ -1,7 +1,23 @@
 /-
   Invariant — Formal Specification: Audit Invariants L1–L4,
   Actuation Invariant M1, Liveness Invariant W1
-  Step 42: Lean 4 formalization.
+  Step 42 / Phase 6b.
+
+  The Rust audit logger was generified in Phase 1b: `AuditLogger<W, I, V>`
+  in `invariant-core::audit` is parameterized over the input type `I`
+  (e.g. robotics's `Command`, biosynthesis's `SynthesisBundle`) and the
+  verdict type `V`. The on-disk `AuditEntry<I, V>` lives in
+  `invariant-core::models::audit` with `commandHash : String`-equivalent
+  fields via SHA-256 over the canonical JSON.
+
+  This Lean formalization is already abstract over the input type — the
+  `AuditEntry` structure here uses `commandHash : String`, so the L1–L4
+  invariants apply uniformly to both the robotics and the biosynthesis
+  audit logs (the JSONL on-disk format is identical between domains).
+  No proof bodies needed to change in Phase 6b.
+
+  Actuation (M1) and Liveness (W1) remain robotics-specific (no bio
+  analogue) and stay in this module for backward compatibility.
 -/
 
 import Invariant.Types

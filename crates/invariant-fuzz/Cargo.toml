@@ -1,17 +1,24 @@
 [package]
-name = "invariant-robotics-fuzz"
+name = "invariant-fuzz"
 version.workspace = true
+authors.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "Adversarial testing framework for Invariant."
-readme = "../../README.md"
+repository.workspace = true
+homepage.workspace = true
+keywords = ["fuzzing", "adversarial", "safety", "testing"]
+categories = ["development-tools::testing"]
+description = "Adversarial testing framework for Invariant — robotics and biosynthesis. Part of the unified Invariant workspace at https://github.com/clay-good/invariant."
 
 [dependencies]
-invariant-core = { package = "invariant-robotics-core", path = "../invariant-core", version = "0.0.3" }
-invariant-sim = { package = "invariant-robotics-sim", path = "../invariant-sim", version = "0.0.3" }
+invariant-core.workspace = true
+invariant-robotics.workspace = true
+invariant-biosynthesis.workspace = true
+invariant-sim = { path = "../invariant-sim", version = "0.2.0" }
 serde.workspace = true
 serde_json.workspace = true
 rand.workspace = true
+regex.workspace = true
 chrono.workspace = true
 ed25519-dalek.workspace = true
 base64.workspace = true
