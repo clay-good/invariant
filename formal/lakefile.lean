@@ -8,4 +8,3 @@ package «invariant-formal» where
 
 @[default_target]
 lean_lib Invariant where
-  srcDir := "Invariant"
