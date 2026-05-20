@@ -12,16 +12,22 @@
 
 import Invariant.Types
 
-namespace Invariant.Physics
-
-open Invariant
-
 -- ════════════════════════════════════════════════════════════════════
 -- Helper: vector magnitude
+-- Defined in the `Invariant` namespace so `pt.norm` dot-syntax resolves
+-- against `Invariant.Point3` (which is where `Point3` is declared).
 -- ════════════════════════════════════════════════════════════════════
+
+namespace Invariant
 
 def Point3.norm (p : Point3) : Float :=
   (p.x * p.x + p.y * p.y + p.z * p.z).sqrt
+
+end Invariant
+
+namespace Invariant.Physics
+
+open Invariant
 
 -- ════════════════════════════════════════════════════════════════════
 -- P1: Joint Position Limits
@@ -145,13 +151,13 @@ def P9_Stability (cmd : Command) (profile : RobotProfile) : Prop :=
 -- must respect the zone's velocity_scale factor.
 -- ════════════════════════════════════════════════════════════════════
 
-def pointInSphere (p : Point3) (center : Point3) (radius : Float) : Prop :=
+def pointInSphere (p : Point3) (center : Point3) (radius : Float) : Bool :=
   dist p center ≤ radius
 
 def activeProximityScale (ees : List EndEffectorPosition)
     (zones : List ProximityZone) : Option Float :=
   let activeScales := zones.filterMap fun zone =>
-    if ees.any (fun ee => decide (pointInSphere ee.position zone.center zone.radius) |>.isTrue)
+    if ees.any (fun ee => pointInSphere ee.position zone.center zone.radius)
     then some zone.velocityScale
     else none
   activeScales.foldl (fun acc s => some (min (acc.getD 1.0) s)) none

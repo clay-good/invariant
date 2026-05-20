@@ -48,11 +48,10 @@ def opsCoveredBy (childOps parentOps : List Operation) : Prop :=
   ∀ cop ∈ childOps, ∃ pop ∈ parentOps, operationCoveredBy cop pop
 
 def A2_Monotonicity (chain : AuthorityChain) : Prop :=
-  ∀ i : Fin chain.hops.length,
-    i.val + 1 < chain.hops.length →
-      opsCoveredBy
-        (chain.hops.get ⟨i.val + 1, by omega⟩).ops
-        (chain.hops.get i).ops
+  ∀ (i : Fin chain.hops.length) (hi : i.val + 1 < chain.hops.length),
+    opsCoveredBy
+      (chain.hops.get ⟨i.val + 1, hi⟩).ops
+      (chain.hops.get i).ops
 
 -- ════════════════════════════════════════════════════════════════════
 -- A3: Continuity — Ed25519 signature valid at every hop

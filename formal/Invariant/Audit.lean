@@ -75,9 +75,9 @@ def L3_Authenticity (log : AuditLog) : Prop :=
 -- ════════════════════════════════════════════════════════════════════
 
 def L4_Immutability (logBefore logAfter : AuditLog) : Prop :=
-  logBefore.length ≤ logAfter.length ∧
-  ∀ i : Fin logBefore.length,
-    logBefore.get i = logAfter.get ⟨i.val, by omega⟩
+  ∃ h : logBefore.length ≤ logAfter.length,
+    ∀ i : Fin logBefore.length,
+      logBefore.get i = logAfter.get ⟨i.val, Nat.lt_of_lt_of_le i.isLt h⟩
 
 -- ════════════════════════════════════════════════════════════════════
 -- Combined audit predicate
@@ -103,15 +103,14 @@ axiom hash_collision_resistant :
 
 theorem tamper_breaks_chain (log : AuditLog)
     (h_ordered : L2_Ordering log)
-    (h_len : log.length ≥ 2) :
+    (_h_len : log.length ≥ 2) :
     -- If entry i is modified (its hash changes), then entry i+1's
     -- previousHash no longer matches, violating L2.
-    ∀ i : Fin log.length,
-      i.val + 1 < log.length →
-        (log.get ⟨i.val + 1, by omega⟩).previousHash =
-        (log.get i).entryHash := by
+    ∀ (i : Fin log.length) (hi : i.val + 1 < log.length),
+      (log.get ⟨i.val + 1, hi⟩).previousHash =
+      (log.get i).entryHash := by
   intro i hi
-  exact h_ordered ⟨i.val + 1, hi⟩ (by omega)
+  exact h_ordered ⟨i.val + 1, hi⟩ (Nat.succ_pos i.val)
 
 end Invariant.Audit
 

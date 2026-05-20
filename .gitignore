@@ -29,6 +29,7 @@ venv/
 formal/build/
 formal/lake-packages/
 formal/.lake/
+formal/lake-manifest.json
 
 # Claude Code / Codelicious (local-only)
 .claude/
