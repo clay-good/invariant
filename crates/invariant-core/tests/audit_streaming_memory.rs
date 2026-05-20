@@ -30,7 +30,7 @@ fn current_rss_bytes() -> Option<usize> {
         let resident_pages: usize = statm.split_whitespace().nth(1)?.parse().ok()?;
         // Pages on Linux x86_64 / aarch64 are 4 KiB by default.
         let page_size = 4096usize;
-        return Some(resident_pages * page_size);
+        Some(resident_pages * page_size)
     }
     #[cfg(not(target_os = "linux"))]
     {

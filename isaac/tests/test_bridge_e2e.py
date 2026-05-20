@@ -56,9 +56,9 @@ def bridge_server():
     keys_path = os.path.join(tmpdir, "keys.json")
     socket_path = os.path.join(tmpdir, "invariant.sock")
 
-    # Generate keys.
+    # Generate keys. Unified CLI nests keygen under the `robotics` domain.
     keygen_result = subprocess.run(
-        [binary, "keygen", "--kid", "e2e-test", "--output", keys_path],
+        [binary, "robotics", "keygen", "--kid", "e2e-test", "--output", keys_path],
         capture_output=True,
         text=True,
         timeout=10,
@@ -67,16 +67,18 @@ def bridge_server():
         f"keygen failed: {keygen_result.stderr}"
     )
 
-    # Locate the production profile.
-    profile_path = str(_repo_root / "profiles" / "ur10e_cnc_tending.json")
+    # Locate the production profile (lives under profiles/robotics/ in the
+    # unified workspace).
+    profile_path = str(_repo_root / "profiles" / "robotics" / "ur10e_cnc_tending.json")
     assert os.path.isfile(profile_path), (
         f"Profile not found: {profile_path}"
     )
 
-    # Start serve with bridge in background.
+    # Start serve with bridge in background. `serve` is also under `robotics`.
     server_proc = subprocess.Popen(
         [
             binary,
+            "robotics",
             "serve",
             "--profile", profile_path,
             "--key", keys_path,

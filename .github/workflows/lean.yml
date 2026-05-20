@@ -27,7 +27,7 @@ jobs:
       run:
         working-directory: formal
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install elan + Lean toolchain
         run: |

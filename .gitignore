@@ -59,3 +59,7 @@ dist/
 # Editor / tooling backups
 *.bak
 *.orig
+
+# Downloaded CI log dumps (e.g. `gh run download` extracts to a folder
+# named `logs_<run-id>`)
+logs_*/
