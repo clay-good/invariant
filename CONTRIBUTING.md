@@ -54,16 +54,18 @@ cargo fmt --all --check
 | `invariant-core` | `invariant-protocol` | Shared protocol core: PCA authority chain, COSE-signed audit log, keys, intent narrowing, `ValidationInput` / `DomainCheck` / `DomainProfile` traits. |
 | `invariant-robotics` | `invariant-robotics` | Robotics domain: 25 physics checks (P1–P25), URDF kinematics, robot profiles, sensor attestation, threat scoring, validator. |
 | `invariant-biosynthesis` | `invariant-biosynthesis` | Biosynthesis domain: D/P/C invariants, hazard screening, BSL2/3/4 profile gating, attestation. |
-| `invariant-cli` | `invariant` | Single binary; top-level dispatch `invariant <domain> <subcommand>`. |
+| `invariant-cli` | `invariant-firewall` | Single binary (executable named `invariant`); top-level dispatch `invariant <domain> <subcommand>`. |
 | `invariant-sim` | `invariant-sim` | Simulation harness, scenario generation, fault injection (per-domain modules). |
 | `invariant-eval` | `invariant-eval` | Trace evaluation: presets, rubrics, guardrails. |
 | `invariant-fuzz` | `invariant-fuzz` | Adversarial testing: protocol, system, cognitive attacks. |
 | `invariant-coordinator` | `invariant-coordinator` | Robotics multi-robot coordination (separation, partitioning). |
 
 Two of the published names differ from their workspace aliases
-(`invariant-core` → `invariant-protocol`, `invariant-cli` → `invariant`)
-because the natural names were already claimed by another crates.io
-owner. Source code keeps using the workspace aliases.
+(`invariant-core` → `invariant-protocol`, `invariant-cli` →
+`invariant-firewall`) because the natural names — and `invariant`
+itself — were already claimed by other crates.io owners. Source
+code keeps using the workspace aliases; the binary installed by
+`cargo install invariant-firewall` is just `invariant`.
 
 ## Adding a New Physics Check (robotics)
 

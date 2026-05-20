@@ -58,12 +58,18 @@ Concretely, Invariant gives operators:
 Install the unified CLI from crates.io:
 
 ```sh
-cargo install invariant
+cargo install invariant-firewall
 ```
 
-(Note: the underlying library crate publishes as `invariant-protocol`
-on crates.io because `invariant-core` was taken; in Rust code you can
-keep using `invariant_core::*` — the workspace ships an alias.)
+This installs an executable named `invariant` (the package on
+crates.io is `invariant-firewall` because the bare `invariant` and
+`invariant-cli` names were already owned by other crates.io users;
+the binary itself is unaffected). All examples below invoke the
+binary as `invariant`.
+
+The underlying library crate publishes as `invariant-protocol` for
+the same reason — in Rust code you keep using `invariant_core::*`
+because the workspace ships an alias.
 
 Robotics:
 
@@ -161,14 +167,15 @@ names were already taken by another owner:
 | `invariant-core` | `invariant-protocol` | shared protocol core, validation trait |
 | `invariant-robotics` | `invariant-robotics` | robotics domain |
 | `invariant-biosynthesis` | `invariant-biosynthesis` | biosynthesis domain |
-| `invariant-cli` | `invariant` | unified binary (`cargo install invariant`) |
+| `invariant-cli` | `invariant-firewall` | unified binary (`cargo install invariant-firewall` installs the `invariant` executable) |
 | `invariant-eval` | `invariant-eval` | trace evaluation |
 | `invariant-sim` | `invariant-sim` | simulation harness |
 | `invariant-fuzz` | `invariant-fuzz` | adversarial testing |
 | `invariant-coordinator` | `invariant-coordinator` | multi-robot coordination |
 
 Source code keeps using `invariant_core::*` and `invariant_cli::*` via
-the workspace alias.
+the workspace aliases; the executable produced by `invariant-firewall`
+is just `invariant`.
 
 ## Build & test
 

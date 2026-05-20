@@ -687,35 +687,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "invariant"
-version = "0.0.3"
-dependencies = [
- "axum",
- "base64",
- "chrono",
- "clap",
- "clap_complete",
- "ed25519-dalek",
- "invariant-biosynthesis",
- "invariant-coordinator",
- "invariant-eval",
- "invariant-fuzz",
- "invariant-protocol",
- "invariant-robotics",
- "invariant-sim",
- "rand",
- "serde",
- "serde_json",
- "serde_yaml",
- "sha2",
- "tempfile",
- "tokio",
- "tower",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
 name = "invariant-biosynthesis"
 version = "0.0.3"
 dependencies = [
@@ -757,6 +728,35 @@ dependencies = [
  "serde_json",
  "tempfile",
  "thiserror",
+]
+
+[[package]]
+name = "invariant-firewall"
+version = "0.0.3"
+dependencies = [
+ "axum",
+ "base64",
+ "chrono",
+ "clap",
+ "clap_complete",
+ "ed25519-dalek",
+ "invariant-biosynthesis",
+ "invariant-coordinator",
+ "invariant-eval",
+ "invariant-fuzz",
+ "invariant-protocol",
+ "invariant-robotics",
+ "invariant-sim",
+ "rand",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "sha2",
+ "tempfile",
+ "tokio",
+ "tower",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]

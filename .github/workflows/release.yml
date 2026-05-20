@@ -103,7 +103,7 @@ jobs:
             invariant-sim
             invariant-coordinator
             invariant-fuzz
-            invariant
+            invariant-firewall
           )
 
           publish_one() {
@@ -130,30 +130,31 @@ jobs:
             exit 1
           }
 
-          first=true
+          # Only sleep AFTER a successful new publish, not after a skip.
+          # That way a recovery re-run with N crates already on
+          # crates.io is N fast no-ops instead of N×150s of dead time.
+          published_anything=false
           for crate in "${CRATES[@]}"; do
-            if [ "${first}" = false ]; then
+            if [ "${published_anything}" = true ]; then
               # Rate-limit guard for *new* crate uploads. crates.io
               # allows roughly 5 new crates per 10 minutes (burst),
               # then ~1 per 10 min. 150s between attempts keeps a
-              # comfortable margin under that ceiling. Skipped
-              # already-published crates don't really need the sleep,
-              # but we keep it uniform for simplicity and safety —
-              # the publish-crates job runs once per release.
+              # comfortable margin under that ceiling.
               echo "Sleeping 150s before next publish (rate-limit safety)…"
               sleep 150
+              published_anything=false
             fi
-            first=false
 
             if publish_one "${crate}"; then
               # Fresh publish — pause for index propagation so the
-              # next dependent crate can resolve us.
+              # next dependent crate can resolve us, and arm the
+              # rate-limit sleep for the next iteration.
               echo "Waiting 30s for crates.io index propagation…"
               sleep 30
+              published_anything=true
             fi
-            # If publish_one returned 1, the crate was already
-            # present and the next iteration's 150s pre-sleep is
-            # the only delay before the next attempt.
+            # publish_one returned 1 → already on crates.io, no
+            # quota consumed, move on without a sleep.
           done
 
           echo "All crates published or already present."
@@ -337,7 +338,7 @@ jobs:
           For release notes see the [${VERSION} release](https://github.com/${{ github.repository }}/releases/tag/${VERSION}).
 
           \`\`\`sh
-          cargo install invariant
+          cargo install invariant-firewall
           \`\`\`
           EOF
           )"

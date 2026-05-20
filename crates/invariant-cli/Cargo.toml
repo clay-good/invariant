@@ -1,5 +1,5 @@
 [package]
-name = "invariant"
+name = "invariant-firewall"
 version.workspace = true
 authors.workspace = true
 edition.workspace = true
@@ -8,7 +8,7 @@ repository.workspace = true
 homepage.workspace = true
 keywords = ["cli", "safety", "validation", "robotics", "biosynthesis"]
 categories = ["command-line-utilities"]
-description = "Unified command-line interface for Invariant — robotics and biosynthesis safety validation. Part of the unified Invariant workspace at https://github.com/clay-good/invariant."
+description = "Invariant — a cryptographic command-validation firewall for AI-controlled physical systems (robotics, biosynthesis). Installs the `invariant` binary. Part of the unified workspace at https://github.com/clay-good/invariant."
 
 [lib]
 name = "invariant_cli"

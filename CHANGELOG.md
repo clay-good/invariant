@@ -13,7 +13,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   release renames the published packages while preserving the in-source
   module names via `package = "..."` aliasing:
   - `invariant-core` (workspace alias) → published as **`invariant-protocol`**
-  - `invariant-cli` (workspace alias) → published as **`invariant`**
+  - `invariant-cli` (workspace alias) → published as **`invariant-firewall`**
+    (the bare `invariant` name on crates.io was also taken; the
+    installed binary is still named `invariant`)
   - Six other crates publish under their natural names:
     `invariant-robotics`, `invariant-biosynthesis`, `invariant-eval`,
     `invariant-sim`, `invariant-coordinator`, `invariant-fuzz`.
