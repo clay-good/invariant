@@ -81,7 +81,14 @@ jobs:
         env:
           VERSION: ${{ steps.ver.outputs.version }}
         run: |
-          set -euo pipefail
+          set -uo pipefail
+          # Note: deliberately NOT using `set -e` here. We grep cargo's
+          # own stderr to distinguish "this version already exists"
+          # (treat as success) from any other publish failure (fail
+          # the job). A pre-flight HTTP probe against crates.io was
+          # tried in an earlier iteration and proved unreliable from
+          # the runner (User-Agent / rate-limit quirks on the read
+          # API), so we trust cargo as the single source of truth.
 
           # Publish order MUST respect the dep DAG:
           #   protocol -> {robotics, biosynthesis}
@@ -99,39 +106,54 @@ jobs:
             invariant
           )
 
-          already_on_crates_io() {
-            local name="$1"
-            local code
-            code=$(curl -sS -o /dev/null -w "%{http_code}" \
-              "https://crates.io/api/v1/crates/${name}/${VERSION}")
-            [ "${code}" = "200" ]
+          publish_one() {
+            local crate="$1"
+            local log
+            log="$(mktemp)"
+            echo "::group::Publishing ${crate}@${VERSION}"
+            if cargo publish -p "${crate}" 2>&1 | tee "${log}"; then
+              echo "::endgroup::"
+              echo "::notice::${crate}@${VERSION} published"
+              return 0
+            fi
+            # cargo prints exactly this string when the version is
+            # already on crates.io. Treat it as a no-op success so
+            # partial-publish recoveries are clean.
+            if grep -qE "(already exists on crates\.io|already uploaded|crate version .* is already uploaded)" "${log}"; then
+              echo "::endgroup::"
+              echo "::notice::${crate}@${VERSION} already on crates.io — skipping"
+              return 1   # signal "skip-no-sleep"
+            fi
+            echo "::endgroup::"
+            echo "::error::cargo publish failed for ${crate}@${VERSION}"
+            cat "${log}"
+            exit 1
           }
 
-          first_publish=true
+          first=true
           for crate in "${CRATES[@]}"; do
-            if already_on_crates_io "${crate}"; then
-              echo "::notice::${crate}@${VERSION} already on crates.io — skipping"
-              continue
+            if [ "${first}" = false ]; then
+              # Rate-limit guard for *new* crate uploads. crates.io
+              # allows roughly 5 new crates per 10 minutes (burst),
+              # then ~1 per 10 min. 150s between attempts keeps a
+              # comfortable margin under that ceiling. Skipped
+              # already-published crates don't really need the sleep,
+              # but we keep it uniform for simplicity and safety —
+              # the publish-crates job runs once per release.
+              echo "Sleeping 150s before next publish (rate-limit safety)…"
+              sleep 150
             fi
+            first=false
 
-            # Rate-limit guard for *new* crate uploads: crates.io allows
-            # roughly 5 new crates per 10 minutes (burst), then 1 per
-            # 10 min. 120s between each puts a comfortable margin under
-            # the burst window for the full 8-crate run.
-            if [ "${first_publish}" = false ]; then
-              echo "Sleeping 120s before next new-crate publish (rate-limit safety)…"
-              sleep 120
+            if publish_one "${crate}"; then
+              # Fresh publish — pause for index propagation so the
+              # next dependent crate can resolve us.
+              echo "Waiting 30s for crates.io index propagation…"
+              sleep 30
             fi
-            first_publish=false
-
-            echo "::group::Publishing ${crate}@${VERSION}"
-            cargo publish -p "${crate}"
-            echo "::endgroup::"
-
-            # Brief grace for the crates.io index to update so the next
-            # dependent crate can resolve us.
-            echo "Waiting 30s for crates.io index propagation…"
-            sleep 30
+            # If publish_one returned 1, the crate was already
+            # present and the next iteration's 150s pre-sleep is
+            # the only delay before the next attempt.
           done
 
           echo "All crates published or already present."
