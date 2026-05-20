@@ -6,11 +6,103 @@ on:
   pull_request:
     branches: [main]
 
+# Cancel in-progress runs for the same ref when a new commit lands; the
+# previous one is almost always wasted compute.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   CARGO_TERM_COLOR: always
   RUSTFLAGS: -Dwarnings
 
 jobs:
+  # ---------------------------------------------------------------------------
+  # Cheap, fast gates that should fail loudly before anything heavy runs.
+  # ---------------------------------------------------------------------------
+  fmt:
+    name: Rustfmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - run: cargo fmt --all --check
+
+  version-drift:
+    # Assert Cargo.toml ↔ CHANGELOG.md ↔ git tag agreement.
+    name: Version drift
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash scripts/check_version_drift.sh
+
+  profile-sync:
+    # Each domain crate ships its own copy of the JSON profiles so
+    # `cargo publish` produces a self-contained tarball (`include_str!`
+    # cannot reach above the package root). The root `profiles/` tree is
+    # the source of truth users browse; the per-crate copies must stay
+    # in sync with it.
+    name: Profile sync
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: robotics profiles match root
+        run: diff -r profiles/robotics/ crates/invariant-robotics/profiles/
+      - name: biosynthesis profiles match root
+        run: diff -r profiles/biosynthesis/ crates/invariant-biosynthesis/profiles/
+
+  # ---------------------------------------------------------------------------
+  # Compile/lint gates (single Linux toolchain).
+  # ---------------------------------------------------------------------------
+  clippy:
+    name: Clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+
+  doc:
+    name: Docs
+    runs-on: ubuntu-latest
+    # Builds rustdoc to catch outright compile failures in doc examples.
+    # Intra-doc-link warnings are not currently gated; tracked in
+    # docs/spec-doc-link-cleanup.md.
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo doc --workspace --no-deps --document-private-items
+
+  msrv:
+    # `rust-version = "1.75"` is published in every crate's metadata.
+    # If this job ever fails, either bump rust-version everywhere or
+    # avoid the newer language/std feature that caused the break.
+    name: MSRV (1.75)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.75
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo check --workspace
+
+  deny:
+    name: cargo-deny
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2
+
+  # ---------------------------------------------------------------------------
+  # Test matrix: Linux + macOS. Heavier; runs after the cheap gates above
+  # by virtue of the implicit job graph (none, parallel). If you want to
+  # gate on fmt/version-drift first, add `needs: [fmt, version-drift]`.
+  # ---------------------------------------------------------------------------
   test:
     name: Test (${{ matrix.os }})
     strategy:
@@ -24,99 +116,52 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo test --workspace
 
-  msrv:
-    name: MSRV (1.75)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@1.75
-      - uses: Swatinem/rust-cache@v2
-      - run: cargo check --workspace
-
-  clippy:
-    name: Clippy
+  # ---------------------------------------------------------------------------
+  # Build the release binary once, share it with the two jobs that need it.
+  # Saves ~3 minutes per CI run vs. building twice.
+  # ---------------------------------------------------------------------------
+  build-release:
+    name: Build release binary
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --release --bin invariant
+      - uses: actions/upload-artifact@v4
         with:
-          components: clippy
-      - uses: Swatinem/rust-cache@v2
-      - run: cargo clippy --workspace --all-targets -- -D warnings
+          name: invariant-binary
+          path: target/release/invariant
+          retention-days: 1
 
-  fmt:
-    name: Rustfmt
+  validate-profiles:
+    # Every built-in profile must pass `--strict` validation.
+    name: Validate profiles (strict)
+    needs: build-release
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/download-artifact@v4
         with:
-          components: rustfmt
-      - run: cargo fmt --all --check
-
-  doc:
-    name: Docs
-    runs-on: ubuntu-latest
-    # Pre-existing broken intra-doc links across the workspace; we still
-    # build docs in CI but don't gate on warnings until those are cleaned up.
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - run: cargo doc --workspace --no-deps --document-private-items
-
-  deny:
-    name: cargo-deny
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: EmbarkStudios/cargo-deny-action@v2
+          name: invariant-binary
+          path: bin
+      - run: chmod +x bin/invariant && ./bin/invariant robotics validate-profiles --strict
 
   python-tests:
-    name: Python tests
+    name: Python tests (isaac bridge)
+    needs: build-release
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - run: cargo build --release
+      - uses: actions/download-artifact@v4
+        with:
+          name: invariant-binary
+          # test_bridge_e2e.py looks for the binary at target/release/invariant;
+          # put the downloaded artifact where the tests already expect it.
+          path: target/release
+      - run: chmod +x target/release/invariant
       - uses: actions/setup-python@v5
         with:
           python-version: "3.10"
       - run: pip install pytest
       - run: python -m pytest isaac/tests -x -v
-        env:
-          INVARIANT_BINARY: target/release/invariant
-
-  profile-sync:
-    # Each domain crate ships its own copy of the JSON profiles (so that
-    # `cargo publish` produces a self-contained tarball — `include_str!`
-    # cannot reach above the package root). The root-level `profiles/`
-    # directory is the source of truth users browse; the per-crate copies
-    # must stay in sync with it.
-    name: Profile sync
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: robotics profiles match root
-        run: diff -r profiles/robotics/ crates/invariant-robotics/profiles/
-      - name: biosynthesis profiles match root
-        run: diff -r profiles/biosynthesis/ crates/invariant-biosynthesis/profiles/
-
-  validate-profiles:
-    # v11-5.3: every built-in profile must pass --strict validation.
-    name: Validate profiles (strict)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - run: cargo run -p invariant --release -- robotics validate-profiles --strict
-
-  version-drift:
-    # v12-N-19: assert Cargo.toml ↔ CHANGELOG.md ↔ git tag agreement.
-    name: Version drift
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - run: bash scripts/check_version_drift.sh

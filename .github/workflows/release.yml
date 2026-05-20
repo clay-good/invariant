@@ -4,6 +4,12 @@ on:
   push:
     tags: ["v*"]
 
+# A release run shouldn't be cancelled by a newer tag push (rare) — but if
+# it does happen, only the most recent tag's run should win. No
+# `cancel-in-progress` here on purpose.
+concurrency:
+  group: release-${{ github.ref }}
+
 permissions:
   contents: write
 

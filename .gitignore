@@ -1,6 +1,8 @@
 # Rust build artifacts
 /target/
 **/target/
+fuzz/target/
+fuzz/Cargo.lock
 **/Cargo.lock.bak
 
 # OS

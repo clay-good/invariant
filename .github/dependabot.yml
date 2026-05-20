@@ -18,3 +18,9 @@ updates:
       prefix: "ci"
     labels:
       - ci
+    ignore:
+      # `dtolnay/rust-toolchain` uses Rust release numbers as tags, not
+      # action versions. Dependabot keeps trying to "bump" @1.75 (our MSRV
+      # pin) to a non-existent Rust version like @1.100, which silently
+      # breaks the MSRV CI job. We pin this manually; ignore all updates.
+      - dependency-name: "dtolnay/rust-toolchain"
