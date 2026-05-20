@@ -170,7 +170,7 @@ jobs:
             exit 1
           fi
           ls -la dist/
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: sbom
           path: dist/*.cdx.json
@@ -224,7 +224,7 @@ jobs:
           tar czf invariant-${{ matrix.target }}.tar.gz invariant
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: binary-${{ matrix.target }}
           path: target/${{ matrix.target }}/release/invariant-${{ matrix.target }}.tar.gz
