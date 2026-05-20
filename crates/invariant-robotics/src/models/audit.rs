@@ -86,5 +86,4 @@ use super::verdict::SignedVerdict;
 pub type AuditEntry = invariant_core::models::audit::AuditEntry<Command, SignedVerdict>;
 
 /// Signed robotics audit entry — an [`AuditEntry`] plus an Ed25519 entry signature.
-pub type SignedAuditEntry =
-    invariant_core::models::audit::SignedAuditEntry<Command, SignedVerdict>;
+pub type SignedAuditEntry = invariant_core::models::audit::SignedAuditEntry<Command, SignedVerdict>;

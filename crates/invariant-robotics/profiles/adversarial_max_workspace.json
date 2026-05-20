@@ -1,0 +1,36 @@
+{
+  "name": "adversarial_max_workspace",
+  "version": "1.0.0",
+  "joints": [
+    {"name": "j1", "type": "revolute", "min": -6.28, "max": 6.28, "max_velocity": 20.0, "max_torque": 500.0, "max_acceleration": 100.0},
+    {"name": "j2", "type": "revolute", "min": -6.28, "max": 6.28, "max_velocity": 20.0, "max_torque": 500.0, "max_acceleration": 100.0},
+    {"name": "j3", "type": "revolute", "min": -6.28, "max": 6.28, "max_velocity": 20.0, "max_torque": 500.0, "max_acceleration": 100.0},
+    {"name": "j4", "type": "revolute", "min": -6.28, "max": 6.28, "max_velocity": 20.0, "max_torque": 500.0, "max_acceleration": 100.0},
+    {"name": "j5", "type": "revolute", "min": -6.28, "max": 6.28, "max_velocity": 20.0, "max_torque": 500.0, "max_acceleration": 100.0},
+    {"name": "j6", "type": "revolute", "min": -6.28, "max": 6.28, "max_velocity": 20.0, "max_torque": 500.0, "max_acceleration": 100.0},
+    {"name": "j7", "type": "revolute", "min": -6.28, "max": 6.28, "max_velocity": 20.0, "max_torque": 500.0, "max_acceleration": 100.0}
+  ],
+  "workspace": {
+    "type": "aabb",
+    "min": [-100.0, -100.0, -10.0],
+    "max": [100.0, 100.0, 100.0]
+  },
+  "exclusion_zones": [],
+  "proximity_zones": [],
+  "collision_pairs": [],
+  "stability": {
+    "support_polygon": [[-50.0, -50.0], [50.0, -50.0], [50.0, 50.0], [-50.0, 50.0]],
+    "com_height_estimate": 1.0,
+    "enabled": true
+  },
+  "max_delta_time": 1.0,
+  "min_collision_distance": 0.001,
+  "global_velocity_scale": 1.0,
+  "watchdog_timeout_ms": 5000,
+  "environment": {},
+  "safe_stop_profile": {
+    "strategy": "immediate_stop",
+    "max_deceleration": 100.0,
+    "target_joint_positions": {}
+  }
+}

@@ -285,9 +285,7 @@ mod tests {
         // `build.rs` writes the cargo profile name; in tests this is
         // typically `"debug"` (or `"release"` under `--release`).
         assert!(
-            BUILD_PROFILE == "debug"
-                || BUILD_PROFILE == "release"
-                || BUILD_PROFILE == "test",
+            BUILD_PROFILE == "debug" || BUILD_PROFILE == "release" || BUILD_PROFILE == "test",
             "BUILD_PROFILE must be one of debug/release/test, got: {BUILD_PROFILE}"
         );
     }
@@ -319,10 +317,7 @@ mod tests {
         // the binary bytes, this test catches it.
         let exe = std::env::current_exe().unwrap();
         let bytes = std::fs::read(&exe).unwrap();
-        let expected = format!(
-            "sha256:{:x}",
-            Sha256::digest(&bytes)
-        );
+        let expected = format!("sha256:{:x}", Sha256::digest(&bytes));
         let got = hash_current_binary().unwrap();
         assert_eq!(got, expected);
     }

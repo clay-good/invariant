@@ -16,7 +16,6 @@ use ed25519_dalek::{Signer, SigningKey, VerifyingKey};
 use thiserror::Error;
 
 use crate::attestation::{AttestationVerifier, AttestedInput};
-use crate::threat::ThreatScorer;
 use crate::authority::chain::{check_required_ops, verify_chain_with_max_depth};
 use crate::bundle::canonical_hash;
 use crate::invariants::{
@@ -28,6 +27,7 @@ use crate::models::error::{Validate, ValidationError};
 use crate::models::profile::BioProfile;
 use crate::models::verdict::{AuthoritySummary, CheckResult, SignedVerdict, Verdict};
 use crate::screening::{HazardHit, HazardScreener};
+use crate::threat::ThreatScorer;
 use crate::util::sha256_hex_json;
 
 // ---------------------------------------------------------------------------
@@ -105,7 +105,8 @@ pub struct ValidatorConfig {
     pub threat_alert_threshold: f64,
     /// Stateful fragmentation-bypass detector (S1). Default-on with a
     /// default-configured detector. Set to `None` to disable (opt-out).
-    pub stateful_detector: Option<Arc<Mutex<crate::invariants::stateful::FragmentationBypassDetector>>>,
+    pub stateful_detector:
+        Option<Arc<Mutex<crate::invariants::stateful::FragmentationBypassDetector>>>,
     /// Reason string supplied to [`Self::with_stateful_detector_bypass`].
     /// When `Some`, the validator emits a warning at validation time.
     pub stateful_bypass_reason: Option<String>,
@@ -371,7 +372,12 @@ impl ValidatorConfig {
                     false,
                 )
             }
-            Ok(hops) => match verify_chain_with_max_depth(&hops, &self.trusted_keys, now, self.profile.max_authority_chain_depth) {
+            Ok(hops) => match verify_chain_with_max_depth(
+                &hops,
+                &self.trusted_keys,
+                now,
+                self.profile.max_authority_chain_depth,
+            ) {
                 Err(e) => {
                     checks.push(CheckResult::new(
                         "authority",
@@ -509,12 +515,12 @@ impl ValidatorConfig {
                         .as_ref()
                         .map(|db| db.freshness().as_secs() / 86400)
                         .unwrap_or(u64::MAX);
-                    let max_days = self
-                        .profile
-                        .stale_screening_max_days
-                        .unwrap_or(30) as u64;
+                    let max_days = self.profile.stale_screening_max_days.unwrap_or(30) as u64;
                     if self.profile.allow_stale_screening && db_age_days <= max_days {
-                        (true, format!("db-stale (advisory — within {max_days}-day window): {reason}"))
+                        (
+                            true,
+                            format!("db-stale (advisory — within {max_days}-day window): {reason}"),
+                        )
                     } else {
                         all_invariants_passed = false;
                         (false, format!("db-stale (fail-closed): {reason}"))
@@ -567,12 +573,14 @@ impl ValidatorConfig {
         // Clopper–Pearson bounds) has not yet been met.
         #[cfg(not(feature = "hmmer"))]
         {
-            let k = self.profile.protein_kmer_k.unwrap_or(
-                crate::invariants::dna::DEFAULT_PROTEIN_KMER_K,
-            );
-            let t = self.profile.protein_kmer_threshold.unwrap_or(
-                crate::invariants::dna::DEFAULT_PROTEIN_KMER_THRESHOLD,
-            );
+            let k = self
+                .profile
+                .protein_kmer_k
+                .unwrap_or(crate::invariants::dna::DEFAULT_PROTEIN_KMER_K);
+            let t = self
+                .profile
+                .protein_kmer_threshold
+                .unwrap_or(crate::invariants::dna::DEFAULT_PROTEIN_KMER_THRESHOLD);
             checks.push(CheckResult::new(
                 "homology_engine_status",
                 "invariant.dna",
@@ -1118,7 +1126,10 @@ mod tests {
             .find(|c| c.name == "threat_analysis")
             .expect("threat_analysis check should be present");
         // A single bundle with no window history should score well below 0.7.
-        assert!(threat_check.passed, "threat check should pass on first bundle");
+        assert!(
+            threat_check.passed,
+            "threat check should pass on first bundle"
+        );
         assert!(out.threat_analysis.is_some());
         assert!(out.signed_verdict.verdict.threat_analysis.is_some());
     }
@@ -1172,8 +1183,14 @@ mod tests {
             .iter()
             .find(|c| c.name == "threat_analysis")
             .expect("threat_analysis check should be present");
-        assert!(!threat_check.passed, "threat check should fail at threshold 0.0");
-        assert!(!out.signed_verdict.verdict.approved, "approval should be blocked");
+        assert!(
+            !threat_check.passed,
+            "threat check should fail at threshold 0.0"
+        );
+        assert!(
+            !out.signed_verdict.verdict.approved,
+            "approval should be blocked"
+        );
     }
 
     /// The ThreatAnalysis struct returned in ValidationOutput contains individual
@@ -1188,7 +1205,9 @@ mod tests {
                 .with_threat_scorer(scorer);
         let out = cfg.validate(&make_bundle(), Utc::now(), None).unwrap();
 
-        let analysis = out.threat_analysis.expect("ThreatAnalysis should be present");
+        let analysis = out
+            .threat_analysis
+            .expect("ThreatAnalysis should be present");
         // All component scores must be in [0.0, 1.0].
         assert!(analysis.boundary_clustering_score >= 0.0);
         assert!(analysis.boundary_clustering_score <= 1.0);
@@ -1283,10 +1302,9 @@ mod tests {
     #[test]
     fn without_stateful_detector_rejected_for_bsl3() {
         let sk = SigningKey::generate(&mut OsRng);
-        let result =
-            ValidatorConfig::new(make_bsl3_profile(), HashMap::new(), sk, "v-key".into())
-                .unwrap()
-                .without_stateful_detector();
+        let result = ValidatorConfig::new(make_bsl3_profile(), HashMap::new(), sk, "v-key".into())
+            .unwrap()
+            .without_stateful_detector();
         assert!(
             matches!(result, Err(ValidatorError::InvalidConfig(_))),
             "without_stateful_detector must fail for BSL ≥ 3"
@@ -1296,21 +1314,22 @@ mod tests {
     #[test]
     fn without_stateful_detector_allowed_for_bsl2() {
         let sk = SigningKey::generate(&mut OsRng);
-        let result =
-            ValidatorConfig::new(make_profile(), HashMap::new(), sk, "v-key".into())
-                .unwrap()
-                .without_stateful_detector();
-        assert!(result.is_ok(), "without_stateful_detector must succeed for BSL ≤ 2");
+        let result = ValidatorConfig::new(make_profile(), HashMap::new(), sk, "v-key".into())
+            .unwrap()
+            .without_stateful_detector();
+        assert!(
+            result.is_ok(),
+            "without_stateful_detector must succeed for BSL ≤ 2"
+        );
         assert!(result.unwrap().stateful_detector.is_none());
     }
 
     #[test]
     fn with_stateful_detector_bypass_disables_for_bsl3() {
         let sk = SigningKey::generate(&mut OsRng);
-        let cfg =
-            ValidatorConfig::new(make_bsl3_profile(), HashMap::new(), sk, "v-key".into())
-                .unwrap()
-                .with_stateful_detector_bypass("testing");
+        let cfg = ValidatorConfig::new(make_bsl3_profile(), HashMap::new(), sk, "v-key".into())
+            .unwrap()
+            .with_stateful_detector_bypass("testing");
         assert!(cfg.stateful_detector.is_none());
         assert_eq!(cfg.stateful_bypass_reason.as_deref(), Some("testing"));
         // Validation must still run without panicking.
@@ -1329,8 +1348,7 @@ mod tests {
     fn threat_scorer_default_on_for_bsl3() {
         let sk = SigningKey::generate(&mut OsRng);
         let cfg =
-            ValidatorConfig::new(make_bsl3_profile(), HashMap::new(), sk, "v-key".into())
-                .unwrap();
+            ValidatorConfig::new(make_bsl3_profile(), HashMap::new(), sk, "v-key".into()).unwrap();
         assert!(
             cfg.threat_scorer.is_some(),
             "threat scorer must be auto-wired for BSL ≥ 3"
@@ -1340,8 +1358,7 @@ mod tests {
     #[test]
     fn threat_scorer_default_off_for_bsl2() {
         let sk = SigningKey::generate(&mut OsRng);
-        let cfg =
-            ValidatorConfig::new(make_profile(), HashMap::new(), sk, "v-key".into()).unwrap();
+        let cfg = ValidatorConfig::new(make_profile(), HashMap::new(), sk, "v-key".into()).unwrap();
         assert!(
             cfg.threat_scorer.is_none(),
             "threat scorer must NOT be auto-wired for BSL ≤ 2"
@@ -1351,10 +1368,9 @@ mod tests {
     #[test]
     fn without_threat_scorer_clears_for_bsl3() {
         let sk = SigningKey::generate(&mut OsRng);
-        let cfg =
-            ValidatorConfig::new(make_bsl3_profile(), HashMap::new(), sk, "v-key".into())
-                .unwrap()
-                .without_threat_scorer();
+        let cfg = ValidatorConfig::new(make_bsl3_profile(), HashMap::new(), sk, "v-key".into())
+            .unwrap()
+            .without_threat_scorer();
         assert!(
             cfg.threat_scorer.is_none(),
             "without_threat_scorer must clear the scorer"
@@ -1365,8 +1381,7 @@ mod tests {
     fn bsl3_validator_produces_threat_analysis_by_default() {
         let sk = SigningKey::generate(&mut OsRng);
         let cfg =
-            ValidatorConfig::new(make_bsl3_profile(), HashMap::new(), sk, "v-key".into())
-                .unwrap();
+            ValidatorConfig::new(make_bsl3_profile(), HashMap::new(), sk, "v-key".into()).unwrap();
         let out = cfg.validate(&make_bundle(), Utc::now(), None).unwrap();
         assert!(
             out.threat_analysis.is_some(),

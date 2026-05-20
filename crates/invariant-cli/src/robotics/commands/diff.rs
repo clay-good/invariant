@@ -1,8 +1,8 @@
 use clap::Args;
 use std::path::PathBuf;
 
-use invariant_robotics::models::trace::Trace;
 use invariant_eval::robotics::differ::diff_traces;
+use invariant_robotics::models::trace::Trace;
 
 /// Compare two trace files step-by-step and report divergence points (P2-15).
 #[derive(Args)]

@@ -284,7 +284,11 @@ fn p23_battery_in_safe_zone_passes_without_derating() {
         let pct = rng.range(cfg.low_battery_pct, 100.0);
         let env = env_with_battery(pct);
         let r = check_battery_state(&env, &cfg);
-        assert!(r.passed, "safe-zone battery {pct}% should pass; {}", r.details);
+        assert!(
+            r.passed,
+            "safe-zone battery {pct}% should pass; {}",
+            r.details
+        );
         assert!(
             r.derating.is_none(),
             "safe-zone battery {pct}% should NOT carry derating"
@@ -303,7 +307,11 @@ fn p23_battery_in_warning_zone_passes_with_derating() {
         let pct = rng.range(lo, hi);
         let env = env_with_battery(pct);
         let r = check_battery_state(&env, &cfg);
-        assert!(r.passed, "warn-zone battery {pct}% should pass; {}", r.details);
+        assert!(
+            r.passed,
+            "warn-zone battery {pct}% should pass; {}",
+            r.details
+        );
         let derate = r.derating.expect("warn zone should carry derating advice");
         assert!(
             derate.velocity_scale > 0.0 && derate.velocity_scale < 1.0,
@@ -344,7 +352,11 @@ fn p24_latency_in_safe_zone_passes_without_derating() {
         let ms = rng.range(0.0, cfg.warning_latency_ms - 1e-6);
         let env = env_with_latency(ms);
         let r = check_communication_latency(&env, &cfg);
-        assert!(r.passed, "safe-zone latency {ms} should pass; {}", r.details);
+        assert!(
+            r.passed,
+            "safe-zone latency {ms} should pass; {}",
+            r.details
+        );
         assert!(r.derating.is_none(), "safe-zone latency should NOT derate");
     }
 }
@@ -359,7 +371,11 @@ fn p24_latency_in_warning_zone_passes_with_derating() {
         let ms = rng.range(lo, hi);
         let env = env_with_latency(ms);
         let r = check_communication_latency(&env, &cfg);
-        assert!(r.passed, "warn-zone latency {ms} should pass; {}", r.details);
+        assert!(
+            r.passed,
+            "warn-zone latency {ms} should pass; {}",
+            r.details
+        );
         let derate = r.derating.expect("warn zone should carry derating advice");
         assert!(
             derate.velocity_scale > 0.0 && derate.velocity_scale < 1.0,
@@ -401,7 +417,11 @@ fn p21_terrain_in_safe_zone_passes_without_derating() {
         let pitch = if rng.next_u64() & 1 == 0 { mag } else { -mag };
         let env = env_with_pitch(pitch);
         let r = check_terrain_incline(&env, &cfg);
-        assert!(r.passed, "safe-zone pitch {pitch} should pass; {}", r.details);
+        assert!(
+            r.passed,
+            "safe-zone pitch {pitch} should pass; {}",
+            r.details
+        );
         assert!(r.derating.is_none(), "safe-zone pitch should NOT derate");
     }
 }
@@ -417,7 +437,11 @@ fn p21_terrain_in_warning_zone_passes_with_derating() {
         let pitch = if rng.next_u64() & 1 == 0 { mag } else { -mag };
         let env = env_with_pitch(pitch);
         let r = check_terrain_incline(&env, &cfg);
-        assert!(r.passed, "warn-zone pitch {pitch} should pass; {}", r.details);
+        assert!(
+            r.passed,
+            "warn-zone pitch {pitch} should pass; {}",
+            r.details
+        );
         let derate = r.derating.expect("warn zone should carry derating advice");
         assert!(
             derate.velocity_scale > 0.0 && derate.velocity_scale < 1.0,

@@ -1,5 +1,7 @@
-# Rust
+# Rust build artifacts
 /target/
+**/target/
+**/Cargo.lock.bak
 
 # OS
 .DS_Store
@@ -41,3 +43,17 @@ keys.json
 *.jsonl
 safe-stop.json
 results/
+
+# Fuzzing artifacts
+fuzz/artifacts/
+fuzz/corpus/*/
+!fuzz/corpus/*/.gitkeep
+
+# Release / packaging
+dist/
+*.cdx.json
+*.tar.gz
+
+# Editor / tooling backups
+*.bak
+*.orig

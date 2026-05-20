@@ -1,5 +1,5 @@
 [package]
-name = "invariant-core"
+name = "invariant-protocol"
 version.workspace = true
 authors.workspace = true
 edition.workspace = true
@@ -8,7 +8,11 @@ repository.workspace = true
 homepage.workspace = true
 keywords = ["safety", "validation", "ed25519", "audit", "pca"]
 categories = ["cryptography", "data-structures"]
-description = "Domain-agnostic PIC/PCA protocol core for Invariant: authority chains, audit log, keys, validation traits. Part of the unified Invariant workspace at https://github.com/clay-good/invariant."
+description = "Domain-agnostic PIC/PCA protocol core for Invariant (published as `invariant-protocol`; in-workspace alias `invariant-core`): authority chains, audit log, keys, validation traits. Part of the unified Invariant workspace at https://github.com/clay-good/invariant."
+
+[lib]
+name = "invariant_core"
+path = "src/lib.rs"
 
 [dependencies]
 ed25519-dalek.workspace = true

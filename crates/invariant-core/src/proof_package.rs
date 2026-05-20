@@ -114,9 +114,10 @@ pub fn verify_format_version(format_version: u32) -> Result<(), ProofPackageErro
 /// `manifest_signature` is excluded from the preimage so that a manifest
 /// can be signed without first generating the very value being signed.
 pub fn canonical_json(manifest: &ProofPackageManifest) -> Result<Vec<u8>, ProofPackageError> {
-    let mut value = serde_json::to_value(manifest).map_err(|e| ProofPackageError::Canonicalization {
-        reason: format!("serialize manifest: {e}"),
-    })?;
+    let mut value =
+        serde_json::to_value(manifest).map_err(|e| ProofPackageError::Canonicalization {
+            reason: format!("serialize manifest: {e}"),
+        })?;
     // Strip the signature so the preimage is independent of any pre-existing
     // signature on the manifest (RFC 8032 best practice — sign over a value
     // that excludes the signature field).
@@ -142,7 +143,9 @@ fn write_canonical(value: &serde_json::Value, out: &mut Vec<u8>) {
             // values this manifest carries.
             out.extend_from_slice(n.to_string().as_bytes());
         }
-        Value::String(s) => out.extend_from_slice(serde_json::to_string(s).expect("string").as_bytes()),
+        Value::String(s) => {
+            out.extend_from_slice(serde_json::to_string(s).expect("string").as_bytes())
+        }
         Value::Array(items) => {
             out.push(b'[');
             for (i, item) in items.iter().enumerate() {
@@ -163,9 +166,7 @@ fn write_canonical(value: &serde_json::Value, out: &mut Vec<u8>) {
                 if i > 0 {
                     out.push(b',');
                 }
-                out.extend_from_slice(
-                    serde_json::to_string(key).expect("string-key").as_bytes(),
-                );
+                out.extend_from_slice(serde_json::to_string(key).expect("string-key").as_bytes());
                 out.push(b':');
                 write_canonical(&map[*key], out);
             }
@@ -212,11 +213,12 @@ pub fn verify_manifest(
             reason: "manifest_signature field absent".into(),
         });
     };
-    let sig_bytes = STANDARD_NO_PAD
-        .decode(sig_b64)
-        .map_err(|e| ProofPackageError::SignatureInvalid {
-            reason: format!("base64 decode: {e}"),
-        })?;
+    let sig_bytes =
+        STANDARD_NO_PAD
+            .decode(sig_b64)
+            .map_err(|e| ProofPackageError::SignatureInvalid {
+                reason: format!("base64 decode: {e}"),
+            })?;
     let sig = ed25519_dalek::Signature::from_slice(&sig_bytes).map_err(|e| {
         ProofPackageError::SignatureInvalid {
             reason: format!("signature shape: {e}"),
@@ -1196,6 +1198,9 @@ mod tests {
     #[test]
     fn verify_format_version_rejects_zero() {
         let err = verify_format_version(0).unwrap_err();
-        assert!(matches!(err, ProofPackageError::UnsupportedFormat { found: 0, .. }));
+        assert!(matches!(
+            err,
+            ProofPackageError::UnsupportedFormat { found: 0, .. }
+        ));
     }
 }

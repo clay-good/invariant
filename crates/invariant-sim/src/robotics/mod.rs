@@ -39,6 +39,8 @@ pub mod injector;
 pub mod isaac;
 /// High-level campaign orchestrator (async runtime wrapper).
 pub mod orchestrator;
+/// Campaign result aggregation and SIL-rated reporting.
+pub mod reporter;
 /// Deterministic seeded RNG for campaign scenarios.
 ///
 /// All randomness inside the campaign pipeline (scenario selection, fault
@@ -46,7 +48,5 @@ pub mod orchestrator;
 /// [`rng::CampaignRng`] so that a seed pins the entire output byte-for-byte.
 /// See `docs/robotics/spec-v11.md` §2.0.
 pub mod rng;
-/// Campaign result aggregation and SIL-rated reporting.
-pub mod reporter;
 /// Scenario type definitions and command generators.
 pub mod scenario;

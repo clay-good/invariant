@@ -579,8 +579,7 @@ mod tests {
         use rand::Rng;
 
         // Principals drawn from a small pool of valid identifier shapes.
-        const PRINCIPALS: &[&str] =
-            &["alice", "bob", "carol", "ops-1", "ops-2", "forge", "root"];
+        const PRINCIPALS: &[&str] = &["alice", "bob", "carol", "ops-1", "ops-2", "forge", "root"];
         const KIDS: &[&str] = &["key-1", "key-2", "key-alice", "key-root"];
         // A spread of `Operation::new`-accepted strings. Mixing wildcards
         // ("*") and concrete leaves exercises the BTreeSet ordering.
@@ -654,10 +653,7 @@ mod tests {
         let dir = manifest_dir.join("tests").join("regressions");
         if std::fs::create_dir_all(&dir).is_ok() {
             let path = dir.join(format!("intent_roundtrip_{}.json", short_hash(intent)));
-            let _ = std::fs::write(
-                &path,
-                serde_json::to_vec_pretty(intent).unwrap_or_default(),
-            );
+            let _ = std::fs::write(&path, serde_json::to_vec_pretty(intent).unwrap_or_default());
         }
     }
 
@@ -694,8 +690,16 @@ mod tests {
                  reconstructed PCA closure.\n  original: p_0={} ops={:?} \
                  kid={} exp={:?} nbf={:?}\n  reconstructed: p_0={} ops={:?} \
                  kid={} exp={:?} nbf={:?}",
-                pca1.p_0, pca1.ops, pca1.kid, pca1.exp, pca1.nbf,
-                pca2.p_0, pca2.ops, pca2.kid, pca2.exp, pca2.nbf,
+                pca1.p_0,
+                pca1.ops,
+                pca1.kid,
+                pca1.exp,
+                pca1.nbf,
+                pca2.p_0,
+                pca2.ops,
+                pca2.kid,
+                pca2.exp,
+                pca2.nbf,
             );
         }
     }

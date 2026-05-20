@@ -1,8 +1,8 @@
 use clap::Args;
 use std::path::PathBuf;
 
-use invariant_robotics::models::trace::Trace;
 use invariant_eval::robotics::presets;
+use invariant_robotics::models::trace::Trace;
 
 #[derive(Args)]
 pub struct EvalArgs {

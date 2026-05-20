@@ -521,11 +521,10 @@ where
         reason: format!("last audit log line is not valid UTF-8: {e}"),
     })?;
 
-    let signed: SignedAuditEntry<I, V> = serde_json::from_str(line.trim()).map_err(|e| {
-        AuditError::Serialization {
+    let signed: SignedAuditEntry<I, V> =
+        serde_json::from_str(line.trim()).map_err(|e| AuditError::Serialization {
             reason: format!("failed to parse last audit log entry: {e}"),
-        }
-    })?;
+        })?;
 
     Ok((signed.entry.sequence + 1, signed.entry.entry_hash.clone()))
 }
@@ -754,12 +753,14 @@ where
     I: Serialize,
     V: Serialize,
 {
-    let command_json = serde_json::to_vec(&entry.command).map_err(|e| AuditError::Serialization {
-        reason: format!("command serialization failed: {e}"),
-    })?;
-    let verdict_json = serde_json::to_vec(&entry.verdict).map_err(|e| AuditError::Serialization {
-        reason: format!("verdict serialization failed: {e}"),
-    })?;
+    let command_json =
+        serde_json::to_vec(&entry.command).map_err(|e| AuditError::Serialization {
+            reason: format!("command serialization failed: {e}"),
+        })?;
+    let verdict_json =
+        serde_json::to_vec(&entry.verdict).map_err(|e| AuditError::Serialization {
+            reason: format!("verdict serialization failed: {e}"),
+        })?;
 
     let mut out = Vec::with_capacity(
         128 + entry.session_id.len()

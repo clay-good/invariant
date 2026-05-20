@@ -21,9 +21,7 @@ use invariant_eval::robotics::presets::{run_preset, EvalReport, Severity};
 use invariant_robotics::models::authority::Operation;
 use invariant_robotics::models::command::{Command, CommandAuthority, JointState};
 use invariant_robotics::models::trace::{Trace, TraceStep};
-use invariant_robotics::models::verdict::{
-    AuthoritySummary, CheckResult, SignedVerdict, Verdict,
-};
+use invariant_robotics::models::verdict::{AuthoritySummary, CheckResult, SignedVerdict, Verdict};
 
 const GOOD_FIXTURE: &str = "good_trace.jsonl";
 const BAD_FIXTURE: &str = "bad_trace.jsonl";
@@ -275,10 +273,7 @@ fn fixture_files_are_under_two_hundred_lines_each() {
         let text = std::fs::read_to_string(&path)
             .unwrap_or_else(|e| panic!("failed to read {}: {e}", path.display()));
         let lines = text.lines().count();
-        assert!(
-            lines < 200,
-            "{name}: expected < 200 lines, got {lines}"
-        );
+        assert!(lines < 200, "{name}: expected < 200 lines, got {lines}");
     }
 }
 

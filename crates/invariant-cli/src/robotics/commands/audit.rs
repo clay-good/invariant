@@ -126,7 +126,9 @@ mod tests {
     use invariant_robotics::authority::crypto::generate_keypair;
     use invariant_robotics::models::authority::Operation;
     use invariant_robotics::models::command::{Command, CommandAuthority, JointState};
-    use invariant_robotics::models::verdict::{AuthoritySummary, CheckResult, SignedVerdict, Verdict};
+    use invariant_robotics::models::verdict::{
+        AuthoritySummary, CheckResult, SignedVerdict, Verdict,
+    };
     use rand::rngs::OsRng;
     use std::collections::HashMap;
     use std::io::Write;

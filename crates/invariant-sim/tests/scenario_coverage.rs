@@ -28,10 +28,7 @@ fn all_is_distinct_and_spec_id_callable() {
     let mut seen = HashSet::new();
     for v in variants {
         let inserted = seen.insert(format!("{v:?}"));
-        assert!(
-            inserted,
-            "ScenarioType::all() contains a duplicate: {v:?}"
-        );
+        assert!(inserted, "ScenarioType::all() contains a duplicate: {v:?}");
         // spec_id must not panic on any variant.
         let _ = v.spec_id();
     }
@@ -124,8 +121,14 @@ fn extract_spec_ids_from_campaign_doc() -> BTreeSet<String> {
         let b = bytes[i];
         if (b'A'..=b'N').contains(&b)
             && bytes.get(i + 1) == Some(&b'-')
-            && bytes.get(i + 2).map(|c| c.is_ascii_digit()).unwrap_or(false)
-            && bytes.get(i + 3).map(|c| c.is_ascii_digit()).unwrap_or(false)
+            && bytes
+                .get(i + 2)
+                .map(|c| c.is_ascii_digit())
+                .unwrap_or(false)
+            && bytes
+                .get(i + 3)
+                .map(|c| c.is_ascii_digit())
+                .unwrap_or(false)
         {
             // Reject if the character before is alphanumeric (avoid matching
             // mid-word like `bA-01`).

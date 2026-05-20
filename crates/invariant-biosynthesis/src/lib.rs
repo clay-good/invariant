@@ -25,6 +25,4 @@ pub mod watchdog;
 // imports `invariant_biosynthesis::authority` keeps working with one
 // rename to `invariant_biosynthesis`. `intent` is intentionally NOT
 // re-exported — bio has its own templates above.
-pub use invariant_core::{
-    authority, incident, keys, monitors, proof_package, replication, util,
-};
+pub use invariant_core::{authority, incident, keys, monitors, proof_package, replication, util};

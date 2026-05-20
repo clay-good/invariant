@@ -331,9 +331,7 @@ mod tests {
     use super::*;
     use base64::{engine::general_purpose::STANDARD, Engine};
     use ed25519_dalek::SigningKey;
-    use invariant_biosynthesis::screening::{
-        sign_body_for_tests, HazardDatabaseBody, HazardEntry,
-    };
+    use invariant_biosynthesis::screening::{sign_body_for_tests, HazardDatabaseBody, HazardEntry};
     use rand::rngs::OsRng;
     use tempfile::TempDir;
 

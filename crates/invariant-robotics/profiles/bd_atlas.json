@@ -1,0 +1,137 @@
+{
+  "name": "bd_atlas",
+  "version": "1.0.0",
+
+  "joints": [
+    {"name": "left_hip_yaw",        "type": "revolute", "min": -0.79, "max":  0.79, "max_velocity": 14.0, "max_torque": 250.0, "max_acceleration": 40.0},
+    {"name": "left_hip_roll",       "type": "revolute", "min": -0.52, "max":  0.52, "max_velocity": 14.0, "max_torque": 250.0, "max_acceleration": 40.0},
+    {"name": "left_hip_pitch",      "type": "revolute", "min": -1.92, "max":  1.92, "max_velocity": 14.0, "max_torque": 350.0, "max_acceleration": 40.0},
+    {"name": "left_knee_pitch",     "type": "revolute", "min":  0.0,  "max":  2.79, "max_velocity": 14.0, "max_torque": 350.0, "max_acceleration": 40.0},
+    {"name": "left_ankle_pitch",    "type": "revolute", "min": -1.05, "max":  1.05, "max_velocity": 12.0, "max_torque": 120.0, "max_acceleration": 35.0},
+    {"name": "left_ankle_roll",     "type": "revolute", "min": -0.52, "max":  0.52, "max_velocity": 12.0, "max_torque": 120.0, "max_acceleration": 35.0},
+    {"name": "right_hip_yaw",       "type": "revolute", "min": -0.79, "max":  0.79, "max_velocity": 14.0, "max_torque": 250.0, "max_acceleration": 40.0},
+    {"name": "right_hip_roll",      "type": "revolute", "min": -0.52, "max":  0.52, "max_velocity": 14.0, "max_torque": 250.0, "max_acceleration": 40.0},
+    {"name": "right_hip_pitch",     "type": "revolute", "min": -1.92, "max":  1.92, "max_velocity": 14.0, "max_torque": 350.0, "max_acceleration": 40.0},
+    {"name": "right_knee_pitch",    "type": "revolute", "min":  0.0,  "max":  2.79, "max_velocity": 14.0, "max_torque": 350.0, "max_acceleration": 40.0},
+    {"name": "right_ankle_pitch",   "type": "revolute", "min": -1.05, "max":  1.05, "max_velocity": 12.0, "max_torque": 120.0, "max_acceleration": 35.0},
+    {"name": "right_ankle_roll",    "type": "revolute", "min": -0.52, "max":  0.52, "max_velocity": 12.0, "max_torque": 120.0, "max_acceleration": 35.0},
+    {"name": "torso_yaw",           "type": "revolute", "min": -2.09, "max":  2.09, "max_velocity":  8.0, "max_torque": 150.0, "max_acceleration": 25.0},
+    {"name": "left_shoulder_pitch", "type": "revolute", "min": -3.14, "max":  3.14, "max_velocity": 10.0, "max_torque":  80.0, "max_acceleration": 30.0},
+    {"name": "left_shoulder_roll",  "type": "revolute", "min": -1.92, "max":  1.92, "max_velocity": 10.0, "max_torque":  80.0, "max_acceleration": 30.0},
+    {"name": "left_shoulder_yaw",   "type": "revolute", "min": -1.57, "max":  1.57, "max_velocity": 10.0, "max_torque":  80.0, "max_acceleration": 30.0},
+    {"name": "left_elbow_pitch",    "type": "revolute", "min":  0.0,  "max":  2.62, "max_velocity": 10.0, "max_torque":  60.0, "max_acceleration": 30.0},
+    {"name": "left_forearm_yaw",    "type": "revolute", "min": -1.57, "max":  1.57, "max_velocity":  8.0, "max_torque":  30.0, "max_acceleration": 25.0},
+    {"name": "left_wrist_pitch",    "type": "revolute", "min": -1.05, "max":  1.05, "max_velocity":  8.0, "max_torque":  30.0, "max_acceleration": 25.0},
+    {"name": "left_wrist_roll",     "type": "revolute", "min": -1.57, "max":  1.57, "max_velocity":  8.0, "max_torque":  30.0, "max_acceleration": 25.0},
+    {"name": "right_shoulder_pitch","type": "revolute", "min": -3.14, "max":  3.14, "max_velocity": 10.0, "max_torque":  80.0, "max_acceleration": 30.0},
+    {"name": "right_shoulder_roll", "type": "revolute", "min": -1.92, "max":  1.92, "max_velocity": 10.0, "max_torque":  80.0, "max_acceleration": 30.0},
+    {"name": "right_shoulder_yaw",  "type": "revolute", "min": -1.57, "max":  1.57, "max_velocity": 10.0, "max_torque":  80.0, "max_acceleration": 30.0},
+    {"name": "right_elbow_pitch",   "type": "revolute", "min":  0.0,  "max":  2.62, "max_velocity": 10.0, "max_torque":  60.0, "max_acceleration": 30.0},
+    {"name": "right_forearm_yaw",   "type": "revolute", "min": -1.57, "max":  1.57, "max_velocity":  8.0, "max_torque":  30.0, "max_acceleration": 25.0},
+    {"name": "right_wrist_pitch",   "type": "revolute", "min": -1.05, "max":  1.05, "max_velocity":  8.0, "max_torque":  30.0, "max_acceleration": 25.0},
+    {"name": "right_wrist_roll",    "type": "revolute", "min": -1.57, "max":  1.57, "max_velocity":  8.0, "max_torque":  30.0, "max_acceleration": 25.0},
+    {"name": "head_yaw",            "type": "revolute", "min": -1.57, "max":  1.57, "max_velocity":  5.0, "max_torque":   8.0, "max_acceleration": 15.0}
+  ],
+
+  "workspace": {
+    "type": "aabb",
+    "min": [-1.5, -1.5, 0.0],
+    "max": [1.5, 1.5, 2.0]
+  },
+
+  "exclusion_zones": [
+    {
+      "type": "aabb",
+      "name": "operator_zone",
+      "min": [1.2, -0.6, 0.0],
+      "max": [3.5, 0.6, 2.0]
+    },
+    {
+      "type": "sphere",
+      "name": "head_clearance",
+      "center": [0.0, 0.0, 1.5],
+      "radius": 0.18
+    }
+  ],
+
+  "proximity_zones": [
+    {
+      "name": "human_warning",
+      "type": "sphere",
+      "center": [1.5, 0.0, 0.8],
+      "radius": 1.5,
+      "velocity_scale": 0.4,
+      "dynamic": true
+    }
+  ],
+
+  "collision_pairs": [
+    ["left_hand", "head"],
+    ["right_hand", "head"],
+    ["left_hand", "torso"],
+    ["right_hand", "torso"],
+    ["left_hand", "right_hand"]
+  ],
+
+  "stability": {
+    "support_polygon": [[-0.14, -0.09], [0.14, -0.09], [0.14, 0.09], [-0.14, 0.09]],
+    "com_height_estimate": 0.80,
+    "enabled": true
+  },
+
+  "locomotion": {
+    "max_locomotion_velocity": 2.5,
+    "max_step_length": 0.6,
+    "min_foot_clearance": 0.03,
+    "max_step_height": 0.40,
+    "max_ground_reaction_force": 1500.0,
+    "friction_coefficient": 0.7,
+    "max_heading_rate": 3.0
+  },
+
+  "environment": {
+    "max_safe_pitch_rad": 0.3491,
+    "max_safe_roll_rad": 0.2618,
+    "max_operating_temperature_c": 70.0,
+    "critical_battery_pct": 5.0,
+    "low_battery_pct": 15.0,
+    "max_latency_ms": 30.0,
+    "warning_latency_ms": 15.0
+  },
+
+  "real_world_margins": {
+    "position_margin": 0.05,
+    "velocity_margin": 0.15,
+    "torque_margin": 0.10,
+    "acceleration_margin": 0.10
+  },
+
+  "end_effectors": [
+    {
+      "name": "left_hand",
+      "max_force_n": 300.0,
+      "max_grasp_force_n": 60.0,
+      "min_grasp_force_n": 2.0,
+      "max_payload_kg": 11.0,
+      "max_force_rate_n_per_s": 800.0
+    },
+    {
+      "name": "right_hand",
+      "max_force_n": 300.0,
+      "max_grasp_force_n": 60.0,
+      "min_grasp_force_n": 2.0,
+      "max_payload_kg": 11.0,
+      "max_force_rate_n_per_s": 800.0
+    }
+  ],
+
+  "max_delta_time": 0.01,
+  "global_velocity_scale": 1.0,
+  "watchdog_timeout_ms": 30,
+
+  "safe_stop_profile": {
+    "strategy": "controlled_crouch",
+    "max_deceleration": 15.0,
+    "target_joint_positions": {}
+  }
+}

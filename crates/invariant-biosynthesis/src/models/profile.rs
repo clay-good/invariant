@@ -208,9 +208,7 @@ impl Validate for BioProfile {
             if days > 365 {
                 return Err(ValidationError::ProfileFieldInvalid {
                     field: "stale_screening_max_days",
-                    reason: format!(
-                        "stale_screening_max_days > 365 ({days}) is not permitted"
-                    ),
+                    reason: format!("stale_screening_max_days > 365 ({days}) is not permitted"),
                 });
             }
             if self.bsl_level >= 2 && days > 90 {
@@ -225,10 +223,7 @@ impl Validate for BioProfile {
         if self.max_authority_chain_depth == 0 || self.max_authority_chain_depth > 16 {
             return Err(ValidationError::ProfileFieldInvalid {
                 field: "max_authority_chain_depth",
-                reason: format!(
-                    "must be 1..=16, got {}",
-                    self.max_authority_chain_depth
-                ),
+                reason: format!("must be 1..=16, got {}", self.max_authority_chain_depth),
             });
         }
         Ok(())
@@ -236,6 +231,7 @@ impl Validate for BioProfile {
 }
 
 #[cfg(test)]
+#[allow(clippy::items_after_test_module)]
 mod tests {
     use super::*;
 
@@ -273,7 +269,13 @@ mod tests {
             ..base_profile()
         };
         let err = p.validate().unwrap_err();
-        assert!(matches!(err, ValidationError::ProfileFieldInvalid { field: "stale_screening_max_days", .. }));
+        assert!(matches!(
+            err,
+            ValidationError::ProfileFieldInvalid {
+                field: "stale_screening_max_days",
+                ..
+            }
+        ));
     }
 
     #[test]
@@ -294,7 +296,13 @@ mod tests {
             ..base_profile()
         };
         let err = p.validate().unwrap_err();
-        assert!(matches!(err, ValidationError::ProfileFieldInvalid { field: "stale_screening_max_days", .. }));
+        assert!(matches!(
+            err,
+            ValidationError::ProfileFieldInvalid {
+                field: "stale_screening_max_days",
+                ..
+            }
+        ));
     }
 
     #[test]
@@ -304,7 +312,8 @@ mod tests {
             stale_screening_max_days: None,
             ..base_profile()
         };
-        p.validate().expect("field not required when allow_stale_screening is false");
+        p.validate()
+            .expect("field not required when allow_stale_screening is false");
     }
 
     #[test]
@@ -316,7 +325,13 @@ mod tests {
             ..base_profile()
         };
         let err = p.validate().unwrap_err();
-        assert!(matches!(err, ValidationError::ProfileFieldInvalid { field: "stale_screening_max_days", .. }));
+        assert!(matches!(
+            err,
+            ValidationError::ProfileFieldInvalid {
+                field: "stale_screening_max_days",
+                ..
+            }
+        ));
     }
 
     // --- GAP-N1 tests ---
@@ -340,7 +355,10 @@ mod tests {
         match err {
             ValidationError::ProfileFieldInvalid { field, reason } => {
                 assert_eq!(field, "allowed_protocol_steps");
-                assert!(reason.contains("PROTOCOL_STEP_VOCAB_VERSION"), "reason should include version: {reason}");
+                assert!(
+                    reason.contains("PROTOCOL_STEP_VOCAB_VERSION"),
+                    "reason should include version: {reason}"
+                );
             }
             other => panic!("unexpected error: {other}"),
         }
@@ -368,7 +386,10 @@ mod tests {
         match err {
             ValidationError::ProfileFieldInvalid { field, reason } => {
                 assert_eq!(field, "bsl_level");
-                assert!(reason.contains('0'), "reason should mention rejected value 0: {reason}");
+                assert!(
+                    reason.contains('0'),
+                    "reason should mention rejected value 0: {reason}"
+                );
             }
             other => panic!("unexpected error: {other}"),
         }
@@ -384,7 +405,10 @@ mod tests {
         match err {
             ValidationError::ProfileFieldInvalid { field, reason } => {
                 assert_eq!(field, "bsl_level");
-                assert!(reason.contains('5'), "reason should mention rejected value 5: {reason}");
+                assert!(
+                    reason.contains('5'),
+                    "reason should mention rejected value 5: {reason}"
+                );
             }
             other => panic!("unexpected error: {other}"),
         }

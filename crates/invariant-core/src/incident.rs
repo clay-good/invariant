@@ -295,18 +295,23 @@ impl AlertSink for WebhookAlertSink {
         let addr = (parsed.host.as_str(), parsed.port)
             .to_socket_addrs()
             .map_err(|e| AlertError::DeliveryFailed {
-                reason: format!("webhook: resolve {}:{} failed: {e}", parsed.host, parsed.port),
+                reason: format!(
+                    "webhook: resolve {}:{} failed: {e}",
+                    parsed.host, parsed.port
+                ),
             })?
             .next()
             .ok_or_else(|| AlertError::DeliveryFailed {
-                reason: format!("webhook: resolve {}:{} returned no addresses", parsed.host, parsed.port),
+                reason: format!(
+                    "webhook: resolve {}:{} returned no addresses",
+                    parsed.host, parsed.port
+                ),
             })?;
-        let mut stream =
-            TcpStream::connect_timeout(&addr, self.timeout).map_err(|e| {
-                AlertError::DeliveryFailed {
-                    reason: format!("webhook: connect {addr} failed: {e}"),
-                }
-            })?;
+        let mut stream = TcpStream::connect_timeout(&addr, self.timeout).map_err(|e| {
+            AlertError::DeliveryFailed {
+                reason: format!("webhook: connect {addr} failed: {e}"),
+            }
+        })?;
         stream
             .set_write_timeout(Some(self.timeout))
             .and_then(|_| stream.set_read_timeout(Some(self.timeout)))
@@ -425,7 +430,11 @@ impl SyslogAlertSink {
     /// Override the HOSTNAME field (RFC 5424 §6.2.4). Useful in containers
     /// where `$HOSTNAME` is not set.
     pub fn with_hostname(mut self, hostname: String) -> Self {
-        self.hostname = if hostname.is_empty() { "-".into() } else { hostname };
+        self.hostname = if hostname.is_empty() {
+            "-".into()
+        } else {
+            hostname
+        };
         self
     }
 
@@ -448,7 +457,11 @@ impl SyslogAlertSink {
             .collect();
         format!(
             "<{pri}>1 {ts} {host} {app} {pid} INVALERT - {msg}",
-            host = if self.hostname.is_empty() { "-" } else { &self.hostname },
+            host = if self.hostname.is_empty() {
+                "-"
+            } else {
+                &self.hostname
+            },
             app = self.app_name,
             msg = one_line,
         )
@@ -890,7 +903,8 @@ mod tests {
         let captured_clone = Arc::clone(&captured);
         let handle = thread::spawn(move || {
             let (mut sock, _peer) = listener.accept().unwrap();
-            sock.set_read_timeout(Some(std::time::Duration::from_secs(2))).ok();
+            sock.set_read_timeout(Some(std::time::Duration::from_secs(2)))
+                .ok();
             let mut buf = [0u8; 8192];
             let n = sock.read(&mut buf).unwrap_or(0);
             *captured_clone.lock().unwrap() = String::from_utf8_lossy(&buf[..n]).into_owned();
@@ -904,12 +918,18 @@ mod tests {
         handle.join().unwrap();
 
         let req = captured.lock().unwrap().clone();
-        assert!(req.starts_with("POST /alerts HTTP/1.1\r\n"), "request line: {req:?}");
+        assert!(
+            req.starts_with("POST /alerts HTTP/1.1\r\n"),
+            "request line: {req:?}"
+        );
         assert!(
             req.contains(&format!("Host: 127.0.0.1:{}\r\n", addr.port())),
             "Host header: {req:?}"
         );
-        assert!(req.contains("Content-Type: application/json\r\n"), "ct: {req:?}");
+        assert!(
+            req.contains("Content-Type: application/json\r\n"),
+            "ct: {req:?}"
+        );
         // Hand-rolled JSON escape: " → \", LF → \n.
         assert!(
             req.ends_with(r#"{"message":"hello \"world\"\n"}"#),
@@ -935,7 +955,9 @@ mod tests {
 
         let url = format!("http://127.0.0.1:{}/", addr.port());
         let sink = WebhookAlertSink::with_timeout(url, std::time::Duration::from_secs(2));
-        let err = sink.send_alert("x").expect_err("must surface 500 as delivery failed");
+        let err = sink
+            .send_alert("x")
+            .expect_err("must surface 500 as delivery failed");
         handle.join().unwrap();
         match err {
             AlertError::DeliveryFailed { reason } => {
@@ -971,17 +993,24 @@ mod tests {
             .with_hostname("test-host".into())
             .with_app_name("invariant-test".into());
         assert_eq!(sink.backend_name(), "syslog");
-        sink.send_alert("incident! line1\nline2").expect("send_alert");
+        sink.send_alert("incident! line1\nline2")
+            .expect("send_alert");
 
         let mut buf = [0u8; 1500];
         let (n, _src) = listener.recv_from(&mut buf).expect("recv datagram");
         let payload = std::str::from_utf8(&buf[..n]).expect("utf-8");
         // facility=Local0 (16) * 8 + severity=Alert (1) = 129
         assert!(payload.starts_with("<129>1 "), "payload: {payload:?}");
-        assert!(payload.contains(" test-host invariant-test "), "header: {payload:?}");
+        assert!(
+            payload.contains(" test-host invariant-test "),
+            "header: {payload:?}"
+        );
         assert!(payload.contains(" INVALERT - "), "msgid: {payload:?}");
         // Embedded LF replaced with space.
-        assert!(payload.ends_with("incident! line1 line2"), "tail: {payload:?}");
+        assert!(
+            payload.ends_with("incident! line1 line2"),
+            "tail: {payload:?}"
+        );
         // No bare newline anywhere in the datagram.
         assert!(!payload.contains('\n'), "datagram must be single line");
     }

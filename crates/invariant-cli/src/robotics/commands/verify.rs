@@ -167,8 +167,8 @@ fn merkle_root_from_log(jsonl: &str) -> Result<[u8; 32], String> {
         if line.trim().is_empty() {
             continue;
         }
-        let value: serde_json::Value = serde_json::from_str(line)
-            .map_err(|e| format!("line {}: parse: {e}", idx + 1))?;
+        let value: serde_json::Value =
+            serde_json::from_str(line).map_err(|e| format!("line {}: parse: {e}", idx + 1))?;
         let entry_hash = value
             .get("entry_hash")
             .and_then(|v| v.as_str())
@@ -189,7 +189,9 @@ mod tests {
     use invariant_robotics::authority::crypto::generate_keypair;
     use invariant_robotics::models::authority::Operation;
     use invariant_robotics::models::command::{Command, CommandAuthority, JointState};
-    use invariant_robotics::models::verdict::{AuthoritySummary, CheckResult, SignedVerdict, Verdict};
+    use invariant_robotics::models::verdict::{
+        AuthoritySummary, CheckResult, SignedVerdict, Verdict,
+    };
     use rand::rngs::OsRng;
     use std::collections::HashMap;
     use std::io::Write;
@@ -449,9 +451,8 @@ mod tests {
         let log_file = write_valid_audit_log(&sk, 3);
         let key_file = write_pubkey_file(&sk);
         let mut args = args_for(log_file.path(), key_file.path());
-        args.merkle_root = Some(
-            "0000000000000000000000000000000000000000000000000000000000000000".into(),
-        );
+        args.merkle_root =
+            Some("0000000000000000000000000000000000000000000000000000000000000000".into());
         assert_eq!(run(&args), 1);
     }
 
@@ -503,9 +504,8 @@ mod tests {
         let log_file = write_valid_audit_log(&sk, 1);
         let key_file = write_pubkey_file(&sk);
         let mut args = args_for(log_file.path(), key_file.path());
-        args.predecessor_digest = Some(
-            "0000000000000000000000000000000000000000000000000000000000000000".into(),
-        );
+        args.predecessor_digest =
+            Some("0000000000000000000000000000000000000000000000000000000000000000".into());
         assert_eq!(run(&args), 0, "well-formed hex now passes shape check");
     }
 

@@ -468,11 +468,7 @@ pub fn complexity_score(mol: &Molecule) -> ComplexityScore {
     let stereo_count = s.chars().filter(|c| *c == '@').count();
 
     // Heteroatom ratio
-    let atom_chars: usize = s
-        .chars()
-        .filter(|c| c.is_ascii_alphabetic())
-        .count()
-        .max(1);
+    let atom_chars: usize = s.chars().filter(|c| c.is_ascii_alphabetic()).count().max(1);
     let hetero_chars: usize = s
         .chars()
         .filter(|c| matches!(c, 'N' | 'O' | 'S' | 'P' | 'F' | 'I' | 'n' | 'o' | 's'))
@@ -490,9 +486,8 @@ pub fn complexity_score(mol: &Molecule) -> ComplexityScore {
     let len_score = (len as f64 / 300.0).min(1.0);
     let hetero_score = heteroatom_ratio.min(1.0);
 
-    let score =
-        (0.30 * ring_score + 0.20 * stereo_score + 0.25 * len_score + 0.25 * hetero_score)
-            .clamp(0.0, 1.0);
+    let score = (0.30 * ring_score + 0.20 * stereo_score + 0.25 * len_score + 0.25 * hetero_score)
+        .clamp(0.0, 1.0);
 
     ComplexityScore {
         ring_count,
@@ -541,10 +536,7 @@ mod tests {
             Molecule::parse("CC(=O"),
             Err(MoleculeError::UnbalancedParens)
         );
-        assert_eq!(
-            Molecule::parse("CC)"),
-            Err(MoleculeError::UnbalancedParens)
-        );
+        assert_eq!(Molecule::parse("CC)"), Err(MoleculeError::UnbalancedParens));
     }
 
     #[test]
@@ -651,7 +643,10 @@ mod tests {
     fn clean_molecule_no_groups() {
         let mol = Molecule::parse("CCO").unwrap();
         let groups = detect_functional_groups(&mol);
-        assert!(groups.is_empty(), "ethanol should have no alerts: {groups:?}");
+        assert!(
+            groups.is_empty(),
+            "ethanol should have no alerts: {groups:?}"
+        );
     }
 
     // ---- SMARTS rule matching ----
@@ -714,7 +709,11 @@ mod tests {
     fn simple_molecule_low_complexity() {
         let mol = Molecule::parse("CCO").unwrap();
         let cs = complexity_score(&mol);
-        assert!(cs.score < 0.3, "ethanol should be low complexity: {}", cs.score);
+        assert!(
+            cs.score < 0.3,
+            "ethanol should be low complexity: {}",
+            cs.score
+        );
         assert_eq!(cs.ring_count, 0);
         assert_eq!(cs.stereo_count, 0);
     }
@@ -731,7 +730,11 @@ mod tests {
         // A moderately complex SMILES
         let mol = Molecule::parse("CC1(C)SC2C(NC(=O)C2N)C1C(=O)O").unwrap();
         let cs = complexity_score(&mol);
-        assert!(cs.score > 0.2, "penicillin-like should be moderate complexity: {}", cs.score);
+        assert!(
+            cs.score > 0.2,
+            "penicillin-like should be moderate complexity: {}",
+            cs.score
+        );
     }
 
     #[test]

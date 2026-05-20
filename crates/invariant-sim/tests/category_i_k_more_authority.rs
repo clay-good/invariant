@@ -65,12 +65,8 @@ fn i_04_authority_laundering_cycles_scope_tiers() {
     // All four tiers must appear at least once in a 16-command run.
     for (tier, &name) in expected.iter().enumerate() {
         assert!(
-            cmds.iter().any(|c| {
-                c.authority
-                    .required_ops
-                    .iter()
-                    .any(|o| o.as_str() == name)
-            }),
+            cmds.iter()
+                .any(|c| { c.authority.required_ops.iter().any(|o| o.as_str() == name) }),
             "scope tier {tier} ({name}) never appears"
         );
     }
@@ -101,7 +97,10 @@ fn i_06_watchdog_manipulation_three_phase_pattern() {
                 (c.delta_time - missed_dt).abs() < 1e-12,
                 "cmd {i}: phase A delta_time should be 5× max"
             );
-            assert_eq!(c.authority.pca_chain, pca, "cmd {i}: phase A keeps authority");
+            assert_eq!(
+                c.authority.pca_chain, pca,
+                "cmd {i}: phase A keeps authority"
+            );
         } else if i < two_thirds {
             assert_eq!(phase, "B", "cmd {i}: phase B expected");
             assert!(
@@ -165,8 +164,12 @@ fn i_08_multi_agent_collusion_alternates_with_per_source_monotonicity() {
         match (i % 2, c.source.as_str(), agent.as_str()) {
             (0, "cognitive_agent_a", "a") => {
                 saw_a = true;
-                let ops_strs: Vec<&str> =
-                    c.authority.required_ops.iter().map(|o| o.as_str()).collect();
+                let ops_strs: Vec<&str> = c
+                    .authority
+                    .required_ops
+                    .iter()
+                    .map(|o| o.as_str())
+                    .collect();
                 assert_eq!(ops_strs, vec!["actuate:joint_0"]);
                 if let Some(prev) = last_seq_a {
                     assert_eq!(c.sequence, prev + 1, "cmd {i}: agent A sequence must be +1");
@@ -175,8 +178,12 @@ fn i_08_multi_agent_collusion_alternates_with_per_source_monotonicity() {
             }
             (1, "cognitive_agent_b", "b") => {
                 saw_b = true;
-                let ops_strs: Vec<&str> =
-                    c.authority.required_ops.iter().map(|o| o.as_str()).collect();
+                let ops_strs: Vec<&str> = c
+                    .authority
+                    .required_ops
+                    .iter()
+                    .map(|o| o.as_str())
+                    .collect();
                 assert_eq!(ops_strs, vec!["sensor.read:imu"]);
                 if let Some(prev) = last_seq_b {
                     assert_eq!(c.sequence, prev + 1, "cmd {i}: agent B sequence must be +1");
@@ -194,8 +201,11 @@ fn k_06_validator_restart_resets_per_source_sequence() {
     let profile = load_ur10();
     let count = 20;
     let pca = "harness_chain";
-    let cmds = ScenarioGenerator::new(&profile, ScenarioType::ValidatorRestart)
-        .generate_commands(count, pca, &ops());
+    let cmds = ScenarioGenerator::new(&profile, ScenarioType::ValidatorRestart).generate_commands(
+        count,
+        pca,
+        &ops(),
+    );
     assert_eq!(cmds.len(), count);
 
     let half = count / 2;

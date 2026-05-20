@@ -173,7 +173,9 @@ mod tests {
     use chrono::{TimeZone, Utc};
     use invariant_robotics::models::command::{Command, CommandAuthority, JointState};
     use invariant_robotics::models::trace::{Trace, TraceStep};
-    use invariant_robotics::models::verdict::{AuthoritySummary, CheckResult, SignedVerdict, Verdict};
+    use invariant_robotics::models::verdict::{
+        AuthoritySummary, CheckResult, SignedVerdict, Verdict,
+    };
     use std::collections::HashMap;
 
     /// Returns a fixed, deterministic UTC timestamp for use in tests.

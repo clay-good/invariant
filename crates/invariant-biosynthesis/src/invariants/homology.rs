@@ -36,11 +36,7 @@ pub struct HomologyMatch {
 pub trait HomologyEngine: Send + Sync {
     /// Scan `query_frames` against `reference_frames` and return all matches
     /// above the engine's threshold.
-    fn scan(
-        &self,
-        query_frames: &[&str],
-        reference_frames: &[&str],
-    ) -> Vec<HomologyMatch>;
+    fn scan(&self, query_frames: &[&str], reference_frames: &[&str]) -> Vec<HomologyMatch>;
 
     /// Short label for this engine (e.g. "kmer", "hmmer").
     fn method_label(&self) -> &'static str;
@@ -119,11 +115,7 @@ impl KmerHomologyEngine {
 }
 
 impl HomologyEngine for KmerHomologyEngine {
-    fn scan(
-        &self,
-        query_frames: &[&str],
-        reference_frames: &[&str],
-    ) -> Vec<HomologyMatch> {
+    fn scan(&self, query_frames: &[&str], reference_frames: &[&str]) -> Vec<HomologyMatch> {
         let query_kmer_sets: Vec<HashSet<Vec<u8>>> = query_frames
             .iter()
             .map(|f| Self::protein_kmers(f, self.k))
@@ -192,11 +184,7 @@ impl Default for HmmerHomologyEngine {
 
 #[cfg(feature = "hmmer")]
 impl HomologyEngine for HmmerHomologyEngine {
-    fn scan(
-        &self,
-        _query_frames: &[&str],
-        _reference_frames: &[&str],
-    ) -> Vec<HomologyMatch> {
+    fn scan(&self, _query_frames: &[&str], _reference_frames: &[&str]) -> Vec<HomologyMatch> {
         // Stub: HMMER FFI integration is deferred until a safe wrapper crate
         // is available. The `#![forbid(unsafe_code)]` policy requires all FFI
         // to go through a vetted, safe-only binding.
@@ -360,7 +348,10 @@ mod tests {
     fn kmer_engine_respects_threshold() {
         let strict = KmerHomologyEngine::new(3, 0.99);
         let matches = strict.scan(&["MKFALIDNEA"], &["MKFAGGGGGG"]);
-        assert!(matches.is_empty(), "strict threshold should filter partial hits");
+        assert!(
+            matches.is_empty(),
+            "strict threshold should filter partial hits"
+        );
     }
 
     #[test]

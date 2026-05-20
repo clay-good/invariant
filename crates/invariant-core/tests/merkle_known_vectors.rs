@@ -13,9 +13,7 @@
 //! `tree_root`. Hand-computing the steps inline keeps the test maintainable
 //! without pulling in a separate vector file.
 
-use invariant_core::merkle::{
-    inner_hash, leaf_hash, tree_root, Hash, MerkleAccumulator,
-};
+use invariant_core::merkle::{inner_hash, leaf_hash, tree_root, Hash, MerkleAccumulator};
 
 fn leaf(b: &[u8]) -> Hash {
     leaf_hash(b)

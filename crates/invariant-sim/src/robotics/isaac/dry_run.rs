@@ -324,9 +324,11 @@ pub fn run_dry_campaign(
         // command onwards within the same episode.
         // `previous_forces` is similarly reset and updated to enable the P13
         // force-rate check from the 2nd command onwards.
-        let mut previous_joints: Option<Vec<invariant_robotics::models::command::JointState>> = None;
-        let mut previous_forces: Option<Vec<invariant_robotics::models::command::EndEffectorForce>> =
+        let mut previous_joints: Option<Vec<invariant_robotics::models::command::JointState>> =
             None;
+        let mut previous_forces: Option<
+            Vec<invariant_robotics::models::command::EndEffectorForce>,
+        > = None;
         for cmd in &commands {
             let now = Utc::now();
             let result = match validator.validate_with_forces(
@@ -594,9 +596,7 @@ fn parse_scenario_type(name: &str) -> Result<ScenarioType, DryRunError> {
         }
         "PureFuzz" | "pure_fuzz" => Ok(ScenarioType::PureFuzz),
         "AuthorityLaundering" | "authority_laundering" => Ok(ScenarioType::AuthorityLaundering),
-        "WatchdogManipulation" | "watchdog_manipulation" => {
-            Ok(ScenarioType::WatchdogManipulation)
-        }
+        "WatchdogManipulation" | "watchdog_manipulation" => Ok(ScenarioType::WatchdogManipulation),
         "MultiAgentCollusion" | "multi_agent_collusion" => Ok(ScenarioType::MultiAgentCollusion),
         "ValidatorRestart" | "validator_restart" => Ok(ScenarioType::ValidatorRestart),
         "ValidAuthorityChain" | "valid_authority_chain" => Ok(ScenarioType::ValidAuthorityChain),
@@ -609,9 +609,7 @@ fn parse_scenario_type(name: &str) -> Result<ScenarioType, DryRunError> {
         "RedTeamFuzzGeneration" | "red_team_fuzz_generation" => {
             Ok(ScenarioType::RedTeamFuzzGeneration)
         }
-        "RedTeamFuzzMutation" | "red_team_fuzz_mutation" => {
-            Ok(ScenarioType::RedTeamFuzzMutation)
-        }
+        "RedTeamFuzzMutation" | "red_team_fuzz_mutation" => Ok(ScenarioType::RedTeamFuzzMutation),
         "RedTeamFuzzUnicode" | "red_team_fuzz_unicode" => Ok(ScenarioType::RedTeamFuzzUnicode),
         "RedTeamFuzzIntegerBoundary" | "red_team_fuzz_integer_boundary" => {
             Ok(ScenarioType::RedTeamFuzzIntegerBoundary)

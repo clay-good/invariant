@@ -26,8 +26,11 @@ fn load_ur10() -> invariant_robotics::models::profile::RobotProfile {
 fn g_09_cross_chain_splice_envelope_shape() {
     let profile = load_ur10();
     let count = 8;
-    let cmds = ScenarioGenerator::new(&profile, ScenarioType::CrossChainSplice)
-        .generate_commands(count, "harness_chain_b64", &ops());
+    let cmds = ScenarioGenerator::new(&profile, ScenarioType::CrossChainSplice).generate_commands(
+        count,
+        "harness_chain_b64",
+        &ops(),
+    );
     assert_eq!(cmds.len(), count);
 
     let mut seen = std::collections::HashSet::new();
@@ -52,9 +55,7 @@ fn g_09_cross_chain_splice_envelope_shape() {
             .decode(c.authority.pca_chain.as_bytes())
             .expect("envelope decodes as base64");
         let text = std::str::from_utf8(&decoded).expect("envelope is utf-8 JSON");
-        let expected_digest: String = (0..32)
-            .map(|_| format!("{:02x}", expected_byte))
-            .collect();
+        let expected_digest: String = (0..32).map(|_| format!("{:02x}", expected_byte)).collect();
         assert!(
             text.contains(&expected_digest),
             "cmd {i}: envelope must embed the mismatched digest {expected_digest}: {text}"

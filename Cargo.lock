@@ -687,26 +687,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "invariant-biosynthesis"
-version = "0.2.0"
-dependencies = [
- "base64",
- "chrono",
- "coset",
- "ed25519-dalek",
- "invariant-core",
- "rand",
- "regex",
- "serde",
- "serde_json",
- "sha2",
- "tempfile",
- "thiserror",
-]
-
-[[package]]
-name = "invariant-cli"
-version = "0.2.0"
+name = "invariant"
+version = "0.0.3"
 dependencies = [
  "axum",
  "base64",
@@ -716,9 +698,9 @@ dependencies = [
  "ed25519-dalek",
  "invariant-biosynthesis",
  "invariant-coordinator",
- "invariant-core",
  "invariant-eval",
  "invariant-fuzz",
+ "invariant-protocol",
  "invariant-robotics",
  "invariant-sim",
  "rand",
@@ -734,11 +716,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "invariant-biosynthesis"
+version = "0.0.3"
+dependencies = [
+ "base64",
+ "chrono",
+ "coset",
+ "ed25519-dalek",
+ "invariant-protocol",
+ "rand",
+ "regex",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "thiserror",
+]
+
+[[package]]
 name = "invariant-coordinator"
-version = "0.2.0"
+version = "0.0.3"
 dependencies = [
  "chrono",
- "invariant-core",
+ "invariant-protocol",
  "invariant-robotics",
  "serde",
  "serde_json",
@@ -746,8 +746,41 @@ dependencies = [
 ]
 
 [[package]]
-name = "invariant-core"
-version = "0.2.0"
+name = "invariant-eval"
+version = "0.0.3"
+dependencies = [
+ "chrono",
+ "invariant-biosynthesis",
+ "invariant-protocol",
+ "invariant-robotics",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+]
+
+[[package]]
+name = "invariant-fuzz"
+version = "0.0.3"
+dependencies = [
+ "base64",
+ "chrono",
+ "ed25519-dalek",
+ "invariant-biosynthesis",
+ "invariant-protocol",
+ "invariant-robotics",
+ "invariant-sim",
+ "rand",
+ "regex",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror",
+]
+
+[[package]]
+name = "invariant-protocol"
+version = "0.0.3"
 dependencies = [
  "base64",
  "chrono",
@@ -764,47 +797,14 @@ dependencies = [
 ]
 
 [[package]]
-name = "invariant-eval"
-version = "0.2.0"
-dependencies = [
- "chrono",
- "invariant-biosynthesis",
- "invariant-core",
- "invariant-robotics",
- "serde",
- "serde_json",
- "tempfile",
- "thiserror",
-]
-
-[[package]]
-name = "invariant-fuzz"
-version = "0.2.0"
-dependencies = [
- "base64",
- "chrono",
- "ed25519-dalek",
- "invariant-biosynthesis",
- "invariant-core",
- "invariant-robotics",
- "invariant-sim",
- "rand",
- "regex",
- "serde",
- "serde_json",
- "sha2",
- "thiserror",
-]
-
-[[package]]
 name = "invariant-robotics"
-version = "0.2.0"
+version = "0.0.3"
 dependencies = [
  "base64",
  "chrono",
  "coset",
  "ed25519-dalek",
- "invariant-core",
+ "invariant-protocol",
  "quick-xml",
  "rand",
  "regex",
@@ -818,13 +818,13 @@ dependencies = [
 
 [[package]]
 name = "invariant-sim"
-version = "0.2.0"
+version = "0.0.3"
 dependencies = [
  "base64",
  "chrono",
  "ed25519-dalek",
  "invariant-biosynthesis",
- "invariant-core",
+ "invariant-protocol",
  "invariant-robotics",
  "rand",
  "rand_chacha",

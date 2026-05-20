@@ -1,0 +1,85 @@
+{
+  "name": "pal_tiago",
+  "version": "1.0.0",
+  "joints": [
+    {"name": "torso_lift",    "type": "prismatic", "min":  0.0,    "max":  0.35,  "max_velocity": 0.1,  "max_torque": 40.0, "max_acceleration": 2.0},
+    {"name": "arm_1",         "type": "revolute",  "min": -1.57,   "max":  3.14,  "max_velocity": 2.0,  "max_torque": 30.0, "max_acceleration": 10.0},
+    {"name": "arm_2",         "type": "revolute",  "min": -1.57,   "max":  3.14,  "max_velocity": 2.0,  "max_torque": 30.0, "max_acceleration": 10.0},
+    {"name": "arm_3",         "type": "revolute",  "min": -3.14,   "max":  0.79,  "max_velocity": 2.0,  "max_torque": 20.0, "max_acceleration": 10.0},
+    {"name": "arm_4",         "type": "revolute",  "min": -3.14,   "max":  0.79,  "max_velocity": 2.0,  "max_torque": 20.0, "max_acceleration": 10.0},
+    {"name": "arm_5",         "type": "revolute",  "min": -2.09,   "max":  2.09,  "max_velocity": 2.0,  "max_torque": 10.0, "max_acceleration": 10.0},
+    {"name": "arm_6",         "type": "revolute",  "min": -2.09,   "max":  2.09,  "max_velocity": 2.0,  "max_torque": 10.0, "max_acceleration": 10.0},
+    {"name": "arm_7",         "type": "revolute",  "min": -2.09,   "max":  2.09,  "max_velocity": 2.0,  "max_torque": 10.0, "max_acceleration": 10.0},
+    {"name": "head_pan",      "type": "revolute",  "min": -1.24,   "max":  1.24,  "max_velocity": 1.5,  "max_torque":  3.0, "max_acceleration": 8.0},
+    {"name": "head_tilt",     "type": "revolute",  "min": -1.05,   "max":  0.79,  "max_velocity": 1.5,  "max_torque":  3.0, "max_acceleration": 8.0},
+    {"name": "gripper_left",  "type": "prismatic", "min":  0.0,    "max":  0.045, "max_velocity": 0.1,  "max_torque":  5.0, "max_acceleration": 2.0},
+    {"name": "gripper_right", "type": "prismatic", "min":  0.0,    "max":  0.045, "max_velocity": 0.1,  "max_torque":  5.0, "max_acceleration": 2.0},
+    {"name": "wheel_left",    "type": "revolute",  "min": -100.0,  "max":  100.0, "max_velocity": 3.0,  "max_torque":  5.0, "max_acceleration": 5.0},
+    {"name": "wheel_right",   "type": "revolute",  "min": -100.0,  "max":  100.0, "max_velocity": 3.0,  "max_torque":  5.0, "max_acceleration": 5.0}
+  ],
+  "workspace": {
+    "type": "aabb",
+    "min": [-1.5, -1.5, 0.0],
+    "max": [1.5, 1.5, 1.8]
+  },
+  "exclusion_zones": [],
+  "proximity_zones": [
+    {
+      "name": "human_nearby",
+      "type": "sphere",
+      "center": [1.0, 0.0, 1.0],
+      "radius": 1.5,
+      "velocity_scale": 0.5,
+      "dynamic": true
+    }
+  ],
+  "collision_pairs": [
+    ["arm_7", "torso_lift"],
+    ["gripper_left", "gripper_right"]
+  ],
+  "stability": null,
+  "locomotion": {
+    "max_locomotion_velocity": 1.0,
+    "max_step_length": 0.01,
+    "min_foot_clearance": 0.005,
+    "max_step_height": 0.01,
+    "max_ground_reaction_force": 300.0,
+    "friction_coefficient": 0.7,
+    "max_heading_rate": 1.5
+  },
+  "max_delta_time": 0.02,
+  "min_collision_distance": 0.01,
+  "global_velocity_scale": 1.0,
+  "watchdog_timeout_ms": 100,
+  "environment": {
+    "max_safe_pitch_rad": 0.087,
+    "max_safe_roll_rad": 0.087,
+    "max_operating_temperature_c": 45.0,
+    "warning_temperature_c": 35.0,
+    "critical_battery_pct": 5.0,
+    "low_battery_pct": 15.0,
+    "max_latency_ms": 150.0,
+    "warning_latency_ms": 75.0
+  },
+  "end_effectors": [
+    {
+      "name": "gripper",
+      "max_force_n": 25.0,
+      "max_grasp_force_n": 15.0,
+      "min_grasp_force_n": 0.5,
+      "max_force_rate_n_per_s": 50.0,
+      "max_payload_kg": 3.0
+    }
+  ],
+  "real_world_margins": {
+    "position_margin": 0.05,
+    "velocity_margin": 0.10,
+    "torque_margin": 0.10,
+    "acceleration_margin": 0.10
+  },
+  "safe_stop_profile": {
+    "strategy": "immediate_stop",
+    "max_deceleration": 10.0,
+    "target_joint_positions": {}
+  }
+}

@@ -865,10 +865,7 @@ mod tests {
             .map(|_| make_pca("alice", "key-1", &["actuate:arm:*"]))
             .collect();
         link_chain_digests(&mut claims);
-        let hops: Vec<_> = claims
-            .iter()
-            .map(|c| sign_pca(c, &sk).unwrap())
-            .collect();
+        let hops: Vec<_> = claims.iter().map(|c| sign_pca(c, &sk).unwrap()).collect();
 
         let keys = trusted_keys(&[("key-1", &vk)]);
         let result = verify_chain(&hops, &keys, Utc::now());

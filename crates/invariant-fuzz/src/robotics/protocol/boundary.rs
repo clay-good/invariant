@@ -7,7 +7,9 @@
 
 use std::collections::HashMap;
 
-use invariant_robotics::models::command::{Command, CommandAuthority, EndEffectorPosition, JointState};
+use invariant_robotics::models::command::{
+    Command, CommandAuthority, EndEffectorPosition, JointState,
+};
 use invariant_robotics::models::profile::{RobotProfile, WorkspaceBounds};
 
 /// A small positive offset used to probe values just outside the joint limits.

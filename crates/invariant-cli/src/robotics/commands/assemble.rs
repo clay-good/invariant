@@ -287,10 +287,7 @@ pub fn run(args: &AssembleArgs) -> i32 {
     }
 
     // 9. Build inputs and call `assemble`.
-    let binary_hash = args
-        .binary_hash
-        .clone()
-        .unwrap_or_else(default_binary_hash);
+    let binary_hash = args.binary_hash.clone().unwrap_or_else(default_binary_hash);
 
     let campaign_name = args
         .campaign_name
@@ -551,10 +548,9 @@ fn sha256_file_hex(path: &Path) -> Result<String, String> {
 }
 
 fn load_state(sidecar: &Path, output: &Path) -> Result<AssembleState, String> {
-    let bytes =
-        std::fs::read(sidecar).map_err(|e| format!("read {}: {e}", sidecar.display()))?;
-    let state: AssembleState = serde_json::from_slice(&bytes)
-        .map_err(|e| format!("parse {}: {e}", sidecar.display()))?;
+    let bytes = std::fs::read(sidecar).map_err(|e| format!("read {}: {e}", sidecar.display()))?;
+    let state: AssembleState =
+        serde_json::from_slice(&bytes).map_err(|e| format!("parse {}: {e}", sidecar.display()))?;
     if state.version != ASSEMBLE_STATE_VERSION {
         return Err(format!(
             "sidecar version {} does not match expected {}",
@@ -574,11 +570,9 @@ fn load_state(sidecar: &Path, output: &Path) -> Result<AssembleState, String> {
 fn write_state_durable(sidecar: &Path, state: &AssembleState) -> Result<(), String> {
     // Write to a temp file in the same directory, fsync, then atomic rename.
     let parent = sidecar.parent().unwrap_or_else(|| Path::new("."));
-    std::fs::create_dir_all(parent)
-        .map_err(|e| format!("mkdir {}: {e}", parent.display()))?;
+    std::fs::create_dir_all(parent).map_err(|e| format!("mkdir {}: {e}", parent.display()))?;
     let tmp = sidecar.with_extension("json.tmp");
-    let json = serde_json::to_vec_pretty(state)
-        .map_err(|e| format!("serialize state: {e}"))?;
+    let json = serde_json::to_vec_pretty(state).map_err(|e| format!("serialize state: {e}"))?;
     {
         let mut f = std::fs::OpenOptions::new()
             .write(true)
@@ -642,8 +636,8 @@ fn merge_shards_with_state(
             .to_string();
 
         let audit_path = shard.join("audit.jsonl");
-        let current_digest = sha256_file_hex(&audit_path)
-            .map_err(|e| format!("shard {shard_name}: {e}"))?;
+        let current_digest =
+            sha256_file_hex(&audit_path).map_err(|e| format!("shard {shard_name}: {e}"))?;
 
         if let Some(prev) = prior_map.get(shard_key.as_str()) {
             if prev.audit_sha256 != current_digest {
@@ -723,9 +717,7 @@ fn merge_shards_with_state(
                 adv_esc += shard_adv_esc;
                 match control_hz {
                     None => control_hz = Some(s.control_frequency_hz),
-                    Some(existing)
-                        if (existing - s.control_frequency_hz).abs() > f64::EPSILON =>
-                    {
+                    Some(existing) if (existing - s.control_frequency_hz).abs() > f64::EPSILON => {
                         eprintln!(
                             "warning: shard {shard_name} reports control_frequency_hz={}, expected {existing}; using {existing}",
                             s.control_frequency_hz
@@ -757,9 +749,7 @@ fn merge_shards_with_state(
             {
                 let after = TEST_PANIC_AFTER_SHARD.with(|c| c.get());
                 if after > 0 && (idx + 1) >= after {
-                    panic!(
-                        "TEST_PANIC_AFTER_SHARD={after}: simulated abort after shard {idx}"
-                    );
+                    panic!("TEST_PANIC_AFTER_SHARD={after}: simulated abort after shard {idx}");
                 }
             }
         }
@@ -814,8 +804,8 @@ fn load_signing_key(path: &Path) -> Result<(ed25519_dalek::SigningKey, String), 
 fn self_verify(package_dir: &Path, pubkey_path: &Path) -> Result<(), String> {
     let manifest_json = std::fs::read_to_string(package_dir.join("manifest.json"))
         .map_err(|e| format!("read manifest.json: {e}"))?;
-    let manifest: ProofPackageManifest = serde_json::from_str(&manifest_json)
-        .map_err(|e| format!("parse manifest.json: {e}"))?;
+    let manifest: ProofPackageManifest =
+        serde_json::from_str(&manifest_json).map_err(|e| format!("parse manifest.json: {e}"))?;
     let kf = crate::key_file::load_key_file(pubkey_path)?;
     let (vk, _kid) = crate::key_file::load_verifying_key(&kf)?;
     verify_manifest(&manifest, &vk).map_err(|e| format!("verify_manifest: {e}"))?;
@@ -1131,7 +1121,10 @@ mod tests {
         assert!(parse_metadata(&["nokvp".into()]).is_err());
         assert!(parse_metadata(&["dup=1".into(), "dup=2".into()]).is_err());
         let ok = parse_metadata(&["good_key-1=hello world".into()]).unwrap();
-        assert_eq!(ok.get("good_key-1").map(String::as_str), Some("hello world"));
+        assert_eq!(
+            ok.get("good_key-1").map(String::as_str),
+            Some("hello world")
+        );
     }
 
     #[test]
@@ -1295,7 +1288,11 @@ mod tests {
         // Sidecar that thinks it belongs to a different output dir.
         let state = AssembleState {
             version: ASSEMBLE_STATE_VERSION,
-            output_dir: temp.path().join("out-elsewhere").to_string_lossy().to_string(),
+            output_dir: temp
+                .path()
+                .join("out-elsewhere")
+                .to_string_lossy()
+                .to_string(),
             consumed: vec![],
         };
         let sc = sidecar_path(&output);

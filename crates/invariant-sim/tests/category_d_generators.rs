@@ -58,8 +58,11 @@ fn d_01_cycles_four_com_positions_three_inside_one_outside() {
         .expect("bd_atlas has stability config");
     let polygon = &stability.support_polygon;
     let count = 32;
-    let cmds = ScenarioGenerator::new(&profile, ScenarioType::ComStabilitySweep)
-        .generate_commands(count, "", &ops());
+    let cmds = ScenarioGenerator::new(&profile, ScenarioType::ComStabilitySweep).generate_commands(
+        count,
+        "",
+        &ops(),
+    );
     assert_eq!(cmds.len(), count);
 
     let mut inside_count = 0;
@@ -158,8 +161,11 @@ fn d_07_step_length_ramps_past_max() {
     let profile = load_profile();
     let max_step = profile.locomotion.as_ref().unwrap().max_step_length;
     let count = 40;
-    let cmds = ScenarioGenerator::new(&profile, ScenarioType::StepOverextension)
-        .generate_commands(count, "", &ops());
+    let cmds = ScenarioGenerator::new(&profile, ScenarioType::StepOverextension).generate_commands(
+        count,
+        "",
+        &ops(),
+    );
     assert_eq!(cmds.len(), count);
 
     let steps: Vec<f64> = cmds
@@ -190,8 +196,11 @@ fn d_08_heading_rate_ramps_past_max() {
     let profile = load_profile();
     let max_heading = profile.locomotion.as_ref().unwrap().max_heading_rate;
     let count = 40;
-    let cmds = ScenarioGenerator::new(&profile, ScenarioType::HeadingSpinout)
-        .generate_commands(count, "", &ops());
+    let cmds = ScenarioGenerator::new(&profile, ScenarioType::HeadingSpinout).generate_commands(
+        count,
+        "",
+        &ops(),
+    );
     assert_eq!(cmds.len(), count);
 
     let rates: Vec<f64> = cmds
@@ -217,8 +226,11 @@ fn d_10_pitch_ramps_past_max_safe_pitch() {
     let max_pitch = env.max_safe_pitch_rad;
     let warning_pitch = env.warning_pitch_rad;
     let count = 60;
-    let cmds = ScenarioGenerator::new(&profile, ScenarioType::InclineWalking)
-        .generate_commands(count, "", &ops());
+    let cmds = ScenarioGenerator::new(&profile, ScenarioType::InclineWalking).generate_commands(
+        count,
+        "",
+        &ops(),
+    );
     assert_eq!(cmds.len(), count);
 
     let pitches: Vec<f64> = cmds

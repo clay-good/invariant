@@ -326,7 +326,11 @@ mod tests {
     fn allocations_scale_linearly_with_total() {
         // Halving --total halves every row (within rounding).
         let half = allocations(7_500_000);
-        let cat_b_half: u64 = half.iter().filter(|r| r.category == 'B').map(|r| r.episodes).sum();
+        let cat_b_half: u64 = half
+            .iter()
+            .filter(|r| r.category == 'B')
+            .map(|r| r.episodes)
+            .sum();
         // 1.5M halved = 750K, allow ±0.1%.
         assert!(
             cat_b_half.abs_diff(750_000) <= 1500,

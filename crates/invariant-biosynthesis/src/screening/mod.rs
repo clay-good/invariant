@@ -342,11 +342,7 @@ impl HazardDatabase for ConsensusHazardScreener {
 
     fn version(&self) -> u64 {
         // Return the minimum version (most conservative).
-        self.sources
-            .iter()
-            .map(|s| s.version())
-            .min()
-            .unwrap_or(0)
+        self.sources.iter().map(|s| s.version()).min().unwrap_or(0)
     }
 
     fn freshness_window(&self) -> Duration {
@@ -747,8 +743,7 @@ mod tests {
             .unwrap(),
         ) as Arc<dyn HazardScreener>;
 
-        let consensus =
-            ConsensusHazardScreener::new(vec![db1, db2], QuorumPolicy::Any).unwrap();
+        let consensus = ConsensusHazardScreener::new(vec![db1, db2], QuorumPolicy::Any).unwrap();
         let hits = consensus.screen_payload(&SynthesisPayload::Dna {
             sequence: "ATGAAACCCGGG".into(),
         });
@@ -792,8 +787,7 @@ mod tests {
             .unwrap(),
         ) as Arc<dyn HazardScreener>;
 
-        let consensus =
-            ConsensusHazardScreener::new(vec![db1, db2], QuorumPolicy::All).unwrap();
+        let consensus = ConsensusHazardScreener::new(vec![db1, db2], QuorumPolicy::All).unwrap();
         let hits = consensus.screen_payload(&SynthesisPayload::Dna {
             sequence: "ATGAAA".into(),
         });
@@ -837,8 +831,7 @@ mod tests {
             .unwrap(),
         ) as Arc<dyn HazardScreener>;
 
-        let consensus =
-            ConsensusHazardScreener::new(vec![db1, db2], QuorumPolicy::Any).unwrap();
+        let consensus = ConsensusHazardScreener::new(vec![db1, db2], QuorumPolicy::Any).unwrap();
         let hits = consensus.screen_payload(&SynthesisPayload::Dna {
             sequence: "ATGAAA".into(),
         });
@@ -858,8 +851,7 @@ mod tests {
             FileBackedHazardDatabase::from_bytes(&bytes, &trusted("issuer-1", &sk)).unwrap(),
         ) as Arc<dyn HazardScreener>;
 
-        let consensus =
-            ConsensusHazardScreener::new(vec![db1, db2], QuorumPolicy::Any).unwrap();
+        let consensus = ConsensusHazardScreener::new(vec![db1, db2], QuorumPolicy::Any).unwrap();
         assert_eq!(consensus.source_count(), 2);
         // Freshness should be very small (just loaded)
         assert!(consensus.freshness() < Duration::from_secs(5));

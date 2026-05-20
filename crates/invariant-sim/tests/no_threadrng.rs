@@ -26,12 +26,7 @@ const SCANNED_FILES: &[&str] = &[
     "src/robotics/collector.rs",
 ];
 
-const FORBIDDEN: &[&str] = &[
-    "thread_rng",
-    "OsRng",
-    "SystemTime::now",
-    "Instant::now",
-];
+const FORBIDDEN: &[&str] = &["thread_rng", "OsRng", "SystemTime::now", "Instant::now"];
 
 const ALLOW_MARKER: &str = "spec-v11-2.0 allow";
 
@@ -63,13 +58,13 @@ fn campaign_modules_have_no_ambient_randomness() {
 
             // Track entry into / exit from #[cfg(test)] mod blocks.
             if !in_test_module {
-                if line.starts_with("#[cfg(test)]") || line.starts_with("#[cfg(all(test")
-                {
+                if line.starts_with("#[cfg(test)]") || line.starts_with("#[cfg(all(test") {
                     prev_was_cfg_test = true;
                     continue;
                 }
                 if prev_was_cfg_test
-                    && (line.starts_with("mod ") || line.starts_with("pub(crate) mod ")
+                    && (line.starts_with("mod ")
+                        || line.starts_with("pub(crate) mod ")
                         || line.starts_with("pub mod "))
                 {
                     in_test_module = true;

@@ -69,11 +69,7 @@ fn canonical_bytes_field_order_is_stable() {
         "sha256_digest must agree with sha256(canonical_bytes)"
     );
     // Pin the hex so a future preimage change is loud.
-    assert_eq!(
-        hex.len(),
-        64,
-        "digest hex must be 64 chars (32 bytes)"
-    );
+    assert_eq!(hex.len(), 64, "digest hex must be 64 chars (32 bytes)");
 }
 
 #[test]
@@ -132,7 +128,10 @@ fn root_must_carry_zero_digest() {
     h0.predecessor_digest = [0xCC; 32];
     let h1 = child_of(&h0, "kid-a", &["actuate:joint:*"]);
     let err = verify_predecessor_chain(&[h0, h1]).expect_err("root non-zero must reject");
-    assert!(matches!(err, AuthorityError::PredecessorDigestNonZeroAtRoot));
+    assert!(matches!(
+        err,
+        AuthorityError::PredecessorDigestNonZeroAtRoot
+    ));
 }
 
 #[test]
@@ -221,7 +220,10 @@ fn predecessor_digest_serde_round_trip() {
         predecessor_digest: digest,
     };
     let s = serde_json::to_string(&claim).expect("serialize");
-    assert!(s.contains("\"predecessor_digest\":\""), "field is emitted: {s}");
+    assert!(
+        s.contains("\"predecessor_digest\":\""),
+        "field is emitted: {s}"
+    );
     assert!(
         s.contains("000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"),
         "lowercase hex digest: {s}"

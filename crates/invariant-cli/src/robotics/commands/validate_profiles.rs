@@ -181,10 +181,7 @@ pub fn strict_consistency(profile: &RobotProfile) -> Result<(), String> {
     for axis in 0..3 {
         // Reject NaN and `min >= max` in a single test that handles
         // partial-ordering cleanly.
-        if !ws_min[axis].is_finite()
-            || !ws_max[axis].is_finite()
-            || ws_min[axis] >= ws_max[axis]
-        {
+        if !ws_min[axis].is_finite() || !ws_max[axis].is_finite() || ws_min[axis] >= ws_max[axis] {
             return Err(format!(
                 "workspace axis {axis}: min={} must be strictly less than max={}",
                 ws_min[axis], ws_max[axis]

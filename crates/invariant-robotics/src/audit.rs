@@ -1168,10 +1168,7 @@ mod tests {
         // *deserializer's* default-to-v1 path on a clean v1 record.
         let mut value: serde_json::Value = serde_json::from_str(jsonl.trim()).unwrap();
         // Strip the field on disk.
-        value
-            .as_object_mut()
-            .unwrap()
-            .remove("schema_version");
+        value.as_object_mut().unwrap().remove("schema_version");
         // Recompute entry_hash over a struct that has no schema_version. Since
         // the in-memory struct *does* carry the field, we set it to 1 so
         // skip_serializing_if omits it from the canonical bytes.
@@ -1185,8 +1182,7 @@ mod tests {
         // Re-canonicalise (hash + signature) so the test exercises a *valid*
         // legacy entry rather than a tampered one.
         parsed.entry.entry_hash = String::new();
-        let pre_hash =
-            serde_json::to_vec(&parsed.entry).expect("entry must serialize");
+        let pre_hash = serde_json::to_vec(&parsed.entry).expect("entry must serialize");
         // Match the hash format used by the logger (no `sha256:` prefix here —
         // see invariant_core::audit::build_entry).
         parsed.entry.entry_hash = invariant_core::util::sha256_hex(&pre_hash);

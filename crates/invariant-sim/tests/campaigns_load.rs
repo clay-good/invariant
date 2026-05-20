@@ -51,8 +51,8 @@ fn load(path: &Path) -> CampaignConfig {
     // is about *shape*, not about whether a config fits in a single
     // process; the validator's range checks are exercised in their own
     // unit tests inside `invariant-sim`.
-    let text = std::fs::read_to_string(path)
-        .unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+    let text =
+        std::fs::read_to_string(path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
     serde_yaml::from_str::<CampaignConfig>(&text)
         .unwrap_or_else(|e| panic!("parse {}: {e}", path.display()))
 }

@@ -59,7 +59,9 @@ fn f_05_cycles_through_all_three_sr1_violation_modes() {
                 temp_count += 1;
             }
             _ => {
-                let pct = env.battery_percentage.expect("mode C sets battery_percentage");
+                let pct = env
+                    .battery_percentage
+                    .expect("mode C sets battery_percentage");
                 assert!(
                     pct > 100.0,
                     "mode C battery_percentage {pct} must be outside [0,100]"
@@ -110,11 +112,7 @@ fn f_06_cycles_through_all_three_sr2_violation_modes() {
                     .end_effector_positions
                     .first()
                     .expect("at least one EE position");
-                let max_axis = ee
-                    .position
-                    .iter()
-                    .map(|v| v.abs())
-                    .fold(0.0_f64, f64::max);
+                let max_axis = ee.position.iter().map(|v| v.abs()).fold(0.0_f64, f64::max);
                 assert!(
                     max_axis > SR2_MAX_EE_M,
                     "mode B EE max-axis {max_axis} must exceed 1000 m SR2 max"
@@ -161,13 +159,14 @@ fn f_07_emits_two_diverging_readings_with_shared_sensor_name() {
             "fusion divergence requires a shared sensor_name"
         );
         let (pa, pb) = match (&a.payload, &b.payload) {
-            (SensorPayload::Position { position: pa }, SensorPayload::Position { position: pb }) => {
-                (*pa, *pb)
-            }
+            (
+                SensorPayload::Position { position: pa },
+                SensorPayload::Position { position: pb },
+            ) => (*pa, *pb),
             _ => panic!("F-07 must emit Position payloads on both readings"),
         };
-        let dist = ((pa[0] - pb[0]).powi(2) + (pa[1] - pb[1]).powi(2) + (pa[2] - pb[2]).powi(2))
-            .sqrt();
+        let dist =
+            ((pa[0] - pb[0]).powi(2) + (pa[1] - pb[1]).powi(2) + (pa[2] - pb[2]).powi(2)).sqrt();
         assert!(
             dist >= 9.99,
             "F-07 divergence {dist} m must be at least ~10 m for fusion to flag it"

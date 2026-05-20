@@ -57,7 +57,10 @@ fn n_01_generation_emits_in_and_out_of_band_positions() {
     // 50/50 in expectation; assert both populations are non-trivial so the
     // mixed pass/reject pattern actually happens. The exact split is
     // deterministic from the seed but jitter-tolerant here.
-    assert!(in_band > 0 && out_of_band > 0, "in={in_band} out={out_of_band}");
+    assert!(
+        in_band > 0 && out_of_band > 0,
+        "in={in_band} out={out_of_band}"
+    );
     assert!(
         in_band > 20 && out_of_band > 20,
         "in={in_band} out={out_of_band}: expected both populations to be substantial"
@@ -77,8 +80,14 @@ fn n_01_generation_is_deterministic_from_seed() {
     // that the generator actually computes from the seed.
     for (i, (x, y)) in a.iter().zip(b.iter()).enumerate() {
         assert_eq!(
-            x.joint_states.iter().map(|j| j.position).collect::<Vec<_>>(),
-            y.joint_states.iter().map(|j| j.position).collect::<Vec<_>>(),
+            x.joint_states
+                .iter()
+                .map(|j| j.position)
+                .collect::<Vec<_>>(),
+            y.joint_states
+                .iter()
+                .map(|j| j.position)
+                .collect::<Vec<_>>(),
             "cmd {i}: joint positions must reproduce from the seed"
         );
         assert_eq!(x.metadata, y.metadata, "cmd {i}: metadata reproduces");
@@ -122,11 +131,10 @@ fn n_02_mutation_visits_every_kind() {
             _ => {}
         }
     }
-    let expected: std::collections::BTreeSet<String> =
-        ["bitflip", "swap", "dt", "ee", "seq"]
-            .iter()
-            .map(|s| s.to_string())
-            .collect();
+    let expected: std::collections::BTreeSet<String> = ["bitflip", "swap", "dt", "ee", "seq"]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
     assert_eq!(kinds, expected, "every mutation_kind must appear");
 }
 
@@ -174,11 +182,10 @@ fn n_08_unicode_decorates_first_joint_name() {
             "cmd {i}: decorator {expected_cp:?} not in name {name:?}"
         );
     }
-    let expected: std::collections::BTreeSet<String> =
-        ["zws", "cyrillic", "rlo", "nul"]
-            .iter()
-            .map(|s| s.to_string())
-            .collect();
+    let expected: std::collections::BTreeSet<String> = ["zws", "cyrillic", "rlo", "nul"]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
     assert_eq!(kinds, expected);
 }
 
@@ -215,7 +222,10 @@ fn n_10_integer_boundary_cycles_through_five_values() {
         // Physics is baseline-safe — joint 0 stays inside the profile.
         let p = c.joint_states[0].position;
         let (lo, hi) = (profile.joints[0].min, profile.joints[0].max);
-        assert!(p.is_finite() && (lo..=hi).contains(&p), "cmd {i}: joint 0 baseline");
+        assert!(
+            p.is_finite() && (lo..=hi).contains(&p),
+            "cmd {i}: joint 0 baseline"
+        );
     }
 }
 

@@ -206,11 +206,7 @@ fn p7_distance_above_minimum_passes() {
         let d = rng.range(P7_MIN_DIST + 1e-6, 5.0);
         let dir = unit_dir(&mut rng);
         let b = [dir[0] * d, dir[1] * d, dir[2] * d];
-        let r = check_self_collision(
-            &[ee("a", [0.0, 0.0, 0.0]), ee("b", b)],
-            &pairs,
-            P7_MIN_DIST,
-        );
+        let r = check_self_collision(&[ee("a", [0.0, 0.0, 0.0]), ee("b", b)], &pairs, P7_MIN_DIST);
         assert!(
             r.passed,
             "distance {d} > min {P7_MIN_DIST} should pass; {}",
@@ -228,11 +224,7 @@ fn p7_distance_below_minimum_rejects() {
         let d = rng.range(0.0, P7_MIN_DIST - 1e-6);
         let dir = unit_dir(&mut rng);
         let b = [dir[0] * d, dir[1] * d, dir[2] * d];
-        let r = check_self_collision(
-            &[ee("a", [0.0, 0.0, 0.0]), ee("b", b)],
-            &pairs,
-            P7_MIN_DIST,
-        );
+        let r = check_self_collision(&[ee("a", [0.0, 0.0, 0.0]), ee("b", b)], &pairs, P7_MIN_DIST);
         assert!(
             !r.passed,
             "distance {d} < min {P7_MIN_DIST} should reject; {}",
@@ -394,7 +386,11 @@ fn p10_velocity_below_scaled_limit_passes() {
             effort: 0.0,
         }];
         let r = check_proximity_velocity(&joints, &defs, &ees, &zones, global);
-        assert!(r.passed, "v={v} within scaled limit should pass; {}", r.details);
+        assert!(
+            r.passed,
+            "v={v} within scaled limit should pass; {}",
+            r.details
+        );
     }
 }
 

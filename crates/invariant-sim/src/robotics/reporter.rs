@@ -563,7 +563,9 @@ fn compute_confidence(n_trials: u64, n_escapes: u64) -> ConfidenceStats {
 mod tests {
     use super::*;
     use chrono::Utc;
-    use invariant_robotics::models::verdict::{AuthoritySummary, CheckResult, SignedVerdict, Verdict};
+    use invariant_robotics::models::verdict::{
+        AuthoritySummary, CheckResult, SignedVerdict, Verdict,
+    };
 
     fn make_verdict(approved: bool, check_names: &[(&str, bool)]) -> SignedVerdict {
         let checks = check_names

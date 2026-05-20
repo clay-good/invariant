@@ -37,7 +37,10 @@ impl Lcg {
     }
     fn next_u64(&mut self) -> u64 {
         // Numerical Recipes constants (Knuth's MMIX).
-        self.0 = self.0.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        self.0 = self
+            .0
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
         self.0
     }
     /// Uniform `f64` in `[lo, hi]`. `lo` and `hi` must be finite, `lo < hi`.
@@ -139,7 +142,11 @@ fn p2_velocity_in_bounds_always_passes() {
             effort: 0.0,
         }];
         let r = check_velocity_limits(&js, &defs, 1.0, None);
-        assert!(r.passed, "in-bounds v {v} should pass; details: {}", r.details);
+        assert!(
+            r.passed,
+            "in-bounds v {v} should pass; details: {}",
+            r.details
+        );
     }
 }
 
@@ -198,7 +205,11 @@ fn p3_torque_in_bounds_always_passes() {
             effort: t,
         }];
         let r = check_torque_limits(&js, &defs, None);
-        assert!(r.passed, "in-bounds τ {t} should pass; details: {}", r.details);
+        assert!(
+            r.passed,
+            "in-bounds τ {t} should pass; details: {}",
+            r.details
+        );
     }
 }
 
@@ -333,7 +344,10 @@ fn p4_acceleration_above_boundary_rejects() {
             effort: 0.0,
         }];
         let r = check_acceleration_limits(&curr, Some(&prev), &defs, dt, None);
-        assert!(!r.passed, "out-of-bounds a {a} (dt {dt}, v {v}) should reject");
+        assert!(
+            !r.passed,
+            "out-of-bounds a {a} (dt {dt}, v {v}) should reject"
+        );
     }
 }
 
@@ -364,7 +378,11 @@ fn p5_workspace_in_bounds_always_passes() {
             position: p,
         }];
         let r = check_workspace_bounds(&ee, &ws);
-        assert!(r.passed, "in-bounds {:?} should pass; details: {}", p, r.details);
+        assert!(
+            r.passed,
+            "in-bounds {:?} should pass; details: {}",
+            p, r.details
+        );
     }
 }
 

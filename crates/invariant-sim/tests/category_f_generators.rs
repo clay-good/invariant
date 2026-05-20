@@ -27,8 +27,11 @@ fn f_01_temperature_ramp_crosses_warning_and_max() {
     let max_temp = env.max_operating_temperature_c;
     let warning = env.warning_temperature_c;
     let count = 50;
-    let cmds = ScenarioGenerator::new(&profile, ScenarioType::TemperatureRamp)
-        .generate_commands(count, "", &ops());
+    let cmds = ScenarioGenerator::new(&profile, ScenarioType::TemperatureRamp).generate_commands(
+        count,
+        "",
+        &ops(),
+    );
     assert_eq!(cmds.len(), count);
 
     // Per-step temperatures: all joints share the same value at each step.
@@ -75,8 +78,11 @@ fn f_02_battery_drain_crosses_low_and_critical() {
     let critical = env.critical_battery_pct;
     let low = env.low_battery_pct;
     let count = 40;
-    let cmds = ScenarioGenerator::new(&profile, ScenarioType::BatteryDrain)
-        .generate_commands(count, "", &ops());
+    let cmds = ScenarioGenerator::new(&profile, ScenarioType::BatteryDrain).generate_commands(
+        count,
+        "",
+        &ops(),
+    );
     assert_eq!(cmds.len(), count);
 
     let pcts: Vec<f64> = cmds
@@ -108,8 +114,11 @@ fn f_03_latency_spike_crosses_warning_and_max() {
     let warning = env.warning_latency_ms;
     let max_l = env.max_latency_ms;
     let count = 40;
-    let cmds = ScenarioGenerator::new(&profile, ScenarioType::LatencySpike)
-        .generate_commands(count, "", &ops());
+    let cmds = ScenarioGenerator::new(&profile, ScenarioType::LatencySpike).generate_commands(
+        count,
+        "",
+        &ops(),
+    );
     assert_eq!(cmds.len(), count);
 
     let lats: Vec<f64> = cmds

@@ -26,9 +26,8 @@ struct GoldenVerdict {
 fn fixture() -> AuditEntry<GoldenInput, GoldenVerdict> {
     AuditEntry {
         sequence: 42,
-        previous_hash:
-            "sha256:0000000000000000000000000000000000000000000000000000000000000000"
-                .to_string(),
+        previous_hash: "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+            .to_string(),
         command: GoldenInput {
             op: "actuate",
             target: 7,
@@ -119,7 +118,9 @@ fn extract_field_names(bytes: &[u8]) -> Vec<String> {
         i += 1;
         let name_len = u32::from_be_bytes(bytes[i..i + 4].try_into().unwrap()) as usize;
         i += 4;
-        let name = std::str::from_utf8(&bytes[i..i + name_len]).unwrap().to_string();
+        let name = std::str::from_utf8(&bytes[i..i + name_len])
+            .unwrap()
+            .to_string();
         i += name_len;
         names.push(name);
         match tag {

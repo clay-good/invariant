@@ -9,8 +9,8 @@
 //! | C-04    | `SelfCollisionApproach`       | First/last commands span the `[2×, 0.1×] × min_collision_distance` window. |
 //! | C-05    | `OverlappingZoneBoundaries`   | Every command's EE lies inside ≥1 declared exclusion zone.         |
 
-use invariant_robotics::models::profile::{ExclusionZone, WorkspaceBounds};
 use invariant_robotics::models::authority::Operation;
+use invariant_robotics::models::profile::{ExclusionZone, WorkspaceBounds};
 use invariant_robotics::profiles::load_builtin;
 use invariant_sim::robotics::scenario::{ScenarioGenerator, ScenarioType};
 

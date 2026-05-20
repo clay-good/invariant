@@ -33,7 +33,10 @@ fn g_01_valid_authority_chain_passes_through() {
     assert_eq!(cmds.len(), count);
 
     for (i, c) in cmds.iter().enumerate() {
-        assert_eq!(c.authority.pca_chain, pca, "cmd {i}: pca_chain pass-through");
+        assert_eq!(
+            c.authority.pca_chain, pca,
+            "cmd {i}: pca_chain pass-through"
+        );
         assert_eq!(
             c.metadata.get("chain_class").map(String::as_str),
             Some("valid"),
@@ -54,8 +57,11 @@ fn g_03_forged_signature_produces_distinct_tampered_envelopes() {
     let profile = load_ur10();
     let count = 8;
     let pca = "valid_envelope_b64";
-    let cmds = ScenarioGenerator::new(&profile, ScenarioType::ForgedSignature)
-        .generate_commands(count, pca, &ops());
+    let cmds = ScenarioGenerator::new(&profile, ScenarioType::ForgedSignature).generate_commands(
+        count,
+        pca,
+        &ops(),
+    );
     assert_eq!(cmds.len(), count);
 
     let mut seen = std::collections::HashSet::new();
@@ -149,8 +155,11 @@ fn g_08_expired_chain_timestamps_are_one_year_in_past() {
     let count = 6;
     let pca = "harness_supplied_chain_b64";
     let now = Utc::now();
-    let cmds = ScenarioGenerator::new(&profile, ScenarioType::ExpiredChain)
-        .generate_commands(count, pca, &ops());
+    let cmds = ScenarioGenerator::new(&profile, ScenarioType::ExpiredChain).generate_commands(
+        count,
+        pca,
+        &ops(),
+    );
     assert_eq!(cmds.len(), count);
 
     const ONE_YEAR_SECONDS: i64 = 365 * 24 * 3600;

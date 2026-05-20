@@ -76,7 +76,11 @@ fn vel_for_speed(rng: &mut Lcg, target_speed: f64) -> [f64; 3] {
         let r2 = x * x + y * y + z * z;
         if r2 > 1e-6 && r2 <= 1.0 {
             let r = r2.sqrt();
-            return [x / r * target_speed, y / r * target_speed, z / r * target_speed];
+            return [
+                x / r * target_speed,
+                y / r * target_speed,
+                z / r * target_speed,
+            ];
         }
     }
 }

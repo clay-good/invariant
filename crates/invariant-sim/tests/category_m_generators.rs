@@ -70,8 +70,7 @@ fn m04_maximum_payload_command_carries_256_synthetic_entries_each() {
         );
 
         // Uniqueness of synthesised names within each vector.
-        let mut joint_names: Vec<&str> =
-            cmd.joint_states.iter().map(|j| j.name.as_str()).collect();
+        let mut joint_names: Vec<&str> = cmd.joint_states.iter().map(|j| j.name.as_str()).collect();
         joint_names.sort();
         joint_names.dedup();
         assert_eq!(joint_names.len(), 256, "M-04 joint names must be unique");
@@ -114,10 +113,7 @@ fn m05_minimum_valid_command_has_single_joint_and_no_optional_state() {
             cmd.signed_sensor_readings.is_empty(),
             "M-05 zero sensor readings"
         );
-        assert!(
-            cmd.environment_state.is_none(),
-            "M-05 no environment state"
-        );
+        assert!(cmd.environment_state.is_none(), "M-05 no environment state");
         assert!(cmd.locomotion_state.is_none(), "M-05 no locomotion state");
     }
 }

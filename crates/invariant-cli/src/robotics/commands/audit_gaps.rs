@@ -46,8 +46,10 @@ pub fn run(args: &AuditGapsArgs) -> i32 {
     // Pre-v11-1.1 entries have empty `executor_id` and all land in the
     // same `""` bucket — behaviour equivalent to the previous global walk.
     use std::collections::BTreeMap;
-    let mut per_executor: BTreeMap<&str, Vec<&invariant_robotics::models::audit::SignedAuditEntry>> =
-        BTreeMap::new();
+    let mut per_executor: BTreeMap<
+        &str,
+        Vec<&invariant_robotics::models::audit::SignedAuditEntry>,
+    > = BTreeMap::new();
     for entry in &entries {
         per_executor
             .entry(entry.entry.executor_id.as_str())

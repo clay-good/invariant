@@ -7,7 +7,9 @@ use clap::Args;
 use std::path::PathBuf;
 use std::time::Instant;
 
-use invariant_robotics::models::command::{Command, CommandAuthority, EndEffectorPosition, JointState};
+use invariant_robotics::models::command::{
+    Command, CommandAuthority, EndEffectorPosition, JointState,
+};
 use invariant_robotics::validator::ValidatorConfig;
 
 #[derive(Args)]

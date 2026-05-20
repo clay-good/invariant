@@ -1,5 +1,5 @@
 [package]
-name = "invariant-cli"
+name = "invariant"
 version.workspace = true
 authors.workspace = true
 edition.workspace = true
@@ -22,10 +22,10 @@ path = "src/main.rs"
 invariant-core.workspace = true
 invariant-robotics.workspace = true
 invariant-biosynthesis.workspace = true
-invariant-eval = { path = "../invariant-eval", version = "0.2.0" }
-invariant-sim = { path = "../invariant-sim", version = "0.2.0" }
-invariant-fuzz = { path = "../invariant-fuzz", version = "0.2.0" }
-invariant-coordinator = { path = "../invariant-coordinator", version = "0.2.0" }
+invariant-eval = { path = "../invariant-eval", version = "0.0.3" }
+invariant-sim = { path = "../invariant-sim", version = "0.0.3" }
+invariant-fuzz = { path = "../invariant-fuzz", version = "0.0.3" }
+invariant-coordinator = { path = "../invariant-coordinator", version = "0.0.3" }
 clap.workspace = true
 clap_complete = "4.6"
 tracing.workspace = true

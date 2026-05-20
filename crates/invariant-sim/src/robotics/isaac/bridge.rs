@@ -430,9 +430,7 @@ pub fn fuzz_bridge_handle_line(bytes: &[u8]) -> Result<FuzzBridgeFrameKind, std:
 pub fn fuzz_bridge_handle_multiline(input: &[u8]) -> Vec<FuzzBridgeFrameKind> {
     input
         .split(|&b| b == b'\n')
-        .map(|line| {
-            fuzz_bridge_handle_line(line).unwrap_or(FuzzBridgeFrameKind::Invalid)
-        })
+        .map(|line| fuzz_bridge_handle_line(line).unwrap_or(FuzzBridgeFrameKind::Invalid))
         .collect()
 }
 

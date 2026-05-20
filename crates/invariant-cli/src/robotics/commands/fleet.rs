@@ -116,7 +116,10 @@ fn run_status(args: &StatusArgs) -> i32 {
     let bytes = match std::fs::read(&args.state) {
         Ok(b) => b,
         Err(e) => {
-            eprintln!("error: failed to read --state {}: {e}", args.state.display());
+            eprintln!(
+                "error: failed to read --state {}: {e}",
+                args.state.display()
+            );
             return 2;
         }
     };
@@ -132,8 +135,8 @@ fn run_status(args: &StatusArgs) -> i32 {
 
     match args.format {
         OutputFormat::Json => {
-            let json = serde_json::to_string_pretty(&report)
-                .expect("FleetStatusReport always serializes");
+            let json =
+                serde_json::to_string_pretty(&report).expect("FleetStatusReport always serializes");
             println!("{json}");
         }
         OutputFormat::Text => {
@@ -225,7 +228,10 @@ fn print_text_report(report: &FleetStatusReport, alerts_only: bool) {
         println!("Fleet status @ {}", report.as_of);
         println!(
             "  robots: {} ({} active), min_separation: {:.3}m, stale_timeout: {}ms",
-            report.robot_count, report.active_count, report.min_separation_m, report.stale_timeout_ms
+            report.robot_count,
+            report.active_count,
+            report.min_separation_m,
+            report.stale_timeout_ms
         );
         println!();
         println!("  Robot                Status   EE   Last update");
@@ -241,7 +247,10 @@ fn print_text_report(report: &FleetStatusReport, alerts_only: bool) {
     }
 
     if report.alerts.is_empty() {
-        println!("Alerts: none (all pairwise separations >= {:.3}m).", report.min_separation_m);
+        println!(
+            "Alerts: none (all pairwise separations >= {:.3}m).",
+            report.min_separation_m
+        );
     } else {
         println!(
             "Alerts: {} separation violation(s) (threshold {:.3}m):",
@@ -304,7 +313,10 @@ mod tests {
         let rep = build_report(&snap);
         assert_eq!(rep.robot_count, 3);
         assert_eq!(rep.active_count, 2);
-        assert!(rep.alerts.is_empty(), "well-separated fleet must have no alerts");
+        assert!(
+            rep.alerts.is_empty(),
+            "well-separated fleet must have no alerts"
+        );
     }
 
     #[test]

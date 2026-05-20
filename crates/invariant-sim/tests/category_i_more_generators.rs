@@ -88,8 +88,11 @@ fn i_03_semantic_confusion_rotates_names_against_positions() {
     assert!(n > 1, "ur10 must have at least two joints for I-03");
     let count = n.max(8);
 
-    let cmds = ScenarioGenerator::new(&profile, ScenarioType::SemanticConfusion)
-        .generate_commands(count, "", &ops());
+    let cmds = ScenarioGenerator::new(&profile, ScenarioType::SemanticConfusion).generate_commands(
+        count,
+        "",
+        &ops(),
+    );
     assert_eq!(cmds.len(), count);
 
     // Every command reports a joint state per profile joint, and every
@@ -120,8 +123,7 @@ fn i_03_semantic_confusion_rotates_names_against_positions() {
     // i.e. names truly don't match positions.
     for (i, c) in cmds.iter().enumerate() {
         let mismatched = c.joint_states.iter().enumerate().any(|(j, js)| {
-            let expected_mid =
-                0.5 * (profile.joints[j].min + profile.joints[j].max);
+            let expected_mid = 0.5 * (profile.joints[j].min + profile.joints[j].max);
             (js.position - expected_mid).abs() > 1e-9
         });
         assert!(

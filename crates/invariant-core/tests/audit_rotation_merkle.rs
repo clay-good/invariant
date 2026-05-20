@@ -22,9 +22,7 @@
 
 use ed25519_dalek::SigningKey;
 use invariant_core::audit::AuditLogger;
-use invariant_core::merkle::{
-    inclusion_proof, leaf_hash, tree_root, verify_inclusion, Hash,
-};
+use invariant_core::merkle::{inclusion_proof, leaf_hash, tree_root, verify_inclusion, Hash};
 use rand::rngs::OsRng;
 use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
@@ -145,8 +143,7 @@ fn cross_segment_root_differs_from_each_segment_and_proves_inclusion() {
     // L2 continuity check at the cut: the first segment-B entry's
     // previous_hash must equal segment A's last entry_hash.
     let b_text = std::str::from_utf8(&jsonl_b).unwrap();
-    let first_b: serde_json::Value =
-        serde_json::from_str(b_text.lines().next().unwrap()).unwrap();
+    let first_b: serde_json::Value = serde_json::from_str(b_text.lines().next().unwrap()).unwrap();
     assert_eq!(
         first_b["previous_hash"].as_str().unwrap(),
         last_prev,
@@ -185,14 +182,8 @@ fn corrupting_post_rotation_segment_breaks_cross_segment_proof() {
     let kid = "rotation-corrupt";
     let (jsonl_a, _, last_prev, next_seq) =
         write_segment(fresh_key(), kid, 0, String::new(), SEGMENT_A_LEN, "segA");
-    let (jsonl_b, _, _, _) = write_segment(
-        fresh_key(),
-        kid,
-        next_seq,
-        last_prev,
-        SEGMENT_B_LEN,
-        "segB",
-    );
+    let (jsonl_b, _, _, _) =
+        write_segment(fresh_key(), kid, next_seq, last_prev, SEGMENT_B_LEN, "segB");
 
     let leaves_a = jsonl_to_leaves(&jsonl_a);
     let leaves_b_honest = jsonl_to_leaves(&jsonl_b);
@@ -217,7 +208,13 @@ fn corrupting_post_rotation_segment_breaks_cross_segment_proof() {
     let idx = SEGMENT_A_LEN + 123;
     let honest_proof = inclusion_proof(&honest, idx);
     assert!(
-        !verify_inclusion(&tampered_root, &honest[idx], idx, honest.len(), &honest_proof),
+        !verify_inclusion(
+            &tampered_root,
+            &honest[idx],
+            idx,
+            honest.len(),
+            &honest_proof
+        ),
         "tampered root must reject the honest inclusion proof"
     );
 }

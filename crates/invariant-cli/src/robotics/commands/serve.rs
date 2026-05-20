@@ -194,10 +194,7 @@ fn refresh_audit_binding(
     boot_instant: Instant,
     now: chrono::DateTime<Utc>,
 ) -> invariant_core::models::audit::BindingContext {
-    let monotonic_nanos = boot_instant
-        .elapsed()
-        .as_nanos()
-        .min(u64::MAX as u128) as u64;
+    let monotonic_nanos = boot_instant.elapsed().as_nanos().min(u64::MAX as u128) as u64;
     let ctx = invariant_core::models::audit::BindingContext {
         session_id: session_id.to_string(),
         executor_id: executor_id.to_string(),
@@ -1290,7 +1287,8 @@ async fn run_server(args: &ServeArgs) -> i32 {
             args.watchdog_timeout_ms,
         );
         tokio::spawn(async move {
-            if let Err(e) = invariant_sim::robotics::isaac::bridge::run_bridge(bridge_config).await {
+            if let Err(e) = invariant_sim::robotics::isaac::bridge::run_bridge(bridge_config).await
+            {
                 tracing::error!("bridge: {e}");
             }
         });
@@ -2780,7 +2778,9 @@ mod tests {
                 let vk = sk.verifying_key();
                 let kid = "test".to_string();
                 let profile = invariant_robotics::profiles::load_builtin(
-                    invariant_robotics::profiles::list_builtins().first().unwrap(),
+                    invariant_robotics::profiles::list_builtins()
+                        .first()
+                        .unwrap(),
                 )
                 .unwrap();
                 let mut keys = HashMap::new();
@@ -3261,7 +3261,9 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(resp2.status(), StatusCode::BAD_REQUEST);
-        let body_bytes = axum::body::to_bytes(resp2.into_body(), 65536).await.unwrap();
+        let body_bytes = axum::body::to_bytes(resp2.into_body(), 65536)
+            .await
+            .unwrap();
         let err: ErrorResponse = serde_json::from_slice(&body_bytes).unwrap();
         assert!(
             err.error.contains("B3 monotonic binding"),

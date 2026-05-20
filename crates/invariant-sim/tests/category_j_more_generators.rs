@@ -114,10 +114,7 @@ fn j08_multi_robot_distraction_alternates_sources_and_validity() {
         }
     }
     assert!(saw_a_pass, "J-08 must include ≥1 valid robot_a command");
-    assert!(
-        saw_b_reject,
-        "J-08 must include ≥1 invalid robot_b command"
-    );
+    assert!(saw_b_reject, "J-08 must include ≥1 invalid robot_b command");
 
     // Per-source sequence monotonicity.
     let seqs_a: Vec<u64> = cmds

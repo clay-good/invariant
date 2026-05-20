@@ -292,9 +292,7 @@ fn write_test_hazard_db(
 ) {
     use base64::{engine::general_purpose::STANDARD, Engine};
     use ed25519_dalek::SigningKey;
-    use invariant_biosynthesis::screening::{
-        sign_body_for_tests, HazardDatabaseBody, HazardEntry,
-    };
+    use invariant_biosynthesis::screening::{sign_body_for_tests, HazardDatabaseBody, HazardEntry};
     let sk = SigningKey::generate(&mut OsRng);
     let body = HazardDatabaseBody {
         schema_version: 1,

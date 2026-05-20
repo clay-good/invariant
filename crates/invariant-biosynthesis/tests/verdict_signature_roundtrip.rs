@@ -25,9 +25,7 @@ use base64::Engine;
 use chrono::Utc;
 use ed25519_dalek::{Signature, SigningKey, VerifyingKey};
 
-use invariant_biosynthesis::models::bundle::{
-    BundleAuthority, SynthesisBundle, SynthesisPayload,
-};
+use invariant_biosynthesis::models::bundle::{BundleAuthority, SynthesisBundle, SynthesisPayload};
 use invariant_biosynthesis::models::profile::BioProfile;
 use invariant_biosynthesis::models::verdict::{SignedVerdict, Verdict};
 use invariant_biosynthesis::validator::ValidatorConfig;
@@ -160,8 +158,11 @@ fn mutating_loaded_verdict_body_invalidates_signature() {
 
     let dir = tempfile::tempdir().expect("tempdir");
     let path = dir.path().join("verdict.json");
-    std::fs::write(&path, serde_json::to_vec(&out.signed_verdict).expect("serialize"))
-        .expect("write");
+    std::fs::write(
+        &path,
+        serde_json::to_vec(&out.signed_verdict).expect("serialize"),
+    )
+    .expect("write");
 
     let mut parsed: SignedVerdict =
         serde_json::from_slice(&std::fs::read(&path).expect("read")).expect("parse");

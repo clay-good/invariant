@@ -156,11 +156,7 @@ fn end_to_end_proof_loop_clean_and_tamper_cases() {
 
     // Synthesise the auxiliary artifacts `verify-package` insists on.
     let adv_path = temp.path().join("protocol_report.json");
-    std::fs::write(
-        &adv_path,
-        br#"{"attacks":10,"escapes":0,"notes":"smoke"}"#,
-    )
-    .unwrap();
+    std::fs::write(&adv_path, br#"{"attacks":10,"escapes":0,"notes":"smoke"}"#).unwrap();
     let pubkeys_path = temp.path().join("public_keys.json");
     std::fs::write(&pubkeys_path, br#"{"keys":[]}"#).unwrap();
 
@@ -210,11 +206,7 @@ fn end_to_end_proof_loop_clean_and_tamper_cases() {
     let vp_args = VerifyPackageArgs {
         path: output.clone(),
     };
-    assert_eq!(
-        run_verify_package(&vp_args),
-        0,
-        "clean package must verify"
-    );
+    assert_eq!(run_verify_package(&vp_args), 0, "clean package must verify");
 
     // 5a. Tamper `audit.jsonl` and `manifest.json` and assert that
     //     `verify-package` exits non-zero (the file-hash check trips
@@ -253,10 +245,9 @@ fn end_to_end_proof_loop_clean_and_tamper_cases() {
         flip_one_byte(&scratch.join("manifest.sig"));
         // Read the manifest (untouched) and swap in the tampered signature
         // so the verifier sees the corrupted bytes.
-        let mut manifest: ProofPackageManifest = serde_json::from_str(
-            &std::fs::read_to_string(scratch.join("manifest.json")).unwrap(),
-        )
-        .unwrap();
+        let mut manifest: ProofPackageManifest =
+            serde_json::from_str(&std::fs::read_to_string(scratch.join("manifest.json")).unwrap())
+                .unwrap();
         manifest.manifest_signature =
             Some(std::fs::read_to_string(scratch.join("manifest.sig")).unwrap());
         let kfp = load_key_file(&output.join("..").join("signer.pub.json"))

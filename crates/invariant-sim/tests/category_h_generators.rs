@@ -143,7 +143,13 @@ fn h03_sequence_gap_jumps_into_the_millions_after_the_first_command() {
     }
     // Sequences after the gap should be strictly monotonic so the
     // scenario doesn't accidentally re-encode replay.
-    for w in cmds.iter().skip(1).map(|c| c.sequence).collect::<Vec<_>>().windows(2) {
+    for w in cmds
+        .iter()
+        .skip(1)
+        .map(|c| c.sequence)
+        .collect::<Vec<_>>()
+        .windows(2)
+    {
         assert!(w[1] > w[0], "H-03 post-gap sequences must increase");
     }
 }

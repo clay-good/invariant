@@ -128,7 +128,11 @@ fn sr1_at_boundaries_passes() {
         e_stop_engaged: Some(false),
     };
     let r = check_sensor_range_env(&env);
-    assert!(r.passed, "boundary case should pass; details: {}", r.details);
+    assert!(
+        r.passed,
+        "boundary case should pass; details: {}",
+        r.details
+    );
 
     let env_high = EnvironmentState {
         battery_percentage: Some(100.0),
@@ -174,7 +178,11 @@ fn sr1_battery_outside_range_rejects() {
     let mut rng = Lcg::new(0xDA_BB_03_03);
     for _ in 0..CASES {
         let over = rng.range(1e-6, 1_000.0);
-        let batt = if rng.next_u64() & 1 == 0 { 100.0 + over } else { -over };
+        let batt = if rng.next_u64() & 1 == 0 {
+            100.0 + over
+        } else {
+            -over
+        };
         let env = EnvironmentState {
             battery_percentage: Some(batt),
             ..empty_env()
@@ -231,7 +239,11 @@ fn sr2_in_bounds_always_passes() {
             grasp_force: None,
         }];
         let r = check_sensor_range_payload(&cmd);
-        assert!(r.passed, "in-bounds payload should pass; details: {}", r.details);
+        assert!(
+            r.passed,
+            "in-bounds payload should pass; details: {}",
+            r.details
+        );
     }
 }
 

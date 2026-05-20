@@ -91,7 +91,9 @@ fn canonical_bytes_keys_are_sorted_at_every_level() {
     ];
     last_pos = 0;
     for key in &nested {
-        let pos = s.find(key).unwrap_or_else(|| panic!("missing nested key {key}\n{s}"));
+        let pos = s
+            .find(key)
+            .unwrap_or_else(|| panic!("missing nested key {key}\n{s}"));
         assert!(
             pos > last_pos,
             "nested keys must be sorted: {key} at {pos} before previous at {last_pos}",

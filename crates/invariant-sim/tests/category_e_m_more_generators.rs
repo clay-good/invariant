@@ -23,9 +23,7 @@ fn e_05_iso_15066_places_ee_in_zone_with_overforce() {
     // ur10 declares two proximity zones (human_warning + human_critical).
     let profile = load_builtin("ur10").expect("ur10 profile available");
     let zone_centre = match profile.proximity_zones.first().unwrap() {
-        invariant_robotics::models::profile::ProximityZone::Sphere {
-            center, ..
-        } => *center,
+        invariant_robotics::models::profile::ProximityZone::Sphere { center, .. } => *center,
         _ => unreachable!("ur10 proximity zones are spheres"),
     };
     let count = 12;

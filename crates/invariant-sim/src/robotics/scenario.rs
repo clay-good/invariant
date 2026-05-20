@@ -6,15 +6,17 @@
 
 use std::collections::{HashMap, HashSet};
 
-use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
+use base64::Engine as _;
 use chrono::{DateTime, Duration, Utc};
 use invariant_robotics::models::authority::Operation;
 use invariant_robotics::models::command::{
     Command, CommandAuthority, EndEffectorForce, EndEffectorPosition, FootState, JointState,
     LocomotionState,
 };
-use invariant_robotics::models::profile::{ExclusionZone, ProximityZone, RobotProfile, WorkspaceBounds};
+use invariant_robotics::models::profile::{
+    ExclusionZone, ProximityZone, RobotProfile, WorkspaceBounds,
+};
 use serde::{Deserialize, Serialize};
 
 // ---------------------------------------------------------------------------
@@ -1220,7 +1222,9 @@ impl<'a> ScenarioGenerator<'a> {
             }
             ScenarioType::PayloadOverload => self.payload_overload(count, pca_chain_b64, ops),
             ScenarioType::ForceLimitSweep => self.force_limit_sweep(count, pca_chain_b64, ops),
-            ScenarioType::GraspForceEnvelope => self.grasp_force_envelope(count, pca_chain_b64, ops),
+            ScenarioType::GraspForceEnvelope => {
+                self.grasp_force_envelope(count, pca_chain_b64, ops)
+            }
             ScenarioType::ForceRateSpike => self.force_rate_spike(count, pca_chain_b64, ops),
             ScenarioType::FutureDatedSensor => self.future_dated_sensor(count, pca_chain_b64, ops),
             ScenarioType::TemperatureRamp => self.temperature_ramp(count, pca_chain_b64, ops),
@@ -1238,15 +1242,11 @@ impl<'a> ScenarioGenerator<'a> {
             ScenarioType::SensorFusionInconsistency => {
                 self.sensor_fusion_inconsistency(count, pca_chain_b64, ops)
             }
-            ScenarioType::ComStabilitySweep => {
-                self.com_stability_sweep(count, pca_chain_b64, ops)
-            }
+            ScenarioType::ComStabilitySweep => self.com_stability_sweep(count, pca_chain_b64, ops),
             ScenarioType::WalkingGaitValidation => {
                 self.walking_gait_validation(count, pca_chain_b64, ops)
             }
-            ScenarioType::StepOverextension => {
-                self.step_overextension(count, pca_chain_b64, ops)
-            }
+            ScenarioType::StepOverextension => self.step_overextension(count, pca_chain_b64, ops),
             ScenarioType::HeadingSpinout => self.heading_spinout(count, pca_chain_b64, ops),
             ScenarioType::InclineWalking => self.incline_walking(count, pca_chain_b64, ops),
             ScenarioType::WorkspaceBoundarySweep => {
@@ -1261,12 +1261,8 @@ impl<'a> ScenarioGenerator<'a> {
             ScenarioType::EstopRecoveryCycle => {
                 self.estop_recovery_cycle(count, pca_chain_b64, ops)
             }
-            ScenarioType::MillionEntryAudit => {
-                self.million_entry_audit(count, pca_chain_b64, ops)
-            }
-            ScenarioType::CounterSaturation => {
-                self.counter_saturation(count, pca_chain_b64, ops)
-            }
+            ScenarioType::MillionEntryAudit => self.million_entry_audit(count, pca_chain_b64, ops),
+            ScenarioType::CounterSaturation => self.counter_saturation(count, pca_chain_b64, ops),
             ScenarioType::ValidInvalidAlternating => {
                 self.valid_invalid_alternating(count, pca_chain_b64, ops)
             }
@@ -1276,9 +1272,7 @@ impl<'a> ScenarioGenerator<'a> {
             ScenarioType::MinimumValidCommand => {
                 self.minimum_valid_command(count, pca_chain_b64, ops)
             }
-            ScenarioType::NanAuthorityBypass => {
-                self.nan_authority_bypass(count, ops)
-            }
+            ScenarioType::NanAuthorityBypass => self.nan_authority_bypass(count, ops),
             ScenarioType::ProfileProbingTargeted => {
                 self.profile_probing_targeted(count, pca_chain_b64, ops)
             }
@@ -1295,15 +1289,11 @@ impl<'a> ScenarioGenerator<'a> {
             ScenarioType::GradualDriftEscape => {
                 self.gradual_drift_escape(count, pca_chain_b64, ops)
             }
-            ScenarioType::SemanticConfusion => {
-                self.semantic_confusion(count, pca_chain_b64, ops)
-            }
+            ScenarioType::SemanticConfusion => self.semantic_confusion(count, pca_chain_b64, ops),
             ScenarioType::WatchdogTimeoutReplay => {
                 self.watchdog_timeout_replay(count, pca_chain_b64, ops)
             }
-            ScenarioType::TimingExploitation => {
-                self.timing_exploitation(count, pca_chain_b64, ops)
-            }
+            ScenarioType::TimingExploitation => self.timing_exploitation(count, pca_chain_b64, ops),
             ScenarioType::RateStressSustained => {
                 self.rate_stress_sustained(count, pca_chain_b64, ops)
             }
@@ -1319,9 +1309,7 @@ impl<'a> ScenarioGenerator<'a> {
             ScenarioType::ProfileProbingBinarySearch => {
                 self.profile_probing_binary_search(count, pca_chain_b64, ops)
             }
-            ScenarioType::RollbackReplay => {
-                self.rollback_replay(count, pca_chain_b64, ops)
-            }
+            ScenarioType::RollbackReplay => self.rollback_replay(count, pca_chain_b64, ops),
             ScenarioType::ProfileReloadDuringOperation => {
                 self.profile_reload_during_operation(count, pca_chain_b64, ops)
             }
@@ -1336,9 +1324,7 @@ impl<'a> ScenarioGenerator<'a> {
                 self.valid_authority_chain(count, pca_chain_b64, ops)
             }
             ScenarioType::ForgedSignature => self.forged_signature(count, pca_chain_b64, ops),
-            ScenarioType::PrivilegeEscalation => {
-                self.privilege_escalation(count, pca_chain_b64)
-            }
+            ScenarioType::PrivilegeEscalation => self.privilege_escalation(count, pca_chain_b64),
             ScenarioType::ExpiredChain => self.expired_chain(count, pca_chain_b64, ops),
             ScenarioType::KeySubstitution => self.key_substitution(count, ops),
             ScenarioType::ProvenanceMutation => self.provenance_mutation(count, ops),
@@ -4238,12 +4224,7 @@ impl<'a> ScenarioGenerator<'a> {
     /// sequence numbers (multi-source model, spec-v7 §2.7), so every
     /// command should be APPROVED — this scenario is `legitimate` for
     /// `is_expected_reject` purposes.
-    fn sequence_gap(
-        &self,
-        count: usize,
-        pca_chain_b64: &str,
-        ops: &[Operation],
-    ) -> Vec<Command> {
+    fn sequence_gap(&self, count: usize, pca_chain_b64: &str, ops: &[Operation]) -> Vec<Command> {
         const GAP_BASE: u64 = 1_000_000;
 
         let base_ts: DateTime<Utc> = Utc::now();
@@ -4308,20 +4289,12 @@ impl<'a> ScenarioGenerator<'a> {
         // sequence's wall-clock progression itself is sensible — only the
         // `delta_time` *field* is the attack vector.
         let stamp_dt = self.profile.max_delta_time * 0.5;
-        let attack_dts: &[f64] = &[
-            0.0,
-            -1.0e-3,
-            f64::NAN,
-            f64::INFINITY,
-            f64::NEG_INFINITY,
-        ];
+        let attack_dts: &[f64] = &[0.0, -1.0e-3, f64::NAN, f64::INFINITY, f64::NEG_INFINITY];
 
         (0..count)
             .map(|i| {
                 let timestamp = base_ts
-                    + Duration::milliseconds(Self::ms_offset_to_i64(
-                        i as f64 * stamp_dt * 1_000.0,
-                    ));
+                    + Duration::milliseconds(Self::ms_offset_to_i64(i as f64 * stamp_dt * 1_000.0));
                 let delta_time = attack_dts[i % attack_dts.len()];
                 Command {
                     timestamp,
@@ -4469,7 +4442,11 @@ impl<'a> ScenarioGenerator<'a> {
                         i as f64 * delta_time * 1_000.0,
                     ));
                 let phase = i % 16;
-                let pos = if phase < 8 { corners[phase] } else { outside[phase - 8] };
+                let pos = if phase < 8 {
+                    corners[phase]
+                } else {
+                    outside[phase - 8]
+                };
 
                 Command {
                     timestamp,
@@ -4593,9 +4570,7 @@ impl<'a> ScenarioGenerator<'a> {
             .filter_map(point_inside_exclusion_zone)
             .collect();
         let fallback_outside = match &self.profile.workspace {
-            WorkspaceBounds::Aabb { max, .. } => {
-                [max[0] + 1.0, max[1] + 1.0, max[2] + 1.0]
-            }
+            WorkspaceBounds::Aabb { max, .. } => [max[0] + 1.0, max[1] + 1.0, max[2] + 1.0],
         };
 
         (0..count)
@@ -4858,7 +4833,9 @@ impl<'a> ScenarioGenerator<'a> {
                 let joint_states = if i.is_multiple_of(2) {
                     baseline.clone()
                 } else {
-                    invalid_first_joint.clone().unwrap_or_else(|| baseline.clone())
+                    invalid_first_joint
+                        .clone()
+                        .unwrap_or_else(|| baseline.clone())
                 };
                 Command {
                     timestamp,
@@ -5348,12 +5325,7 @@ impl<'a> ScenarioGenerator<'a> {
     /// but on a different check — the adversary observes which
     /// fields appear in the rejection reason to map the
     /// validator's internal structure.
-    fn error_mining(
-        &self,
-        count: usize,
-        pca_chain_b64: &str,
-        ops: &[Operation],
-    ) -> Vec<Command> {
+    fn error_mining(&self, count: usize, pca_chain_b64: &str, ops: &[Operation]) -> Vec<Command> {
         let base_ts: DateTime<Utc> = Utc::now();
         let delta_time = self.profile.max_delta_time * 0.5;
         let baseline = self.baseline_joint_states();
@@ -6139,10 +6111,7 @@ impl<'a> ScenarioGenerator<'a> {
                 let mut metadata = Self::metadata_stamp(&meta_template, i);
                 metadata.insert("profile_reload".to_owned(), "true".to_owned());
                 metadata.insert("tighter_limits".to_owned(), "true".to_owned());
-                metadata.insert(
-                    "reload_generation".to_owned(),
-                    generation.to_string(),
-                );
+                metadata.insert("reload_generation".to_owned(), generation.to_string());
 
                 Command {
                     timestamp,
@@ -6177,12 +6146,7 @@ impl<'a> ScenarioGenerator<'a> {
     /// mode is isolated to the joint value. Every command should
     /// REJECT under P1 (finite-bounds) or the fail-closed spatial
     /// input check.
-    fn pure_fuzz(
-        &self,
-        count: usize,
-        pca_chain_b64: &str,
-        ops: &[Operation],
-    ) -> Vec<Command> {
+    fn pure_fuzz(&self, count: usize, pca_chain_b64: &str, ops: &[Operation]) -> Vec<Command> {
         let base_ts: DateTime<Utc> = Utc::now();
         let delta_time = self.profile.max_delta_time * 0.5;
         let ee_pos = Self::safe_end_effector(self.profile);
@@ -6199,8 +6163,8 @@ impl<'a> ScenarioGenerator<'a> {
                         i as f64 * delta_time * 1_000.0,
                     ));
                 // Deterministic LCG (Numerical Recipes) over (index, seed)
-                let mut state: u64 = 0xCAFE_BABE_u64
-                    .wrapping_add((i as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15));
+                let mut state: u64 =
+                    0xCAFE_BABE_u64.wrapping_add((i as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15));
                 state = state
                     .wrapping_mul(6364136223846793005)
                     .wrapping_add(1442695040888963407);
@@ -6401,10 +6365,8 @@ impl<'a> ScenarioGenerator<'a> {
         let joint_states = self.baseline_joint_states();
         let ee_pos = Self::safe_end_effector(self.profile);
         let meta_template = Self::metadata_template(self.scenario);
-        let agent_a_ops =
-            vec![Operation::new("actuate:joint_0").expect("agent a op valid")];
-        let agent_b_ops =
-            vec![Operation::new("sensor.read:imu").expect("agent b op valid")];
+        let agent_a_ops = vec![Operation::new("actuate:joint_0").expect("agent a op valid")];
+        let agent_b_ops = vec![Operation::new("sensor.read:imu").expect("agent b op valid")];
 
         (0..count)
             .map(|i| {
@@ -6606,10 +6568,7 @@ impl<'a> ScenarioGenerator<'a> {
                     format!("{pca_chain_b64}SIGFLIP{i:08}==")
                 };
                 let mut metadata = Self::metadata_stamp(&meta_template, i);
-                metadata.insert(
-                    "chain_class".to_owned(),
-                    "forged_signature".to_owned(),
-                );
+                metadata.insert("chain_class".to_owned(), "forged_signature".to_owned());
 
                 Command {
                     timestamp,
@@ -6671,10 +6630,7 @@ impl<'a> ScenarioGenerator<'a> {
                 let required_ops: Vec<Operation> =
                     tier_ladder.iter().take(breadth).cloned().collect();
                 let mut metadata = Self::metadata_stamp(&meta_template, i);
-                metadata.insert(
-                    "chain_class".to_owned(),
-                    "privilege_escalation".to_owned(),
-                );
+                metadata.insert("chain_class".to_owned(), "privilege_escalation".to_owned());
                 metadata.insert("escalation_index".to_owned(), i.to_string());
 
                 Command {
@@ -6709,12 +6665,7 @@ impl<'a> ScenarioGenerator<'a> {
     /// Pass-through `pca_chain_b64`; every command's `timestamp` is
     /// 1 year before the generation epoch so the validator's
     /// temporal-window check (A3) rejects.
-    fn expired_chain(
-        &self,
-        count: usize,
-        pca_chain_b64: &str,
-        ops: &[Operation],
-    ) -> Vec<Command> {
+    fn expired_chain(&self, count: usize, pca_chain_b64: &str, ops: &[Operation]) -> Vec<Command> {
         const ONE_YEAR_SECONDS: i64 = 365 * 24 * 3600;
         let now: DateTime<Utc> = Utc::now();
         let base_ts = now - Duration::seconds(ONE_YEAR_SECONDS);
@@ -6733,10 +6684,7 @@ impl<'a> ScenarioGenerator<'a> {
                     ));
                 let mut metadata = Self::metadata_stamp(&meta_template, i);
                 metadata.insert("chain_class".to_owned(), "expired".to_owned());
-                metadata.insert(
-                    "seconds_in_past".to_owned(),
-                    ONE_YEAR_SECONDS.to_string(),
-                );
+                metadata.insert("seconds_in_past".to_owned(), ONE_YEAR_SECONDS.to_string());
 
                 Command {
                     timestamp,
@@ -6864,10 +6812,7 @@ impl<'a> ScenarioGenerator<'a> {
                 );
                 let pca = STANDARD.encode(envelope_json.as_bytes());
                 let mut metadata = Self::metadata_stamp(&meta_template, i);
-                metadata.insert(
-                    "chain_class".to_owned(),
-                    "provenance_mutation".to_owned(),
-                );
+                metadata.insert("chain_class".to_owned(), "provenance_mutation".to_owned());
                 metadata.insert("mutated_p0".to_owned(), mutated_p0);
 
                 Command {
@@ -6928,10 +6873,7 @@ impl<'a> ScenarioGenerator<'a> {
                 let op_str = outside_scope_ops[i % outside_scope_ops.len()];
                 let required_ops = vec![Operation::new(op_str).expect("outside-scope op valid")];
                 let mut metadata = Self::metadata_stamp(&meta_template, i);
-                metadata.insert(
-                    "chain_class".to_owned(),
-                    "wildcard_exploit".to_owned(),
-                );
+                metadata.insert("chain_class".to_owned(), "wildcard_exploit".to_owned());
                 metadata.insert("outside_scope_op".to_owned(), op_str.to_owned());
 
                 Command {
@@ -7121,13 +7063,7 @@ impl<'a> ScenarioGenerator<'a> {
             .map(|e| (e.min_grasp_force_n, e.max_grasp_force_n, e.name.clone()))
             .unwrap_or_else(|| (1.0, 100.0, "gripper".to_owned()));
         let mid = 0.5 * (min_grasp + max_grasp);
-        let regimes: &[f64] = &[
-            0.5 * min_grasp,
-            min_grasp,
-            mid,
-            max_grasp,
-            1.5 * max_grasp,
-        ];
+        let regimes: &[f64] = &[0.5 * min_grasp, min_grasp, mid, max_grasp, 1.5 * max_grasp];
 
         (0..count)
             .map(|i| {
@@ -7202,7 +7138,11 @@ impl<'a> ScenarioGenerator<'a> {
                         i as f64 * delta_time * 1_000.0,
                     ));
                 let sequence = i as u64 + 1;
-                let force_val = if sequence.is_multiple_of(2) { spike } else { 0.0 };
+                let force_val = if sequence.is_multiple_of(2) {
+                    spike
+                } else {
+                    0.0
+                };
                 Command {
                     timestamp,
                     source: source.clone(),
@@ -7394,12 +7334,7 @@ impl<'a> ScenarioGenerator<'a> {
     /// commands sit above `low_battery_pct` (accepted), mid commands
     /// derate (below low, above critical), late commands REJECT below
     /// `critical_battery_pct` (P23).
-    fn battery_drain(
-        &self,
-        count: usize,
-        pca_chain_b64: &str,
-        ops: &[Operation],
-    ) -> Vec<Command> {
+    fn battery_drain(&self, count: usize, pca_chain_b64: &str, ops: &[Operation]) -> Vec<Command> {
         use invariant_robotics::models::command::EnvironmentState;
         let base_ts: DateTime<Utc> = Utc::now();
         let delta_time = self.profile.max_delta_time * 0.5;
@@ -7453,12 +7388,7 @@ impl<'a> ScenarioGenerator<'a> {
     /// Linearly ramps `communication_latency_ms` from 0 to
     /// `5 × max_latency_ms`. Crosses `warning_latency_ms` (derate) and
     /// `max_latency_ms` (REJECT, P24).
-    fn latency_spike(
-        &self,
-        count: usize,
-        pca_chain_b64: &str,
-        ops: &[Operation],
-    ) -> Vec<Command> {
+    fn latency_spike(&self, count: usize, pca_chain_b64: &str, ops: &[Operation]) -> Vec<Command> {
         use invariant_robotics::models::command::EnvironmentState;
         let base_ts: DateTime<Utc> = Utc::now();
         let delta_time = self.profile.max_delta_time * 0.5;
@@ -8157,12 +8087,7 @@ impl<'a> ScenarioGenerator<'a> {
     /// finite, positive, but over-limit value. All should be rejected by P8
     /// (upper bound). Companion to [`Self::delta_time_attack`] which
     /// targets the non-finite / non-positive cases.
-    fn stale_command(
-        &self,
-        count: usize,
-        pca_chain_b64: &str,
-        ops: &[Operation],
-    ) -> Vec<Command> {
+    fn stale_command(&self, count: usize, pca_chain_b64: &str, ops: &[Operation]) -> Vec<Command> {
         let base_ts: DateTime<Utc> = Utc::now();
         let joint_states = self.baseline_joint_states();
         let ee_pos = Self::safe_end_effector(self.profile);
@@ -8175,9 +8100,7 @@ impl<'a> ScenarioGenerator<'a> {
         (0..count)
             .map(|i| {
                 let timestamp = base_ts
-                    + Duration::milliseconds(Self::ms_offset_to_i64(
-                        i as f64 * stamp_dt * 1_000.0,
-                    ));
+                    + Duration::milliseconds(Self::ms_offset_to_i64(i as f64 * stamp_dt * 1_000.0));
                 Command {
                     timestamp,
                     source: source.clone(),
@@ -8386,7 +8309,7 @@ impl<'a> ScenarioGenerator<'a> {
         let source = "redteam_fuzz_unicode".to_owned();
         // (label, decorator applied to the first joint's name)
         let kinds: [(&str, &str); 4] = [
-            ("zws", "\u{200B}"), // zero-width space appended
+            ("zws", "\u{200B}"),      // zero-width space appended
             ("cyrillic", "\u{043E}"), // homoglyph appended (Cyrillic small o)
             ("rlo", "\u{202E}"),      // right-to-left override appended
             ("nul", "\u{0000}"),      // NUL byte appended
@@ -8459,8 +8382,9 @@ impl<'a> ScenarioGenerator<'a> {
                 // command's spliced chain is distinct and the failure
                 // mode is fingerprintable.
                 let mismatched_byte: u8 = 0xAB ^ (i as u8);
-                let hex_digest: String =
-                    (0..32).map(|_| format!("{:02x}", mismatched_byte)).collect();
+                let hex_digest: String = (0..32)
+                    .map(|_| format!("{:02x}", mismatched_byte))
+                    .collect();
                 // Two-hop synthetic chain: hop 0 root with zero
                 // predecessor_digest, hop 1 with the spliced (wrong)
                 // digest. Shape mirrors G-04 / G-06 envelope tooling.
@@ -8475,10 +8399,7 @@ impl<'a> ScenarioGenerator<'a> {
                 );
                 let pca = STANDARD.encode(envelope_json.as_bytes());
                 let mut metadata = Self::metadata_stamp(&meta_template, i);
-                metadata.insert(
-                    "chain_class".to_owned(),
-                    "cross_chain_splice".to_owned(),
-                );
+                metadata.insert("chain_class".to_owned(), "cross_chain_splice".to_owned());
                 metadata.insert(
                     "mismatched_digest_byte".to_owned(),
                     format!("{:#04x}", mismatched_byte),

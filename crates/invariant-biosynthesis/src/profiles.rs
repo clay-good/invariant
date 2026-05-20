@@ -14,27 +14,27 @@ struct Builtin {
 const BUILTIN_PROFILES: &[Builtin] = &[
     Builtin {
         name: "university_bsl2_dna",
-        json: include_str!("../../../profiles/biosynthesis/university_bsl2_dna.json"),
+        json: include_str!("../profiles/university_bsl2_dna.json"),
     },
     Builtin {
         name: "industry_peptide",
-        json: include_str!("../../../profiles/biosynthesis/industry_peptide.json"),
+        json: include_str!("../profiles/industry_peptide.json"),
     },
     Builtin {
         name: "industry_chemical",
-        json: include_str!("../../../profiles/biosynthesis/industry_chemical.json"),
+        json: include_str!("../profiles/industry_chemical.json"),
     },
     Builtin {
         name: "university_bsl3_dna",
-        json: include_str!("../../../profiles/biosynthesis/university_bsl3_dna.json"),
+        json: include_str!("../profiles/university_bsl3_dna.json"),
     },
     Builtin {
         name: "government_bsl4_restricted",
-        json: include_str!("../../../profiles/biosynthesis/government_bsl4_restricted.json"),
+        json: include_str!("../profiles/government_bsl4_restricted.json"),
     },
     Builtin {
         name: "export_controlled_chemical",
-        json: include_str!("../../../profiles/biosynthesis/export_controlled_chemical.json"),
+        json: include_str!("../profiles/export_controlled_chemical.json"),
     },
 ];
 
@@ -122,7 +122,11 @@ mod tests {
 
     #[test]
     fn dna_profiles_declare_codon_usage_organism() {
-        for name in &["university_bsl2_dna", "university_bsl3_dna", "government_bsl4_restricted"] {
+        for name in &[
+            "university_bsl2_dna",
+            "university_bsl3_dna",
+            "government_bsl4_restricted",
+        ] {
             let p = load_builtin(name).unwrap();
             assert!(
                 p.codon_usage_organism.is_some(),
@@ -151,8 +155,7 @@ mod tests {
             // serialised (no skip_serializing_if), the serialised JSON will
             // always contain it; the test checks the raw embedded JSON as well
             // to ensure the file is explicit (not relying on the default).
-            let p = load_builtin(name)
-                .unwrap_or_else(|| panic!("profile {name} failed to load"));
+            let p = load_builtin(name).unwrap_or_else(|| panic!("profile {name} failed to load"));
             let json = serde_json::to_string(&p).unwrap();
             assert!(
                 json.contains("max_authority_chain_depth"),

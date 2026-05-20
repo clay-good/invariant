@@ -489,9 +489,7 @@ impl AttestationVerifier {
         std::fs::write(&path, content.as_bytes())?;
 
         // Re-open in append mode.
-        let file = std::fs::OpenOptions::new()
-            .append(true)
-            .open(&path)?;
+        let file = std::fs::OpenOptions::new().append(true).open(&path)?;
         self.nonce_log = Some(file);
 
         Ok(surviving.len())

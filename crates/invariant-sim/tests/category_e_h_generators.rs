@@ -29,8 +29,11 @@ fn e_01_force_limit_sweep_ramps_zero_to_three_times_max() {
         .map(|e| e.max_force_n)
         .expect("ur10e_haas_cell has an end_effectors entry");
     let count = 30;
-    let cmds =
-        ScenarioGenerator::new(&profile, ScenarioType::ForceLimitSweep).generate_commands(count, "", &ops());
+    let cmds = ScenarioGenerator::new(&profile, ScenarioType::ForceLimitSweep).generate_commands(
+        count,
+        "",
+        &ops(),
+    );
     assert_eq!(cmds.len(), count);
 
     // First command sits at force = 0.
@@ -42,7 +45,10 @@ fn e_01_force_limit_sweep_ramps_zero_to_three_times_max() {
     for w in cmds.windows(2) {
         let a = w[0].end_effector_forces[0].force[0];
         let b = w[1].end_effector_forces[0].force[0];
-        assert!(b >= a - 1e-12, "force ramp must be non-decreasing: {a} -> {b}");
+        assert!(
+            b >= a - 1e-12,
+            "force ramp must be non-decreasing: {a} -> {b}"
+        );
     }
 
     // Final command exceeds 2× max_force_n (3× ramp - last step gap).
@@ -107,8 +113,11 @@ fn e_03_force_rate_spike_alternates_zero_and_over_rate() {
         .map(|e| e.max_force_rate_n_per_s)
         .unwrap();
     let count = 20;
-    let cmds = ScenarioGenerator::new(&profile, ScenarioType::ForceRateSpike)
-        .generate_commands(count, "", &ops());
+    let cmds = ScenarioGenerator::new(&profile, ScenarioType::ForceRateSpike).generate_commands(
+        count,
+        "",
+        &ops(),
+    );
     assert_eq!(cmds.len(), count);
 
     let dt = cmds[0].delta_time;
@@ -135,8 +144,11 @@ fn e_03_force_rate_spike_alternates_zero_and_over_rate() {
 fn h_06_future_dated_sensor_has_timestamp_ahead_of_command() {
     let profile = load_ur10e();
     let count = 12;
-    let cmds = ScenarioGenerator::new(&profile, ScenarioType::FutureDatedSensor)
-        .generate_commands(count, "", &ops());
+    let cmds = ScenarioGenerator::new(&profile, ScenarioType::FutureDatedSensor).generate_commands(
+        count,
+        "",
+        &ops(),
+    );
     assert_eq!(cmds.len(), count);
 
     for c in &cmds {

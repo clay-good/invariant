@@ -23,9 +23,7 @@ use chrono::Utc;
 use serde::{Deserialize, Serialize};
 
 use invariant_biosynthesis::authority::crypto::generate_keypair;
-use invariant_biosynthesis::models::bundle::{
-    BundleAuthority, SynthesisBundle, SynthesisPayload,
-};
+use invariant_biosynthesis::models::bundle::{BundleAuthority, SynthesisBundle, SynthesisPayload};
 use invariant_biosynthesis::models::profile::BioProfile;
 use invariant_biosynthesis::screening::{
     sign_body_for_tests, FileBackedHazardDatabase, HazardDatabaseBody, HazardEntry, HazardScreener,
@@ -211,10 +209,11 @@ fn authority_cases() -> Vec<AttackCase> {
         expected: ExpectedVerdict::Rejected,
     });
     let mut scope = dna_bundle(12, "ATGCGT");
-    scope.authority.required_ops = vec![
-        invariant_biosynthesis::models::authority::Operation::new("synthesize:dna:fragment")
-            .unwrap(),
-    ];
+    scope.authority.required_ops =
+        vec![
+            invariant_biosynthesis::models::authority::Operation::new("synthesize:dna:fragment")
+                .unwrap(),
+        ];
     out.push(AttackCase {
         id: "authority/scope-escalation-no-pca".into(),
         suite: Suite::Authority,

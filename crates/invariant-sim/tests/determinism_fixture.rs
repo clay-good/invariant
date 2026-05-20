@@ -151,7 +151,8 @@ fn baseline_ur10e_shard_digest_matches_fixture() {
     let expected = expected_raw.trim();
 
     assert_eq!(
-        computed, expected,
+        computed,
+        expected,
         "campaign generator output drifted (or wall-clock state crept in).\n\
          expected: {expected}\n\
          computed: {computed}\n\

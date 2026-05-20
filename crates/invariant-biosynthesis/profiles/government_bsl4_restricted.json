@@ -1,0 +1,16 @@
+{
+  "name": "government_bsl4_restricted",
+  "version": "0.1.0",
+  "bsl_level": 4,
+  "allowed_substrates": ["dna", "peptide"],
+  "max_synthesis_volume_ml": 0.5,
+  "export_controlled": true,
+  "codon_usage_organism": "h_sapiens",
+  "protein_kmer_k": 5,
+  "protein_kmer_threshold": 0.20,
+  "allowed_protocol_steps": ["aspirate", "dispense", "mix", "incubate", "centrifuge", "wash", "elute", "heat", "cool", "shake", "vortex", "ligate", "digest", "amplify", "anneal", "denature", "extend", "couple", "deprotect", "cleave", "measure", "log"],
+  "max_authority_chain_depth": 3,
+  "max_dna_length_bp": 100000,
+  "max_peptide_length_aa": 10000,
+  "max_smiles_length_chars": 10000
+}

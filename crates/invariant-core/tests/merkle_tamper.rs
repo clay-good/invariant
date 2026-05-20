@@ -7,16 +7,12 @@
 //! This is the "every byte matters" property — a Merkle proof has no slack
 //! bits, so a single-bit perturbation anywhere must invalidate the proof.
 
-use invariant_core::merkle::{
-    inclusion_proof, leaf_hash, tree_root, verify_inclusion, Hash,
-};
+use invariant_core::merkle::{inclusion_proof, leaf_hash, tree_root, verify_inclusion, Hash};
 
 const N: usize = 1024;
 
 fn build_leaves() -> Vec<Hash> {
-    (0..N as u32)
-        .map(|i| leaf_hash(&i.to_be_bytes()))
-        .collect()
+    (0..N as u32).map(|i| leaf_hash(&i.to_be_bytes())).collect()
 }
 
 #[test]
@@ -41,7 +37,10 @@ fn flipping_every_byte_of_proof_invalidates_verification() {
     // the left subtree, etc.).
     let target = 337usize;
     let proof = inclusion_proof(&leaves, target);
-    assert!(!proof.is_empty(), "1024-leaf tree must have a non-empty proof");
+    assert!(
+        !proof.is_empty(),
+        "1024-leaf tree must have a non-empty proof"
+    );
 
     let mut total_byte_flips_tested = 0usize;
     for (h_idx, hash) in proof.iter().enumerate() {

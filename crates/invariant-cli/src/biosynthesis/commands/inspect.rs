@@ -485,9 +485,7 @@ mod tests {
         // Build a real signed verdict and then mangle the signature.
         use chrono::Utc;
         use ed25519_dalek::SigningKey;
-        use invariant_biosynthesis::models::verdict::{
-            AuthoritySummary, SignedVerdict, Verdict,
-        };
+        use invariant_biosynthesis::models::verdict::{AuthoritySummary, SignedVerdict, Verdict};
         use rand::rngs::OsRng;
         let dir = TempDir::new().unwrap();
         let v = Verdict {
@@ -543,9 +541,7 @@ mod tests {
         // Build a real signed verdict and inspect without --verify-with.
         use chrono::Utc;
         use ed25519_dalek::SigningKey;
-        use invariant_biosynthesis::models::verdict::{
-            AuthoritySummary, SignedVerdict, Verdict,
-        };
+        use invariant_biosynthesis::models::verdict::{AuthoritySummary, SignedVerdict, Verdict};
         use rand::rngs::OsRng;
         let dir = TempDir::new().unwrap();
         let v = Verdict {

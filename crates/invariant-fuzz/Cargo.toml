@@ -14,7 +14,7 @@ description = "Adversarial testing framework for Invariant — robotics and bios
 invariant-core.workspace = true
 invariant-robotics.workspace = true
 invariant-biosynthesis.workspace = true
-invariant-sim = { path = "../invariant-sim", version = "0.2.0" }
+invariant-sim = { path = "../invariant-sim", version = "0.0.3" }
 serde.workspace = true
 serde_json.workspace = true
 rand.workspace = true

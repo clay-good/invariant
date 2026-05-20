@@ -157,13 +157,7 @@ pub fn inclusion_proof(leaves: &[Hash], index: usize) -> Vec<Hash> {
 
 /// Verify an RFC 6962 audit path. Reconstructs the root from `leaf`,
 /// `index`, `n`, and `proof` and checks for byte equality with `root`.
-pub fn verify_inclusion(
-    root: &Hash,
-    leaf: &Hash,
-    index: usize,
-    n: usize,
-    proof: &[Hash],
-) -> bool {
+pub fn verify_inclusion(root: &Hash, leaf: &Hash, index: usize, n: usize, proof: &[Hash]) -> bool {
     if index >= n {
         return false;
     }

@@ -1,0 +1,2335 @@
+{
+  "name": "adversarial_max_joints",
+  "version": "1.0.0",
+  "joints": [
+    {
+      "name": "joint_000",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_001",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_002",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_003",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_004",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_005",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_006",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_007",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_008",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_009",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_010",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_011",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_012",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_013",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_014",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_015",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_016",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_017",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_018",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_019",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_020",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_021",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_022",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_023",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_024",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_025",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_026",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_027",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_028",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_029",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_030",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_031",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_032",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_033",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_034",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_035",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_036",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_037",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_038",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_039",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_040",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_041",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_042",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_043",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_044",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_045",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_046",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_047",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_048",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_049",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_050",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_051",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_052",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_053",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_054",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_055",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_056",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_057",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_058",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_059",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_060",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_061",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_062",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_063",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_064",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_065",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_066",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_067",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_068",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_069",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_070",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_071",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_072",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_073",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_074",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_075",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_076",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_077",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_078",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_079",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_080",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_081",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_082",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_083",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_084",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_085",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_086",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_087",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_088",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_089",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_090",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_091",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_092",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_093",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_094",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_095",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_096",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_097",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_098",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_099",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_100",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_101",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_102",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_103",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_104",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_105",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_106",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_107",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_108",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_109",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_110",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_111",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_112",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_113",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_114",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_115",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_116",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_117",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_118",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_119",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_120",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_121",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_122",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_123",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_124",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_125",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_126",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_127",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_128",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_129",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_130",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_131",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_132",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_133",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_134",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_135",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_136",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_137",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_138",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_139",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_140",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_141",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_142",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_143",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_144",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_145",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_146",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_147",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_148",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_149",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_150",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_151",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_152",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_153",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_154",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_155",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_156",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_157",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_158",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_159",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_160",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_161",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_162",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_163",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_164",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_165",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_166",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_167",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_168",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_169",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_170",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_171",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_172",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_173",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_174",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_175",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_176",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_177",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_178",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_179",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_180",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_181",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_182",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_183",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_184",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_185",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_186",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_187",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_188",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_189",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_190",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_191",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_192",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_193",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_194",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_195",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_196",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_197",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_198",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_199",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_200",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_201",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_202",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_203",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_204",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_205",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_206",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_207",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_208",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_209",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_210",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_211",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_212",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_213",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_214",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_215",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_216",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_217",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_218",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_219",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_220",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_221",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_222",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_223",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_224",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_225",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_226",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_227",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_228",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_229",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_230",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_231",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_232",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_233",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_234",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_235",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_236",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_237",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_238",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_239",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_240",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_241",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_242",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_243",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_244",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_245",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_246",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_247",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_248",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_249",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_250",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_251",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_252",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_253",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_254",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    },
+    {
+      "name": "joint_255",
+      "type": "revolute",
+      "min": -1.5708,
+      "max": 1.5708,
+      "max_velocity": 5.0,
+      "max_torque": 50.0,
+      "max_acceleration": 25.0
+    }
+  ],
+  "workspace": {
+    "type": "aabb",
+    "min": [
+      -5.0,
+      -5.0,
+      0.0
+    ],
+    "max": [
+      5.0,
+      5.0,
+      5.0
+    ]
+  },
+  "exclusion_zones": [],
+  "proximity_zones": [],
+  "collision_pairs": [],
+  "max_delta_time": 0.05,
+  "min_collision_distance": 0.01,
+  "global_velocity_scale": 1.0,
+  "watchdog_timeout_ms": 100,
+  "safe_stop_profile": {
+    "strategy": "immediate_stop",
+    "max_deceleration": 25.0,
+    "target_joint_positions": {}
+  }
+}

@@ -144,15 +144,17 @@ pub fn run(args: &ValidateArgs) -> i32 {
     let audit_sk = SigningKey::from_bytes(&raw_key_bytes);
     // forge_sk is used in forge mode to self-sign PCA chains per command.
     let forge_sk = SigningKey::from_bytes(&raw_key_bytes);
-    let mut logger =
-        match invariant_robotics::audit::AuditLogger::open_file(&args.audit_log, audit_sk, kid.clone())
-        {
-            Ok(l) => l,
-            Err(e) => {
-                eprintln!("error: failed to open audit log: {e}");
-                return 2;
-            }
-        };
+    let mut logger = match invariant_robotics::audit::AuditLogger::open_file(
+        &args.audit_log,
+        audit_sk,
+        kid.clone(),
+    ) {
+        Ok(l) => l,
+        Err(e) => {
+            eprintln!("error: failed to open audit log: {e}");
+            return 2;
+        }
+    };
 
     // Open the command source.  For the single-command and stdin cases we still
     // pre-parse into a Vec<Command> (size 1) for simplicity.  For batch mode,
@@ -839,10 +841,7 @@ mod tests {
             exit, 0,
             "validate must exit non-zero when the audit log write fails"
         );
-        assert_eq!(
-            exit, 2,
-            "audit write failure exits with code 2, not {exit}"
-        );
+        assert_eq!(exit, 2, "audit write failure exits with code 2, not {exit}");
     }
 
     #[cfg(target_os = "linux")]

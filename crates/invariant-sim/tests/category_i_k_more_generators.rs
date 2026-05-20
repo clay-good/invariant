@@ -3,8 +3,8 @@
 //!
 //! Spec: `docs/robotics/spec-15m-campaign.md` §3 Categories I & K.
 
-use invariant_robotics::models::profile::WorkspaceBounds;
 use invariant_robotics::models::authority::Operation;
+use invariant_robotics::models::profile::WorkspaceBounds;
 use invariant_robotics::profiles::load_builtin;
 use invariant_sim::robotics::scenario::{ScenarioGenerator, ScenarioType};
 
@@ -41,7 +41,10 @@ fn k02_watchdog_recovery_cycle_three_phases() {
     }
 
     // Both states must appear at the expected counts.
-    let missed = cmds.iter().filter(|c| c.delta_time > profile.max_delta_time).count();
+    let missed = cmds
+        .iter()
+        .filter(|c| c.delta_time > profile.max_delta_time)
+        .count();
     assert_eq!(missed, two_thirds - third, "K-02 missed-heartbeat span");
 }
 
@@ -76,7 +79,10 @@ fn i02_distraction_flooding_one_in_ten_violations() {
         }
     }
     // 30 / 10 = 3 violations expected.
-    assert_eq!(violations, 3, "I-02 should produce 1 violation per 10 commands");
+    assert_eq!(
+        violations, 3,
+        "I-02 should produce 1 violation per 10 commands"
+    );
 }
 
 #[test]

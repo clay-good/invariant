@@ -12,10 +12,10 @@
 
 #![forbid(unsafe_code)]
 
-/// PIC chain validation logic (chain.rs, operations.rs, crypto.rs).
-pub mod authority;
 /// Append-only signed JSONL audit logger (generic over input/verdict types).
 pub mod audit;
+/// PIC chain validation logic (chain.rs, operations.rs, crypto.rs).
+pub mod authority;
 /// Differential validation comparison logic (generic over a `VerdictView` trait).
 pub mod differential;
 /// Incident response automation (Section 10.6).

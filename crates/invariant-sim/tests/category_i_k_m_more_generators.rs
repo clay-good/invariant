@@ -60,8 +60,11 @@ fn i_07_profile_probing_binary_search_converges_to_max() {
 fn i_10_rollback_replay_cycles_recorded_sequences() {
     let profile = load_ur10();
     let count = 9;
-    let cmds = ScenarioGenerator::new(&profile, ScenarioType::RollbackReplay)
-        .generate_commands(count, "", &ops());
+    let cmds = ScenarioGenerator::new(&profile, ScenarioType::RollbackReplay).generate_commands(
+        count,
+        "",
+        &ops(),
+    );
     assert_eq!(cmds.len(), count);
 
     let recorded = [1_u64, 2, 3];
@@ -95,8 +98,14 @@ fn k_05_profile_reload_carries_metadata_with_generation() {
 
     // Three segments of 10 commands each → generations 1, 2, 3.
     for (i, c) in cmds.iter().enumerate() {
-        assert_eq!(c.metadata.get("profile_reload").map(String::as_str), Some("true"));
-        assert_eq!(c.metadata.get("tighter_limits").map(String::as_str), Some("true"));
+        assert_eq!(
+            c.metadata.get("profile_reload").map(String::as_str),
+            Some("true")
+        );
+        assert_eq!(
+            c.metadata.get("tighter_limits").map(String::as_str),
+            Some("true")
+        );
         let gen: usize = c
             .metadata
             .get("reload_generation")
@@ -114,8 +123,11 @@ fn k_05_profile_reload_carries_metadata_with_generation() {
 fn m_03_pure_fuzz_cycles_four_garbage_regimes() {
     let profile = load_ur10();
     let count = 16;
-    let cmds = ScenarioGenerator::new(&profile, ScenarioType::PureFuzz)
-        .generate_commands(count, "", &ops());
+    let cmds = ScenarioGenerator::new(&profile, ScenarioType::PureFuzz).generate_commands(
+        count,
+        "",
+        &ops(),
+    );
     assert_eq!(cmds.len(), count);
 
     let first = profile.joints.first().unwrap().clone();
@@ -125,14 +137,20 @@ fn m_03_pure_fuzz_cycles_four_garbage_regimes() {
             0 => assert!(p0 > first.max, "step {i}: expected p0 > max, got {p0}"),
             1 => assert!(p0 < first.min, "step {i}: expected p0 < min, got {p0}"),
             2 => assert!(p0.is_nan(), "step {i}: expected NaN, got {p0}"),
-            _ => assert!(p0.is_infinite() && p0 > 0.0, "step {i}: expected +Inf, got {p0}"),
+            _ => assert!(
+                p0.is_infinite() && p0 > 0.0,
+                "step {i}: expected +Inf, got {p0}"
+            ),
         }
         assert_eq!(c.source, "pure_fuzz");
     }
 
     // Reproducibility: a second generation produces the same garbage.
-    let again = ScenarioGenerator::new(&profile, ScenarioType::PureFuzz)
-        .generate_commands(count, "", &ops());
+    let again = ScenarioGenerator::new(&profile, ScenarioType::PureFuzz).generate_commands(
+        count,
+        "",
+        &ops(),
+    );
     for (a, b) in cmds.iter().zip(again.iter()) {
         let pa = a.joint_states[0].position;
         let pb = b.joint_states[0].position;

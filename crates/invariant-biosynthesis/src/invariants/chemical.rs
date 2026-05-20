@@ -147,7 +147,10 @@ impl Invariant for CwcScreen {
         if let Some(mol) = try_molecule(bundle) {
             let rule_matches = match_rules(&mol, CWC_RULES);
             // Report the highest-severity match (Fail > Advisory).
-            if let Some(rm) = rule_matches.iter().find(|m| m.severity == RuleSeverity::Fail) {
+            if let Some(rm) = rule_matches
+                .iter()
+                .find(|m| m.severity == RuleSeverity::Fail)
+            {
                 return fail(format!(
                     "CWC structural alert {} ({}): matched '{}'",
                     rm.rule_id, rm.label, rm.matched_pattern
@@ -966,7 +969,7 @@ mod tests {
 
     #[test]
     fn c8_complex_molecule_advisory() {
-        use super::super::molecule::{Molecule, complexity_score};
+        use super::super::molecule::{complexity_score, Molecule};
         // Build a molecule with enough complexity (rings, stereo, heteroatoms,
         // length) to exceed the C8_COMPLEXITY_THRESHOLD of 0.60.
         let p = profile();
@@ -1058,17 +1061,34 @@ mod tests {
             timestamp: Utc::now(),
             source: "t".into(),
             sequence: 0,
-            payload: SynthesisPayload::Chemical { smiles: "CCO".into() },
+            payload: SynthesisPayload::Chemical {
+                smiles: "CCO".into(),
+            },
             delta_time: 0.0,
-            authority: BundleAuthority { pca_chain: String::new(), required_ops: vec![] },
+            authority: BundleAuthority {
+                pca_chain: String::new(),
+                required_ops: vec![],
+            },
             metadata: Default::default(),
         };
         let c = ctx(&[], &p);
         // Ethanol should pass all chemical invariants
-        assert!(matches!(CwcScreen.evaluate_with(&bundle, &c), InvariantStatus::Pass));
-        assert!(matches!(ExplosiveScreen.evaluate_with(&bundle, &c), InvariantStatus::Pass));
-        assert!(matches!(NarcoticScreen.evaluate_with(&bundle, &c), InvariantStatus::Pass));
-        assert!(matches!(PathwayFeasibilityScreen.evaluate_with(&bundle, &c), InvariantStatus::Pass));
+        assert!(matches!(
+            CwcScreen.evaluate_with(&bundle, &c),
+            InvariantStatus::Pass
+        ));
+        assert!(matches!(
+            ExplosiveScreen.evaluate_with(&bundle, &c),
+            InvariantStatus::Pass
+        ));
+        assert!(matches!(
+            NarcoticScreen.evaluate_with(&bundle, &c),
+            InvariantStatus::Pass
+        ));
+        assert!(matches!(
+            PathwayFeasibilityScreen.evaluate_with(&bundle, &c),
+            InvariantStatus::Pass
+        ));
     }
 
     #[test]
@@ -1079,9 +1099,14 @@ mod tests {
             timestamp: Utc::now(),
             source: "t".into(),
             sequence: 0,
-            payload: SynthesisPayload::Chemical { smiles: smiles.into() },
+            payload: SynthesisPayload::Chemical {
+                smiles: smiles.into(),
+            },
             delta_time: 0.0,
-            authority: BundleAuthority { pca_chain: String::new(), required_ops: vec![] },
+            authority: BundleAuthority {
+                pca_chain: String::new(),
+                required_ops: vec![],
+            },
             metadata: Default::default(),
         };
         let c = ctx(&[], &p);

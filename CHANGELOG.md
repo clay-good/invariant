@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.0.3] - 2026-05-19
+
+### Changed
+- **First publish from the unified Invariant workspace.** Two of the eight
+  crate names are already claimed on crates.io by another owner, so this
+  release renames the published packages while preserving the in-source
+  module names via `package = "..."` aliasing:
+  - `invariant-core` (workspace alias) → published as **`invariant-protocol`**
+  - `invariant-cli` (workspace alias) → published as **`invariant`**
+  - Six other crates publish under their natural names:
+    `invariant-robotics`, `invariant-biosynthesis`, `invariant-eval`,
+    `invariant-sim`, `invariant-coordinator`, `invariant-fuzz`.
+- Workspace version reset to `0.0.3` to mark a fresh publishing lineage.
+- Each domain crate now ships its own copy of the profile JSON under
+  `crates/<crate>/profiles/` so `cargo publish` tarballs are self-contained;
+  CI enforces sync against root `profiles/`.
+- GitHub Actions versions normalised (`checkout@v4`, `upload-artifact@v4`,
+  `download-artifact@v4`, `setup-python@v5`, `action-gh-release@v2`).
+- `.gitignore` now covers nested `target/` directories, fuzz artifacts,
+  release packaging output, and SBOMs; `fuzz/target/` and `fuzz/Cargo.lock`
+  were untracked from the repo.
+
 ## [0.2.0] - 2026-05-14
 
 ### Changed

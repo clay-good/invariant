@@ -72,12 +72,12 @@ pub fn run(args: &KeygenArgs) -> i32 {
     // `invariant_core::keys` (OsKeyringStore / TpmKeyStore / YubiHsmKeyStore).
     if let Some(reason) = match store {
         StoreKind::File => None,
-        StoreKind::OsKeyring => Some(
-            "OS keyring backend not yet implemented — use file backend for development",
-        ),
-        StoreKind::Tpm => Some(
-            "TPM 2.0 backend not yet implemented — requires tss-esapi crate and TPM hardware",
-        ),
+        StoreKind::OsKeyring => {
+            Some("OS keyring backend not yet implemented — use file backend for development")
+        }
+        StoreKind::Tpm => {
+            Some("TPM 2.0 backend not yet implemented — requires tss-esapi crate and TPM hardware")
+        }
         StoreKind::YubiHsm => Some("YubiHSM 2 backend not yet implemented"),
     } {
         eprintln!("error: key store unavailable: {reason}");

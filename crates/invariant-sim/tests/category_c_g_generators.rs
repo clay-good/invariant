@@ -85,11 +85,18 @@ fn c03_cnc_tending_toggles_conditional_zone_between_loading_and_cutting() {
     let conditional_zone_name = profile
         .exclusion_zones
         .iter()
-        .find(|z| matches!(
-            z,
-            ExclusionZone::Aabb { conditional: true, .. }
-                | ExclusionZone::Sphere { conditional: true, .. }
-        ))
+        .find(|z| {
+            matches!(
+                z,
+                ExclusionZone::Aabb {
+                    conditional: true,
+                    ..
+                } | ExclusionZone::Sphere {
+                    conditional: true,
+                    ..
+                }
+            )
+        })
         .map(|z| match z {
             ExclusionZone::Aabb { name, .. } => name.clone(),
             ExclusionZone::Sphere { name, .. } => name.clone(),
@@ -106,9 +113,14 @@ fn c03_cnc_tending_toggles_conditional_zone_between_loading_and_cutting() {
             .copied()
             .unwrap_or_else(|| panic!("cmd {i} missing override for `{conditional_zone_name}`"));
         assert_eq!(
-            actual, expected_active,
+            actual,
+            expected_active,
             "C-03 cmd {i} (phase={}): conditional zone override should be {expected_active}",
-            if expected_active { "cutting" } else { "loading" }
+            if expected_active {
+                "cutting"
+            } else {
+                "loading"
+            }
         );
     }
 }

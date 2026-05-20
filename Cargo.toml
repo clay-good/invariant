@@ -12,7 +12,7 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "0.2.0"
+version = "0.0.3"
 authors = ["Clay Good <hi@claygood.com>"]
 edition = "2021"
 rust-version = "1.75"
@@ -21,7 +21,7 @@ repository = "https://github.com/clay-good/invariant"
 homepage = "https://github.com/clay-good/invariant"
 
 [workspace.dependencies]
-# Crypto — coset 0.4 (robotics is newer; biosynthesis on 0.3 must upgrade)
+# Crypto
 ed25519-dalek = { version = "2.1", features = ["rand_core"] }
 coset = "0.4"
 sha2 = "0.10"
@@ -46,7 +46,10 @@ axum = "0.8"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
-# Internal
-invariant-core = { path = "crates/invariant-core", version = "0.2.0" }
-invariant-robotics = { path = "crates/invariant-robotics", version = "0.2.0" }
-invariant-biosynthesis = { path = "crates/invariant-biosynthesis", version = "0.2.0" }
+# Internal — published crate names differ from local directory names because
+# `invariant-core` and `invariant-cli` are already claimed on crates.io by
+# another owner. We publish under `invariant-protocol` and `invariant`
+# respectively; the `package = "..."` rename keeps the in-workspace alias.
+invariant-core = { package = "invariant-protocol", path = "crates/invariant-core", version = "0.0.3" }
+invariant-robotics = { path = "crates/invariant-robotics", version = "0.0.3" }
+invariant-biosynthesis = { path = "crates/invariant-biosynthesis", version = "0.0.3" }

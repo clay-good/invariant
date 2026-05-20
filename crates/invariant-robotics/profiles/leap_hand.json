@@ -1,0 +1,96 @@
+{
+  "name": "leap_hand",
+  "version": "1.0.0",
+  "joints": [
+    {"name": "index_j0", "type": "revolute", "min": -0.47, "max":  0.47, "max_velocity": 5.0, "max_torque": 0.5, "max_acceleration": 25.0},
+    {"name": "index_j1", "type": "revolute", "min":  0.0,  "max":  1.71, "max_velocity": 5.0, "max_torque": 0.5, "max_acceleration": 25.0},
+    {"name": "index_j2", "type": "revolute", "min":  0.0,  "max":  1.71, "max_velocity": 5.0, "max_torque": 0.5, "max_acceleration": 25.0},
+    {"name": "index_j3", "type": "revolute", "min":  0.0,  "max":  1.71, "max_velocity": 5.0, "max_torque": 0.5, "max_acceleration": 25.0},
+    {"name": "middle_j0", "type": "revolute", "min": -0.47, "max":  0.47, "max_velocity": 5.0, "max_torque": 0.5, "max_acceleration": 25.0},
+    {"name": "middle_j1", "type": "revolute", "min":  0.0,  "max":  1.71, "max_velocity": 5.0, "max_torque": 0.5, "max_acceleration": 25.0},
+    {"name": "middle_j2", "type": "revolute", "min":  0.0,  "max":  1.71, "max_velocity": 5.0, "max_torque": 0.5, "max_acceleration": 25.0},
+    {"name": "middle_j3", "type": "revolute", "min":  0.0,  "max":  1.71, "max_velocity": 5.0, "max_torque": 0.5, "max_acceleration": 25.0},
+    {"name": "ring_j0", "type": "revolute", "min": -0.47, "max":  0.47, "max_velocity": 5.0, "max_torque": 0.5, "max_acceleration": 25.0},
+    {"name": "ring_j1", "type": "revolute", "min":  0.0,  "max":  1.71, "max_velocity": 5.0, "max_torque": 0.5, "max_acceleration": 25.0},
+    {"name": "ring_j2", "type": "revolute", "min":  0.0,  "max":  1.71, "max_velocity": 5.0, "max_torque": 0.5, "max_acceleration": 25.0},
+    {"name": "ring_j3", "type": "revolute", "min":  0.0,  "max":  1.71, "max_velocity": 5.0, "max_torque": 0.5, "max_acceleration": 25.0},
+    {"name": "thumb_j0", "type": "revolute", "min": -0.47, "max":  1.05, "max_velocity": 5.0, "max_torque": 0.9, "max_acceleration": 20.0},
+    {"name": "thumb_j1", "type": "revolute", "min": -0.26, "max":  1.71, "max_velocity": 5.0, "max_torque": 0.9, "max_acceleration": 20.0},
+    {"name": "thumb_j2", "type": "revolute", "min": -0.26, "max":  1.71, "max_velocity": 5.0, "max_torque": 0.9, "max_acceleration": 20.0},
+    {"name": "thumb_j3", "type": "revolute", "min": -0.26, "max":  1.71, "max_velocity": 5.0, "max_torque": 0.9, "max_acceleration": 20.0}
+  ],
+  "workspace": {
+    "type": "aabb",
+    "min": [-0.4, -0.4, -0.25],
+    "max": [0.4, 0.4, 0.25]
+  },
+  "exclusion_zones": [],
+  "proximity_zones": [],
+  "collision_pairs": [
+    ["index_j3", "thumb_j3"],
+    ["middle_j3", "thumb_j3"],
+    ["ring_j3", "thumb_j3"]
+  ],
+  "stability": null,
+  "max_delta_time": 0.01,
+  "min_collision_distance": 0.005,
+  "global_velocity_scale": 1.0,
+  "watchdog_timeout_ms": 50,
+  "end_effectors": [
+    {
+      "name": "index_tip",
+      "max_force_n": 4.0,
+      "max_grasp_force_n": 3.0,
+      "min_grasp_force_n": 0.05,
+      "max_force_rate_n_per_s": 35.0,
+      "max_payload_kg": 0.25
+    },
+    {
+      "name": "middle_tip",
+      "max_force_n": 4.0,
+      "max_grasp_force_n": 3.0,
+      "min_grasp_force_n": 0.05,
+      "max_force_rate_n_per_s": 35.0,
+      "max_payload_kg": 0.25
+    },
+    {
+      "name": "ring_tip",
+      "max_force_n": 4.0,
+      "max_grasp_force_n": 3.0,
+      "min_grasp_force_n": 0.05,
+      "max_force_rate_n_per_s": 35.0,
+      "max_payload_kg": 0.25
+    },
+    {
+      "name": "thumb_tip",
+      "max_force_n": 4.0,
+      "max_grasp_force_n": 3.0,
+      "min_grasp_force_n": 0.05,
+      "max_force_rate_n_per_s": 35.0,
+      "max_payload_kg": 0.25
+    }
+  ],
+  "real_world_margins": {
+    "position_margin": 0.03,
+    "velocity_margin": 0.10,
+    "torque_margin": 0.05,
+    "acceleration_margin": 0.05
+  },
+  "safe_stop_profile": {
+    "strategy": "immediate_stop",
+    "max_deceleration": 25.0,
+    "target_joint_positions": {}
+  },
+  "environment": {
+    "max_safe_pitch_rad": 0.087,
+    "max_safe_roll_rad": 0.087,
+    "warning_pitch_rad": 0.05,
+    "warning_roll_rad": 0.05,
+    "max_operating_temperature_c": 55.0,
+    "warning_temperature_c": 40.0,
+    "critical_battery_pct": 5.0,
+    "low_battery_pct": 15.0,
+    "max_latency_ms": 100.0,
+    "warning_latency_ms": 50.0
+  }
+}

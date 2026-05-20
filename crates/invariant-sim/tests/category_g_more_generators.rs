@@ -7,8 +7,8 @@
 //! v11 prompt 2.6 — see `docs/robotics/spec-v11.md` and
 //! `docs/robotics/spec-15m-campaign.md` §3.
 
-use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
+use base64::Engine as _;
 use invariant_robotics::models::authority::Operation;
 use invariant_robotics::profiles::load_builtin;
 use invariant_sim::robotics::scenario::{ScenarioGenerator, ScenarioType};
@@ -25,8 +25,11 @@ fn load_ur10() -> invariant_robotics::models::profile::RobotProfile {
 fn g_04_key_substitution_emits_untrusted_kid_envelope() {
     let profile = load_ur10();
     let count = 8;
-    let cmds = ScenarioGenerator::new(&profile, ScenarioType::KeySubstitution)
-        .generate_commands(count, "harness_chain_b64", &ops());
+    let cmds = ScenarioGenerator::new(&profile, ScenarioType::KeySubstitution).generate_commands(
+        count,
+        "harness_chain_b64",
+        &ops(),
+    );
     assert_eq!(cmds.len(), count);
 
     let mut seen = std::collections::HashSet::new();
@@ -104,8 +107,11 @@ fn g_07_wildcard_exploit_required_ops_outside_actuate_scope() {
     let profile = load_ur10();
     let count = 12;
     let pca = "harness_chain_b64";
-    let cmds = ScenarioGenerator::new(&profile, ScenarioType::WildcardExploit)
-        .generate_commands(count, pca, &ops());
+    let cmds = ScenarioGenerator::new(&profile, ScenarioType::WildcardExploit).generate_commands(
+        count,
+        pca,
+        &ops(),
+    );
     assert_eq!(cmds.len(), count);
 
     let rotation = [

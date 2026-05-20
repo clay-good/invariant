@@ -67,11 +67,8 @@ pub(crate) const DEFAULT_PROTEIN_KMER_K: usize = 5;
 /// Overridable per-profile via `BioProfile.protein_kmer_threshold`.
 pub(crate) const DEFAULT_PROTEIN_KMER_THRESHOLD: f64 = 0.30;
 
-
 /// Build a [`super::homology::KmerHomologyEngine`] from profile settings.
-fn profile_homology_engine(
-    ctx: &InvariantContext<'_>,
-) -> super::homology::KmerHomologyEngine {
+fn profile_homology_engine(ctx: &InvariantContext<'_>) -> super::homology::KmerHomologyEngine {
     let k = ctx.profile.protein_kmer_k.unwrap_or(DEFAULT_PROTEIN_KMER_K);
     let threshold = ctx
         .profile
@@ -115,10 +112,7 @@ fn protein_space_rescreen(
     };
 
     // Collect all 6 frame protein strings.
-    let all_frame_strings: Vec<&str> = frames
-        .iter()
-        .chain(rc_frames.iter())
-        .collect();
+    let all_frame_strings: Vec<&str> = frames.iter().chain(rc_frames.iter()).collect();
 
     let mut hits = Vec::new();
 
@@ -140,11 +134,7 @@ fn protein_space_rescreen(
         for m in matches {
             hits.push(format!(
                 "{} ({}) protein-space hit frame {} {}={:.2}",
-                h.entry.id,
-                h.entry.hazard_class,
-                m.frame_index,
-                m.method,
-                m.similarity,
+                h.entry.id, h.entry.hazard_class, m.frame_index, m.method, m.similarity,
             ));
         }
     }
@@ -952,8 +942,7 @@ fn chi2_survival_approx(x: f64, df: usize) -> f64 {
     }
     let k = df as f64;
     // Wilson–Hilferty transform: Z ~ N(0,1)
-    let z = ((x / k).powf(1.0 / 3.0) - (1.0 - 2.0 / (9.0 * k)))
-        / (2.0 / (9.0 * k)).sqrt();
+    let z = ((x / k).powf(1.0 / 3.0) - (1.0 - 2.0 / (9.0 * k))) / (2.0 / (9.0 * k)).sqrt();
     // Standard normal survival: Φ(-z) ≈ erfc(z/√2)/2.
     // Use a rational approximation of erfc for |z| < 8.
     let p = normal_survival(z);
@@ -971,10 +960,10 @@ fn normal_survival(z: f64) -> f64 {
     let abs_z = z.abs();
     let t = 1.0 / (1.0 + 0.2316419 * abs_z);
     let d = 0.3989422804014327; // 1/sqrt(2*pi)
-    let p = d * (-abs_z * abs_z / 2.0).exp()
+    let p = d
+        * (-abs_z * abs_z / 2.0).exp()
         * (t * (0.319381530
-            + t * (-0.356563782
-                + t * (1.781477937 + t * (-1.821255978 + t * 1.330274429)))));
+            + t * (-0.356563782 + t * (1.781477937 + t * (-1.821255978 + t * 1.330274429)))));
     if z > 0.0 {
         p
     } else {
@@ -1553,10 +1542,9 @@ mod tests {
         let mut p = profile();
         p.codon_usage_organism = Some("e_coli".into());
         let codons = [
-            "CTG", "GAA", "GAT", "ATG", "GCG", "AAA", "GGC", "ACC", "GAC",
-            "ATT", "AAC", "GCA", "TTC", "TAT", "CAG", "GGT", "AGC", "GTG",
-            "GCC", "CTG", "GAA", "GAT", "ATG", "GCG", "AAA", "GGC", "ACC",
-            "GAC", "ATT", "AAC", "TTC", "TAT", "CAG", "GGT", "AGC", "GTG",
+            "CTG", "GAA", "GAT", "ATG", "GCG", "AAA", "GGC", "ACC", "GAC", "ATT", "AAC", "GCA",
+            "TTC", "TAT", "CAG", "GGT", "AGC", "GTG", "GCC", "CTG", "GAA", "GAT", "ATG", "GCG",
+            "AAA", "GGC", "ACC", "GAC", "ATT", "AAC", "TTC", "TAT", "CAG", "GGT", "AGC", "GTG",
             "TCT", "CCG", "CGT", "AAT",
         ];
         let seq: String = codons.join("");
@@ -1580,9 +1568,9 @@ mod tests {
     #[test]
     fn d7_codon_to_index_round_trip() {
         // AAA -> 0, TTT -> 63
-        assert_eq!(super::codon_to_index(&[b'A', b'A', b'A']), 0);
-        assert_eq!(super::codon_to_index(&[b'T', b'T', b'T']), 63);
-        assert_eq!(super::codon_to_index(&[b'A', b'T', b'G']), 0 * 16 + 3 * 4 + 2);
+        assert_eq!(super::codon_to_index(b"AAA"), 0);
+        assert_eq!(super::codon_to_index(b"TTT"), 63);
+        assert_eq!(super::codon_to_index(b"ATG"), 3 * 4 + 2);
     }
 
     #[test]
@@ -1901,8 +1889,7 @@ mod tests {
         }];
         let bundle = dna("ATGAAGGCC"); // MKA in frame1 (synonymous)
         let c = ctx(&h, &p);
-        let protein_hits =
-            super::protein_space_rescreen(&bundle, &c, SELECT_AGENT_CLASSES);
+        let protein_hits = super::protein_space_rescreen(&bundle, &c, SELECT_AGENT_CLASSES);
         // The protein k-mers should overlap since both encode MKA.
         // With k=5 and only 3 residues, there won't be enough k-mers.
         // Use a longer sequence to trigger the threshold.
@@ -1923,8 +1910,7 @@ mod tests {
         }];
         let bundle2 = dna(long_dna);
         let c2 = ctx(&h2, &p);
-        let protein_hits2 =
-            super::protein_space_rescreen(&bundle2, &c2, SELECT_AGENT_CLASSES);
+        let protein_hits2 = super::protein_space_rescreen(&bundle2, &c2, SELECT_AGENT_CLASSES);
         // Both encode "MKAFLIDNEA" — protein k-mers should match.
         assert!(
             !protein_hits2.is_empty(),
@@ -1968,14 +1954,10 @@ mod tests {
         // Yeast-biased codons: heavy on AGA (rare in E.coli: 0.002),
         // TTA (0.013), ACA (0.007), ATA (0.004).
         let codons = [
-            "AGA", "AGA", "AGA", "AGA", "AGA",
-            "TTA", "TTA", "TTA", "TTA", "TTA",
-            "ACA", "ACA", "ACA", "ACA", "ACA",
-            "ATA", "ATA", "ATA", "ATA", "ATA",
-            "GAA", "GAA", "GAA", "GAA", "GAA",
-            "ATG", "ATG", "ATG", "ATG", "ATG",
-            "CTG", "CTG", "CTG", "CTG", "CTG",
-            "GCG", "GCG", "GCG", "GCG", "GCG",
+            "AGA", "AGA", "AGA", "AGA", "AGA", "TTA", "TTA", "TTA", "TTA", "TTA", "ACA", "ACA",
+            "ACA", "ACA", "ACA", "ATA", "ATA", "ATA", "ATA", "ATA", "GAA", "GAA", "GAA", "GAA",
+            "GAA", "ATG", "ATG", "ATG", "ATG", "ATG", "CTG", "CTG", "CTG", "CTG", "CTG", "GCG",
+            "GCG", "GCG", "GCG", "GCG",
         ];
         let seq: String = codons.join("");
         let c = ctx(&[], &p);
@@ -1994,10 +1976,10 @@ mod tests {
         let mut p = profile();
         p.codon_usage_organism = Some("h_sapiens".into());
         // Extremely biased: only 4 distinct codons, heavily skewed.
-        let codons: Vec<&str> = std::iter::repeat("AGA").take(15)
-            .chain(std::iter::repeat("CTG").take(15))
-            .chain(std::iter::repeat("GAA").take(5))
-            .chain(std::iter::repeat("ATG").take(5))
+        let codons: Vec<&str> = std::iter::repeat_n("AGA", 15)
+            .chain(std::iter::repeat_n("CTG", 15))
+            .chain(std::iter::repeat_n("GAA", 5))
+            .chain(std::iter::repeat_n("ATG", 5))
             .collect();
         let seq: String = codons.join("");
         let c = ctx(&[], &p);

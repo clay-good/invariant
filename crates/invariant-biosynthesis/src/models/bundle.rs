@@ -98,10 +98,7 @@ impl SynthesisBundle {
     /// Validates the structural shape of the bundle: source length, metadata
     /// bounds, and payload-size caps (profile-driven). Call this before running
     /// authority/screening/invariants.
-    pub fn validate_bundle_shape(
-        &self,
-        profile: &BioProfile,
-    ) -> Result<(), ValidationError> {
+    pub fn validate_bundle_shape(&self, profile: &BioProfile) -> Result<(), ValidationError> {
         // --- Source ---
         if self.source.is_empty() {
             return Err(ValidationError::BundleFieldInvalid {
@@ -175,9 +172,7 @@ impl SynthesisBundle {
                 if len > max {
                     return Err(ValidationError::BundleFieldInvalid {
                         field: "payload",
-                        reason: format!(
-                            "DNA sequence length {len} bp exceeds maximum of {max} bp"
-                        ),
+                        reason: format!("DNA sequence length {len} bp exceeds maximum of {max} bp"),
                     });
                 }
             }
@@ -203,9 +198,7 @@ impl SynthesisBundle {
                 if len > max {
                     return Err(ValidationError::BundleFieldInvalid {
                         field: "payload",
-                        reason: format!(
-                            "SMILES length {len} chars exceeds maximum of {max} chars"
-                        ),
+                        reason: format!("SMILES length {len} chars exceeds maximum of {max} chars"),
                     });
                 }
             }
@@ -220,6 +213,7 @@ impl SynthesisBundle {
 }
 
 #[cfg(test)]
+#[allow(clippy::items_after_test_module)]
 mod tests {
     use super::*;
     use chrono::Utc;
@@ -321,7 +315,13 @@ mod tests {
             ..base_bundle()
         };
         let err = b.validate_bundle_shape(&base_profile()).unwrap_err();
-        assert!(matches!(err, ValidationError::BundleFieldInvalid { field: "source", .. }));
+        assert!(matches!(
+            err,
+            ValidationError::BundleFieldInvalid {
+                field: "source",
+                ..
+            }
+        ));
     }
 
     #[test]
@@ -340,7 +340,13 @@ mod tests {
             ..base_bundle()
         };
         let err = b.validate_bundle_shape(&base_profile()).unwrap_err();
-        assert!(matches!(err, ValidationError::BundleFieldInvalid { field: "source", .. }));
+        assert!(matches!(
+            err,
+            ValidationError::BundleFieldInvalid {
+                field: "source",
+                ..
+            }
+        ));
     }
 
     // --- V10-3: metadata bounds ---
@@ -348,17 +354,31 @@ mod tests {
     #[test]
     fn metadata_key_too_long() {
         let mut b = base_bundle();
-        b.metadata.insert("k".repeat(MAX_METADATA_KEY_LEN + 1), "v".into());
+        b.metadata
+            .insert("k".repeat(MAX_METADATA_KEY_LEN + 1), "v".into());
         let err = b.validate_bundle_shape(&base_profile()).unwrap_err();
-        assert!(matches!(err, ValidationError::BundleFieldInvalid { field: "metadata", .. }));
+        assert!(matches!(
+            err,
+            ValidationError::BundleFieldInvalid {
+                field: "metadata",
+                ..
+            }
+        ));
     }
 
     #[test]
     fn metadata_value_too_long() {
         let mut b = base_bundle();
-        b.metadata.insert("k".into(), "v".repeat(MAX_METADATA_VALUE_LEN + 1));
+        b.metadata
+            .insert("k".into(), "v".repeat(MAX_METADATA_VALUE_LEN + 1));
         let err = b.validate_bundle_shape(&base_profile()).unwrap_err();
-        assert!(matches!(err, ValidationError::BundleFieldInvalid { field: "metadata", .. }));
+        assert!(matches!(
+            err,
+            ValidationError::BundleFieldInvalid {
+                field: "metadata",
+                ..
+            }
+        ));
     }
 
     #[test]
@@ -368,7 +388,13 @@ mod tests {
             b.metadata.insert(format!("k{i}"), "v".into());
         }
         let err = b.validate_bundle_shape(&base_profile()).unwrap_err();
-        assert!(matches!(err, ValidationError::BundleFieldInvalid { field: "metadata", .. }));
+        assert!(matches!(
+            err,
+            ValidationError::BundleFieldInvalid {
+                field: "metadata",
+                ..
+            }
+        ));
     }
 
     #[test]
@@ -376,17 +402,26 @@ mod tests {
         let mut b = base_bundle();
         // Each entry: key=1 byte, value=1024 bytes -> total = 11 * 1025 = 11_275 > 10240
         for i in 0..11 {
-            b.metadata.insert(format!("{i}"), "v".repeat(MAX_METADATA_VALUE_LEN));
+            b.metadata
+                .insert(format!("{i}"), "v".repeat(MAX_METADATA_VALUE_LEN));
         }
         let err = b.validate_bundle_shape(&base_profile()).unwrap_err();
-        assert!(matches!(err, ValidationError::BundleFieldInvalid { field: "metadata", .. }));
+        assert!(matches!(
+            err,
+            ValidationError::BundleFieldInvalid {
+                field: "metadata",
+                ..
+            }
+        ));
     }
 
     #[test]
     fn metadata_happy_path() {
         let mut b = base_bundle();
-        b.metadata.insert("experiment_id".into(), "EXP-2026-001".into());
-        b.metadata.insert("operator".into(), "alice@example.com".into());
+        b.metadata
+            .insert("experiment_id".into(), "EXP-2026-001".into());
+        b.metadata
+            .insert("operator".into(), "alice@example.com".into());
         b.validate_bundle_shape(&base_profile()).unwrap();
     }
 
@@ -420,7 +455,13 @@ mod tests {
             ..base_bundle()
         };
         let err = b.validate_bundle_shape(&p).unwrap_err();
-        assert!(matches!(err, ValidationError::BundleFieldInvalid { field: "payload", .. }));
+        assert!(matches!(
+            err,
+            ValidationError::BundleFieldInvalid {
+                field: "payload",
+                ..
+            }
+        ));
     }
 
     #[test]
@@ -436,7 +477,13 @@ mod tests {
             ..base_bundle()
         };
         let err = b.validate_bundle_shape(&p).unwrap_err();
-        assert!(matches!(err, ValidationError::BundleFieldInvalid { field: "payload", .. }));
+        assert!(matches!(
+            err,
+            ValidationError::BundleFieldInvalid {
+                field: "payload",
+                ..
+            }
+        ));
     }
 
     #[test]
@@ -452,7 +499,13 @@ mod tests {
             ..base_bundle()
         };
         let err = b.validate_bundle_shape(&p).unwrap_err();
-        assert!(matches!(err, ValidationError::BundleFieldInvalid { field: "payload", .. }));
+        assert!(matches!(
+            err,
+            ValidationError::BundleFieldInvalid {
+                field: "payload",
+                ..
+            }
+        ));
     }
 
     #[test]
@@ -468,7 +521,13 @@ mod tests {
             ..base_bundle()
         };
         let err = b.validate_bundle_shape(&p).unwrap_err();
-        assert!(matches!(err, ValidationError::BundleFieldInvalid { field: "payload", .. }));
+        assert!(matches!(
+            err,
+            ValidationError::BundleFieldInvalid {
+                field: "payload",
+                ..
+            }
+        ));
         assert!(err.to_string().contains("2048"));
     }
 }

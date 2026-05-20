@@ -215,7 +215,9 @@ mod tests {
     use super::*;
     use chrono::Utc;
     use invariant_robotics::models::command::{Command, CommandAuthority, JointState};
-    use invariant_robotics::models::verdict::{AuthoritySummary, CheckResult, SignedVerdict, Verdict};
+    use invariant_robotics::models::verdict::{
+        AuthoritySummary, CheckResult, SignedVerdict, Verdict,
+    };
 
     fn make_command(seq: u64) -> Command {
         Command {

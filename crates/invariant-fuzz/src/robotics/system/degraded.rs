@@ -12,7 +12,9 @@ mod tests {
     use invariant_robotics::authority::crypto::generate_keypair;
     use invariant_robotics::models::command::{Command, CommandAuthority, JointState};
     use invariant_robotics::models::profile::SafeStopProfile;
-    use invariant_robotics::models::verdict::{AuthoritySummary, CheckResult, SignedVerdict, Verdict};
+    use invariant_robotics::models::verdict::{
+        AuthoritySummary, CheckResult, SignedVerdict, Verdict,
+    };
     use invariant_robotics::validator::ValidatorConfig;
     use invariant_robotics::watchdog::{Watchdog, WatchdogError, WatchdogState};
     use rand::rngs::OsRng;

@@ -17,8 +17,7 @@ pub use invariant_core::audit::{AuditError, AuditVerifyError};
 /// Generic over `W: Write` so it can target a file (with O_APPEND) or an
 /// in-memory buffer for testing. The input/verdict types are bound to
 /// [`SynthesisBundle`] and [`SignedVerdict`].
-pub type AuditLogger<W> =
-    invariant_core::audit::AuditLogger<W, SynthesisBundle, SignedVerdict>;
+pub type AuditLogger<W> = invariant_core::audit::AuditLogger<W, SynthesisBundle, SignedVerdict>;
 
 /// Verify an audit log's integrity: hash chain continuity (L2), entry hash
 /// correctness, signature validity (L3), and sequence monotonicity.

@@ -95,8 +95,7 @@ fn state_at(id: &str, tick: u32) -> RobotState {
 
 fn all_robots() -> [&'static str; 10] {
     [
-        "arm-1", "arm-2", "arm-3", "arm-4", "arm-5", "arm-6", "arm-7", "arm-8", "base-1",
-        "base-2",
+        "arm-1", "arm-2", "arm-3", "arm-4", "arm-5", "arm-6", "arm-7", "arm-8", "base-1", "base-2",
     ]
 }
 
@@ -130,7 +129,11 @@ fn pre_drift_monitor_admits_every_state() {
         assert!(
             verdict.safe,
             "robot {id} should be safe before drift; failed checks: {:?}",
-            verdict.checks.iter().filter(|c| !c.passed).collect::<Vec<_>>()
+            verdict
+                .checks
+                .iter()
+                .filter(|c| !c.passed)
+                .collect::<Vec<_>>()
         );
     }
 }

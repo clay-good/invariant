@@ -44,7 +44,13 @@ fn k03_estop_recovery_cycle_first_half_engaged_second_half_released() {
     // Both states must appear.
     let states: Vec<bool> = cmds
         .iter()
-        .map(|c| c.environment_state.as_ref().unwrap().e_stop_engaged.unwrap())
+        .map(|c| {
+            c.environment_state
+                .as_ref()
+                .unwrap()
+                .e_stop_engaged
+                .unwrap()
+        })
         .collect();
     assert!(states.contains(&true), "K-03 must include engaged commands");
     assert!(

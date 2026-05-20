@@ -1,0 +1,97 @@
+{
+  "name": "anybotics_anymal",
+  "version": "1.0.0",
+
+  "joints": [
+    {"name": "lf_haa",  "type": "revolute", "min": -0.70,  "max":  0.70,  "max_velocity":  7.5, "max_torque":  40.0, "max_acceleration": 30.0},
+    {"name": "lf_hfe",  "type": "revolute", "min": -1.22,  "max":  2.44,  "max_velocity":  7.5, "max_torque":  40.0, "max_acceleration": 30.0},
+    {"name": "lf_kfe",  "type": "revolute", "min": -2.44,  "max": -0.35,  "max_velocity": 10.0, "max_torque":  80.0, "max_acceleration": 35.0},
+    {"name": "rf_haa",  "type": "revolute", "min": -0.70,  "max":  0.70,  "max_velocity":  7.5, "max_torque":  40.0, "max_acceleration": 30.0},
+    {"name": "rf_hfe",  "type": "revolute", "min": -1.22,  "max":  2.44,  "max_velocity":  7.5, "max_torque":  40.0, "max_acceleration": 30.0},
+    {"name": "rf_kfe",  "type": "revolute", "min": -2.44,  "max": -0.35,  "max_velocity": 10.0, "max_torque":  80.0, "max_acceleration": 35.0},
+    {"name": "lh_haa",  "type": "revolute", "min": -0.70,  "max":  0.70,  "max_velocity":  7.5, "max_torque":  40.0, "max_acceleration": 30.0},
+    {"name": "lh_hfe",  "type": "revolute", "min": -1.22,  "max":  2.44,  "max_velocity":  7.5, "max_torque":  40.0, "max_acceleration": 30.0},
+    {"name": "lh_kfe",  "type": "revolute", "min": -2.44,  "max": -0.35,  "max_velocity": 10.0, "max_torque":  80.0, "max_acceleration": 35.0},
+    {"name": "rh_haa",  "type": "revolute", "min": -0.70,  "max":  0.70,  "max_velocity":  7.5, "max_torque":  40.0, "max_acceleration": 30.0},
+    {"name": "rh_hfe",  "type": "revolute", "min": -1.22,  "max":  2.44,  "max_velocity":  7.5, "max_torque":  40.0, "max_acceleration": 30.0},
+    {"name": "rh_kfe",  "type": "revolute", "min": -2.44,  "max": -0.35,  "max_velocity": 10.0, "max_torque":  80.0, "max_acceleration": 35.0}
+  ],
+
+  "workspace": {
+    "type": "aabb",
+    "min": [-1.0, -1.0, 0.0],
+    "max": [1.0, 1.0, 0.7]
+  },
+
+  "exclusion_zones": [
+    {
+      "type": "aabb",
+      "name": "operator_feet",
+      "min": [0.6, -0.3, 0.0],
+      "max": [2.0, 0.3, 0.3]
+    }
+  ],
+
+  "proximity_zones": [
+    {
+      "name": "human_nearby",
+      "type": "sphere",
+      "center": [1.0, 0.0, 0.35],
+      "radius": 1.2,
+      "velocity_scale": 0.5,
+      "dynamic": true
+    }
+  ],
+
+  "collision_pairs": [
+    ["lf_foot", "rf_foot"],
+    ["lh_foot", "rh_foot"],
+    ["lf_foot", "lh_foot"],
+    ["rf_foot", "rh_foot"]
+  ],
+
+  "stability": {
+    "support_polygon": [[-0.27, -0.16], [0.27, -0.16], [0.27, 0.16], [-0.27, 0.16]],
+    "com_height_estimate": 0.48,
+    "enabled": true
+  },
+
+  "locomotion": {
+    "max_locomotion_velocity": 1.0,
+    "max_step_length": 0.30,
+    "min_foot_clearance": 0.02,
+    "max_step_height": 0.20,
+    "max_ground_reaction_force": 700.0,
+    "friction_coefficient": 0.7,
+    "max_heading_rate": 1.5
+  },
+
+  "environment": {
+    "max_safe_pitch_rad": 0.5236,
+    "max_safe_roll_rad": 0.3491,
+    "max_operating_temperature_c": 45.0,
+    "warning_temperature_c": 35.0,
+    "critical_battery_pct": 5.0,
+    "low_battery_pct": 15.0,
+    "max_latency_ms": 100.0,
+    "warning_latency_ms": 50.0
+  },
+
+  "real_world_margins": {
+    "position_margin": 0.05,
+    "velocity_margin": 0.10,
+    "torque_margin": 0.10,
+    "acceleration_margin": 0.10
+  },
+
+  "max_delta_time": 0.02,
+  "min_collision_distance": 0.01,
+  "global_velocity_scale": 1.0,
+  "watchdog_timeout_ms": 50,
+
+  "safe_stop_profile": {
+    "strategy": "controlled_crouch",
+    "max_deceleration": 18.0,
+    "target_joint_positions": {}
+  }
+}
