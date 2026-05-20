@@ -3,6 +3,16 @@ name: Release
 on:
   push:
     tags: ["v*"]
+  # Allow manual re-run from the GitHub UI (Actions tab → Release →
+  # "Run workflow") so partial-publish recovery doesn't require
+  # deleting and re-pushing the tag. The publish-crates job is
+  # idempotent — already-published crates are skipped.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to re-publish from (e.g. v0.0.3). Used only by github-release / latest-tag jobs to derive version strings."
+        required: false
+        default: "v0.0.3"
 
 # A release run shouldn't be cancelled by a newer tag push (rare) — but if
 # it does happen, only the most recent tag's run should win. No
@@ -37,65 +47,94 @@ jobs:
   # Publish crates to crates.io in dependency order
   # ---------------------------------------------------------------------------
   publish-crates:
+    # Idempotent publish loop. For each crate, we first ask crates.io
+    # whether the exact (name, version) already exists; if it does we
+    # skip the publish so re-running this job after a partial-publish
+    # failure (e.g. rate limit, network blip) doesn't fail with
+    # "crate version is already uploaded".
+    #
+    # The 120s sleep between *new* crate publishes keeps us under the
+    # crates.io "burst" rate limit (~5 new crates per 10 minutes). For
+    # crates that were already published, the skip is instant — no
+    # sleep is consumed.
+    #
+    # Re-running this single job from the GitHub UI is the recommended
+    # recovery path if a publish fails midway.
     name: Publish to crates.io
     needs: preflight
     runs-on: ubuntu-latest
+    env:
+      CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
 
-      - name: Publish invariant-protocol (alias `invariant-core`)
-        run: cargo publish -p invariant-protocol
+      - name: Resolve workspace version
+        id: ver
+        run: |
+          v=$(grep -E '^version[[:space:]]*=' Cargo.toml | head -1 | sed -E 's/.*"([^"]+)".*/\1/')
+          echo "version=${v}" >> "$GITHUB_OUTPUT"
+          echo "Publishing workspace version: ${v}"
+
+      - name: Publish all eight crates (idempotent, rate-limit-aware)
         env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          set -euo pipefail
 
-      - name: Wait for crates.io index
-        run: sleep 30
+          # Publish order MUST respect the dep DAG:
+          #   protocol -> {robotics, biosynthesis}
+          #            -> {eval, sim, coordinator}
+          #            -> fuzz
+          #            -> invariant (binary, depends on everything)
+          CRATES=(
+            invariant-protocol
+            invariant-robotics
+            invariant-biosynthesis
+            invariant-eval
+            invariant-sim
+            invariant-coordinator
+            invariant-fuzz
+            invariant
+          )
 
-      - name: Publish invariant-robotics
-        run: cargo publish -p invariant-robotics
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+          already_on_crates_io() {
+            local name="$1"
+            local code
+            code=$(curl -sS -o /dev/null -w "%{http_code}" \
+              "https://crates.io/api/v1/crates/${name}/${VERSION}")
+            [ "${code}" = "200" ]
+          }
 
-      - name: Publish invariant-biosynthesis
-        run: cargo publish -p invariant-biosynthesis
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+          first_publish=true
+          for crate in "${CRATES[@]}"; do
+            if already_on_crates_io "${crate}"; then
+              echo "::notice::${crate}@${VERSION} already on crates.io — skipping"
+              continue
+            fi
 
-      - name: Wait for crates.io index
-        run: sleep 30
+            # Rate-limit guard for *new* crate uploads: crates.io allows
+            # roughly 5 new crates per 10 minutes (burst), then 1 per
+            # 10 min. 120s between each puts a comfortable margin under
+            # the burst window for the full 8-crate run.
+            if [ "${first_publish}" = false ]; then
+              echo "Sleeping 120s before next new-crate publish (rate-limit safety)…"
+              sleep 120
+            fi
+            first_publish=false
 
-      - name: Publish invariant-eval
-        run: cargo publish -p invariant-eval
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+            echo "::group::Publishing ${crate}@${VERSION}"
+            cargo publish -p "${crate}"
+            echo "::endgroup::"
 
-      - name: Publish invariant-sim
-        run: cargo publish -p invariant-sim
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+            # Brief grace for the crates.io index to update so the next
+            # dependent crate can resolve us.
+            echo "Waiting 30s for crates.io index propagation…"
+            sleep 30
+          done
 
-      - name: Publish invariant-coordinator
-        run: cargo publish -p invariant-coordinator
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-
-      - name: Wait for crates.io index
-        run: sleep 30
-
-      - name: Publish invariant-fuzz
-        run: cargo publish -p invariant-fuzz
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-
-      - name: Wait for crates.io index
-        run: sleep 30
-
-      - name: Publish invariant (binary; was `invariant-cli`)
-        run: cargo publish -p invariant
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+          echo "All crates published or already present."
 
   # ---------------------------------------------------------------------------
   # Generate CycloneDX SBOM and attach to the GitHub Release
@@ -109,10 +148,33 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - run: cargo install cargo-cyclonedx
       - run: cargo cyclonedx --all --format json
+      - name: Collect per-crate SBOMs into dist/
+        # cargo-cyclonedx 0.5.x writes one `bom.cdx.json` (or similar)
+        # per workspace member, inside each crate's directory. Collect
+        # them into a single dist/ folder with crate-prefixed filenames
+        # so the GitHub Release artifact is self-describing.
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          shopt -s globstar nullglob
+          found=0
+          for f in crates/*/bom.cdx.json crates/*/*.cdx.json **/*.cdx.json; do
+            [ -f "$f" ] || continue
+            crate=$(basename "$(dirname "$f")")
+            cp "$f" "dist/${crate}.cdx.json"
+            found=$((found + 1))
+          done
+          if [ "$found" -eq 0 ]; then
+            echo "::error::cargo-cyclonedx produced no .cdx.json files"
+            find . -name "*.cdx.json" -o -name "bom.json" | head -20
+            exit 1
+          fi
+          ls -la dist/
       - uses: actions/upload-artifact@v4
         with:
           name: sbom
-          path: "*.cdx.json"
+          path: dist/*.cdx.json
+          if-no-files-found: error
 
   # ---------------------------------------------------------------------------
   # Build release binaries for 4 targets and attach to the GitHub Release
@@ -192,9 +254,23 @@ jobs:
           name: sbom
           path: dist/
 
-      - name: Create versioned release
+      - name: Resolve release tag
+        # On `push:tags` triggers `github.ref_name` is e.g. `v0.0.3`. On
+        # `workflow_dispatch` it's the branch name (`main`); use the
+        # `tag` input instead so we can re-target an existing tag
+        # without retagging.
+        id: tag
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "name=${{ github.event.inputs.tag }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "name=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create or update versioned release
         uses: softprops/action-gh-release@v3
         with:
+          tag_name: ${{ steps.tag.outputs.name }}
           generate_release_notes: true
           files: |
             dist/invariant-*.tar.gz
@@ -212,6 +288,15 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Resolve release tag
+        id: tag
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "name=${{ github.event.inputs.tag }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "name=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Move latest tag to current commit
         run: |
           git tag -f latest
@@ -220,8 +305,8 @@ jobs:
       - name: Upsert latest GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.tag.outputs.name }}
         run: |
-          VERSION="${GITHUB_REF_NAME}"
 
           BODY="$(cat <<EOF
           **Latest stable release: ${VERSION}**
