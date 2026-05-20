@@ -9,6 +9,13 @@ updates:
     labels:
       - dependencies
     open-pull-requests-limit: 5
+    ignore:
+      # `rand_chacha` 0.9+ requires `rand_core` 0.9+, which is only ABI-
+      # compatible with `rand` 0.9+. The workspace pins `rand = "0.8"` to
+      # avoid the rand 0.9 API rename churn (`thread_rng()` → `rng()`,
+      # `gen()` → `random()`, etc.). Pin manually; reconsider as part of
+      # an explicit `rand 0.8 → 0.9` migration.
+      - dependency-name: "rand_chacha"
 
   - package-ecosystem: github-actions
     directory: /

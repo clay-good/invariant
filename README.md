@@ -1,81 +1,100 @@
 # Invariant
 
-A cryptographic command-validation firewall for AI-controlled physical systems.
-Two product surfaces, one Rust workspace:
+**A cryptographic command-validation firewall for AI-controlled physical systems.**
 
-- **Invariant Robotics** — motion-command validation for industrial robots,
-  humanoids, quadrupeds, manipulators, and end-effectors. 25 deterministic
-  physics checks (P1–P25), URDF kinematics, ISO 15066 collaborative-robot
-  guards, sensor attestation, multi-robot coordination.
-- **Invariant Biosynthesis** — synthesis-bundle validation for AI-controlled
-  DNA / peptide / chemical / lab-protocol synthesizers. D1–D10 / P1–P10 /
-  C1–C10 invariants, hazard screening, BSL2/3/4 profile gating,
-  HSM-friendly attestation.
+Invariant is AI safety infrastructure for the physical world. Wherever a
+neural-network policy can move a motor, dose a reagent, or open a valve,
+Invariant sits between the model and the actuator and refuses any command
+that violates a deterministic safety profile — signed, audited, and
+provable end-to-end.
 
-Both products share a single Rust core (`invariant-core`) implementing the
-PIC/PCA authority chain, append-only signed audit log, key management,
-intent narrowing, threat scoring, and the cross-domain `ValidationInput`
-trait. Domain code lives in `invariant-robotics` and `invariant-biosynthesis`,
-which both implement the same trait surface.
+The same protocol generalises across physical domains. The workspace
+ships two production surfaces today:
 
-## Install
+- **Invariant Robotics** — motion-command validation for industrial
+  arms, humanoids, quadrupeds, mobile manipulators, and end-effector
+  hands. 25 deterministic physics checks (P1–P25), URDF kinematics,
+  ISO 15066 collaborative-robot guards, sensor attestation, and
+  multi-robot coordination. Primary use case: manufacturing cells (CNC
+  tending, pick-and-place, bimanual assembly).
+- **Invariant Biosynthesis** — synthesis-bundle validation for
+  AI-controlled DNA / peptide / chemical / lab-protocol synthesizers.
+  D1–D10 / P1–P10 / C1–C10 invariants, hazard screening (CWC,
+  controlled-substance, virulence-homology), BSL2/3/4 profile gating,
+  HSM-friendly attestation. Primary use case: biomedical labs and
+  industrial biosynthesis lines.
+
+A third domain — e.g. autonomous vehicles, surgical robotics,
+energy-grid actuation — is a matter of implementing a single
+`ValidationInput` trait against the existing protocol core. The
+cryptographic substrate, audit log, and policy engine do not change.
+
+## Why this exists
+
+A model-output check inside the same process as the model is not a
+safety boundary. Invariant treats every command as a signed payload
+crossing an authority chain (PIC → PCA → enforcement), validates it
+against a domain profile that was itself signed by the authorising
+party, and emits a verdict that is itself signed and appended to a
+tamper-evident audit log. Even when the policy model is compromised,
+the firewall's refusals are independently verifiable.
+
+Concretely, Invariant gives operators:
+
+- **A bright line.** Physics, kinematics, and operating-envelope
+  guarantees that hold regardless of model behaviour.
+- **An audit log that survives the model.** Append-only, COSE-signed,
+  externally verifiable.
+- **A profile language.** Robot-class or lab-class operating envelopes
+  expressed as signed JSON. Reviewable, diffable, attestable.
+- **A simulator + adversarial harness.** 15M-episode campaigns with
+  fault injection, watchdog timing, and differential dual-channel
+  validation (IEC 61508-style).
+- **A formal core.** Authority-chain invariants proven in Lean 4
+  under `formal/`.
+
+## Quickstart
+
+Install the unified CLI from crates.io:
 
 ```sh
-cargo install --path crates/invariant-cli
+cargo install invariant
 ```
 
-This installs a single binary `invariant` that dispatches by domain:
+(Note: the underlying library crate publishes as `invariant-protocol`
+on crates.io because `invariant-core` was taken; in Rust code you can
+keep using `invariant_core::*` — the workspace ships an alias.)
+
+Robotics:
 
 ```sh
-invariant robotics validate cmd.json --profile ur10e --chain chain.cose
-invariant biosynthesis validate bundle.json --profile dna-synth-v1 --chain chain.cose
+# Generate an operator keypair.
 invariant keys generate --kid alice --output alice.key
+
+# Validate a motion command against a robot profile.
+invariant robotics validate cmd.json \
+    --profile ur10e_cnc_tending \
+    --chain chain.cose
+
+# Run the embedded Trust Plane server with the Isaac Sim bridge.
+invariant robotics serve --profile ur10e_cnc_tending --key alice.key --bridge
 ```
 
-`invariant <domain> --help` lists every subcommand for that surface.
-
-## Build & Test
+Biosynthesis:
 
 ```sh
-cargo build --workspace
-cargo test --workspace
-cargo clippy --workspace --all-targets -- -D warnings
+# Validate a synthesis bundle against a BSL2 DNA-synth profile.
+invariant biosynthesis validate bundle.json \
+    --profile university_bsl2_dna \
+    --chain chain.cose
+
+# Inspect what a profile authorises.
+invariant biosynthesis inspect --profile industry_peptide
 ```
 
-## Workspace Layout
-
-```
-invariant/
-├── Cargo.toml                          # workspace root
-├── crates/
-│   ├── invariant-core/                 # shared protocol + infra (PCA chain, audit, keys, traits)
-│   ├── invariant-robotics/             # robotics domain (physics, URDF, profiles, sensor)
-│   ├── invariant-biosynthesis/         # biosynthesis domain (D/P/C invariants, screening)
-│   ├── invariant-cli/                  # single binary `invariant`
-│   ├── invariant-sim/                  # simulation harness (per-domain modules)
-│   ├── invariant-eval/                 # trace evaluation (per-domain modules)
-│   ├── invariant-fuzz/                 # adversarial testing (per-domain modules)
-│   └── invariant-coordinator/          # robotics-only multi-robot coordination
-├── profiles/{robotics,biosynthesis}/   # built-in profile JSON
-├── examples/{robotics,biosynthesis}/   # sample inputs and demo scripts
-├── docs/{protocol,robotics,biosynthesis}/  # specs and design docs
-├── formal/                             # Lean 4 proofs of authority chain invariants
-├── campaigns/                          # robotics simulation campaigns
-├── isaac/                              # robotics Isaac Lab integration
-├── invariant-ros2/                     # robotics ROS2 bridge (see docs/ros2.md)
-├── fuzz/                               # cargo-fuzz harness
-└── scripts/                            # operational scripts
-```
-
-## Per-Domain Documentation
-
-- Robotics: [docs/robotics/spec.md](docs/robotics/spec.md) (and the
-  spec-v1.md … spec-v12.md history files alongside it).
-- Biosynthesis: [docs/biosynthesis/spec.md](docs/biosynthesis/spec.md).
-- Shared protocol: [docs/protocol/](docs/protocol/) (extracted from the
-  cross-cutting sections of the per-domain specs).
-- Unification spec: [INVARIANT_UNIFICATION_SPEC.md](INVARIANT_UNIFICATION_SPEC.md).
-- Migration progress: [PROGRESS.md](PROGRESS.md).
+`invariant <domain> --help` lists every subcommand. Built-in profiles
+ship in `profiles/{robotics,biosynthesis}/` and on disk inside each
+domain crate.
 
 ## Architecture
 
@@ -93,22 +112,97 @@ pub trait ValidationInput: Serialize + for<'de> Deserialize<'de> + Send + Sync {
 
 `Command` (robotics) and `SynthesisBundle` (biosynthesis) both implement
 this trait. The shared PCA chain verifier, audit logger, and key
-infrastructure work against the trait, not against either concrete type.
-Adding a third domain is a matter of implementing the trait on a new
-input type — no protocol changes required.
+infrastructure work against the trait — not against either concrete
+type. Adding a third domain is a matter of implementing the trait on a
+new input type. No protocol changes required.
 
-## Roadmap
+## Workspace layout
 
-- **Shadow deployment.** The operational protocol for the first 100-robot-hour
-  observe-only trial on a UR10e CNC cell is documented in
-  [docs/shadow-deployment.md](docs/shadow-deployment.md). Promotion from shadow
-  to enforcement is a separate sign-off.
-- **Closure reports.** The v11 + v12 spec-gap-closure passes are documented
-  at [docs/spec-v11-verification.md](docs/spec-v11-verification.md) and
-  [docs/spec-v12-verification.md](docs/spec-v12-verification.md). The
-  iterative spec lineage (`spec-v1.md` … `spec-v12.md`) is archived under
-  [docs/history/](docs/history/); the authoritative current spec is
-  [docs/robotics/spec.md](docs/robotics/spec.md).
+```
+invariant/
+├── crates/
+│   ├── invariant-core/          # shared protocol core (published as `invariant-protocol`)
+│   │                            #   PCA authority chain, COSE-signed audit log,
+│   │                            #   keys, intent narrowing, ValidationInput trait
+│   ├── invariant-robotics/      # robotics domain: 25 physics checks (P1–P25),
+│   │                            #   URDF kinematics, profiles, sensor attestation
+│   ├── invariant-biosynthesis/  # biosynthesis domain: D/P/C invariants,
+│   │                            #   hazard screening, BSL gating, attestation
+│   ├── invariant-cli/           # single binary `invariant` (published as `invariant`)
+│   ├── invariant-sim/           # simulation harness (per-domain modules)
+│   ├── invariant-eval/          # trace evaluation (per-domain modules)
+│   ├── invariant-fuzz/          # adversarial testing (per-domain modules)
+│   └── invariant-coordinator/   # robotics multi-robot coordination
+├── profiles/{robotics,biosynthesis}/   # built-in profile JSON
+├── examples/{robotics,biosynthesis}/   # sample inputs and demo scripts
+├── docs/{protocol,robotics,biosynthesis}/   # specs and design docs
+├── formal/                      # Lean 4 proofs of authority-chain invariants
+├── campaigns/                   # robotics simulation campaigns (YAML)
+├── isaac/                       # Isaac Lab integration
+├── invariant-ros2/              # ROS 2 bridge (see docs/ros2.md)
+└── fuzz/                        # cargo-fuzz harness
+```
+
+## Published crates
+
+All eight workspace crates ship to crates.io at the same workspace
+version. Two crates publish under renamed packages because the natural
+names were already taken by another owner:
+
+| Workspace alias | crates.io name | Purpose |
+|---|---|---|
+| `invariant-core` | `invariant-protocol` | shared protocol core, validation trait |
+| `invariant-robotics` | `invariant-robotics` | robotics domain |
+| `invariant-biosynthesis` | `invariant-biosynthesis` | biosynthesis domain |
+| `invariant-cli` | `invariant` | unified binary (`cargo install invariant`) |
+| `invariant-eval` | `invariant-eval` | trace evaluation |
+| `invariant-sim` | `invariant-sim` | simulation harness |
+| `invariant-fuzz` | `invariant-fuzz` | adversarial testing |
+| `invariant-coordinator` | `invariant-coordinator` | multi-robot coordination |
+
+Source code keeps using `invariant_core::*` and `invariant_cli::*` via
+the workspace alias.
+
+## Build & test
+
+```sh
+cargo build --workspace
+cargo test --workspace
+cargo clippy --workspace --all-targets -- -D warnings
+cargo fmt --all --check
+```
+
+## Documentation
+
+- Per-domain specs: [docs/robotics/spec.md](docs/robotics/spec.md),
+  [docs/biosynthesis/spec.md](docs/biosynthesis/spec.md).
+- Shared protocol:
+  [docs/protocol/](docs/protocol/),
+  [docs/pca-chain-envelope.md](docs/pca-chain-envelope.md).
+- Operational: [docs/threat-model.md](docs/threat-model.md),
+  [docs/shadow-deployment.md](docs/shadow-deployment.md),
+  [docs/compliance-matrix.md](docs/compliance-matrix.md).
+- Cross-domain trace evaluation: [docs/eval.md](docs/eval.md).
+- ROS 2 bridge: [docs/ros2.md](docs/ros2.md).
+- Migration history (two source repos → this workspace):
+  [docs/INVARIANT_UNIFICATION_SPEC.md](docs/INVARIANT_UNIFICATION_SPEC.md)
+  and [PROGRESS.md](PROGRESS.md).
+
+## Status & roadmap
+
+- v0.0.3 (this release) — first publish from the unified workspace.
+  Robotics + biosynthesis surfaces are feature-complete against their
+  v12 specs; the protocol core's authority-chain invariants are
+  Lean-verified.
+- The operational protocol for the first 100-robot-hour shadow trial on
+  a UR10e CNC cell is documented in
+  [docs/shadow-deployment.md](docs/shadow-deployment.md). Promotion
+  from shadow to enforcement is a separate sign-off.
+- Verification closure reports for the v11 and v12 spec passes live at
+  [docs/spec-v11-verification.md](docs/spec-v11-verification.md) and
+  [docs/spec-v12-verification.md](docs/spec-v12-verification.md).
+  The full spec lineage (`spec-v1.md` … `spec-v12.md`) is archived
+  under [docs/history/](docs/history/).
 
 ## License
 
@@ -116,5 +210,13 @@ MIT — see [LICENSE](LICENSE).
 
 ## Security
 
-Reporting policy in [SECURITY.md](SECURITY.md). Threat model and incident
-runbooks live alongside the per-domain specs in [docs/](docs/).
+Reporting policy in [SECURITY.md](SECURITY.md). Threat model and
+incident runbooks live alongside the per-domain specs under
+[docs/](docs/).
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). New domains are welcome —
+implement `ValidationInput` for your input type, add a profile schema,
+and you inherit the entire protocol substrate (chain, audit, keys,
+attestation, simulation, eval, fuzz) for free.

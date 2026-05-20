@@ -19,8 +19,12 @@ serde.workspace = true
 serde_json.workspace = true
 serde_yaml.workspace = true
 thiserror.workspace = true
+# rand_chacha 0.3 is the version pinned against rand 0.8 (which is what
+# the rest of the workspace uses via the workspace dependency). Do not
+# accept dependabot bumps to 0.9/0.10 without also bumping `rand` — the
+# rand_core trait surface changed and the call sites in this crate break.
 rand.workspace = true
-rand_chacha = "0.10"
+rand_chacha = "0.3"
 base64.workspace = true
 ed25519-dalek.workspace = true
 sha2.workspace = true

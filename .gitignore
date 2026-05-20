@@ -43,6 +43,8 @@ keys.json
 
 # Runtime artifacts
 *.jsonl
+# ... but test fixtures must always be committed.
+!**/tests/fixtures/*.jsonl
 safe-stop.json
 results/
 
@@ -61,5 +63,6 @@ dist/
 *.orig
 
 # Downloaded CI log dumps (e.g. `gh run download` extracts to a folder
-# named `logs_<run-id>`)
+# named `logs_<run-id>`, or a single concatenated `log.log`)
 logs_*/
+log.log
