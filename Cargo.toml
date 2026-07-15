@@ -22,7 +22,7 @@ homepage = "https://github.com/clay-good/invariant"
 
 [workspace.dependencies]
 # Crypto
-ed25519-dalek = { version = "2.1", features = ["rand_core"] }
+ed25519-dalek = { version = "3.0", features = ["rand_core"] }
 coset = "0.4"
 sha2 = "0.10"
 
