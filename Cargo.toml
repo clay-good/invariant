@@ -34,7 +34,11 @@ chrono = { version = "0.4", features = ["serde"] }
 base64 = "0.22"
 
 # Core utilities
-rand = "0.10"
+# Pinned to 0.8: the crypto stack (ed25519-dalek 2.x, rand_chacha 0.3) is
+# built on rand_core 0.6. rand 0.9/0.10 use rand_core 0.9/0.10, which is
+# incompatible with the workspace's `OsRng`/`SigningKey::generate` call
+# sites. Do not bump without an explicit rand 0.8 -> 0.9 migration.
+rand = "0.8"
 regex = "1.11"
 thiserror = "2.0"
 quick-xml = "0.41"
