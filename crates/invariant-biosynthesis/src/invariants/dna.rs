@@ -917,9 +917,9 @@ fn codon_chi_squared(
             continue;
         }
         // Reconstruct the codon from index to check if it was observed.
-        let c0 = [b'A', b'C', b'G', b'T'][(idx >> 4) & 3];
-        let c1 = [b'A', b'C', b'G', b'T'][(idx >> 2) & 3];
-        let c2 = [b'A', b'C', b'G', b'T'][idx & 3];
+        let c0 = b"ACGT"[(idx >> 4) & 3];
+        let c1 = b"ACGT"[(idx >> 2) & 3];
+        let c2 = b"ACGT"[idx & 3];
         let codon = [c0, c1, c2];
         if !counts.contains_key(&codon) {
             let expected = freq * n;
