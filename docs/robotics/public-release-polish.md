@@ -46,7 +46,7 @@ Checklist of items to fix before the repo is ready for public use.
   - Added `.env` and `.env.*` patterns.
 
 - [x] **MF-13: Add `rust-toolchain.toml`**
-  - Pins `stable` channel with `rustfmt` + `clippy` components. MSRV 1.75 in Cargo.toml.
+  - Pins `stable` channel with `rustfmt` + `clippy` components. MSRV 1.86 in Cargo.toml.
 
 - [x] **MF-14: Add doc-test and rustdoc build to CI**
   - Added `doc` job with `RUSTDOCFLAGS: -D warnings`.

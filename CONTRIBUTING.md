@@ -27,7 +27,7 @@ cargo fmt --all --check
    cargo doc --workspace --no-deps
    ```
 4. **Open a pull request** against `main`. CI runs fmt, version-drift,
-   profile-sync, clippy, doc, MSRV (1.75), cargo-deny, the full test
+   profile-sync, clippy, doc, MSRV (1.86), cargo-deny, the full test
    suite, the validate-profiles strict pass, and the Python isaac
    bridge tests. All must pass.
 
