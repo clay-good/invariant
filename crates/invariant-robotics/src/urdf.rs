@@ -190,7 +190,7 @@ pub fn parse_urdf(xml: &str) -> Result<UrdfModel, UrdfError> {
         match reader.read_event_into(&mut buf) {
             Ok(Event::Start(ref e)) | Ok(Event::Empty(ref e)) => {
                 let local = e.local_name();
-                let tag = std::str::from_utf8(local.as_ref()).unwrap_or("");
+                let tag = local.as_ref();
 
                 match tag {
                     "robot" => {
@@ -254,7 +254,7 @@ pub fn parse_urdf(xml: &str) -> Result<UrdfModel, UrdfError> {
             }
             Ok(Event::End(ref e)) => {
                 let local = e.local_name();
-                let tag = std::str::from_utf8(local.as_ref()).unwrap_or("");
+                let tag = local.as_ref();
                 if tag == "joint" {
                     if let Some(builder) = current_joint.take() {
                         joints.push(UrdfJoint {
@@ -301,8 +301,8 @@ struct JointBuilder {
 fn attr_str(e: &quick_xml::events::BytesStart, name: &str) -> Option<String> {
     e.attributes()
         .filter_map(|a| a.ok())
-        .find(|a| a.key.as_ref() == name.as_bytes())
-        .and_then(|a| String::from_utf8(a.value.to_vec()).ok())
+        .find(|a| a.key.as_ref() == name)
+        .map(|a| a.value.into_owned())
 }
 
 fn parse_vec3(s: &str, context: &str) -> Result<[f64; 3], UrdfError> {
