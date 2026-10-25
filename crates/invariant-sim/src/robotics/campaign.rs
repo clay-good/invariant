@@ -543,7 +543,13 @@ pub mod data_outputs {
     /// Compute the SHA-256 of `data`, returning `"sha256:<hex>"`.
     fn sha256_hex(data: &[u8]) -> String {
         let digest = Sha256::digest(data);
-        format!("sha256:{:064x}", digest)
+        let mut out = String::with_capacity(7 + 64);
+        out.push_str("sha256:");
+        for b in digest.iter() {
+            use std::fmt::Write;
+            write!(out, "{b:02x}").expect("write to String");
+        }
+        out
     }
 
     /// A single entry in the verdict chain.
