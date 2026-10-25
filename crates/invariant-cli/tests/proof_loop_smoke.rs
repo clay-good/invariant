@@ -63,7 +63,7 @@ fn build_audit_line(sk: &SigningKey, kid: &str, seq: u64, prev: &str) -> String 
     let body = format!(r#"{{"seq":{seq},"prev":"{prev}"}}"#);
     let mut h = Sha256::new();
     h.update(body.as_bytes());
-    let entry_hash = format!("{:x}", h.finalize());
+    let entry_hash: String = h.finalize().iter().map(|b| format!("{b:02x}")).collect();
     let sig_payload = format!("{kid}:{entry_hash}");
     let sig = sk.sign(sig_payload.as_bytes());
     let sig_b64 = STANDARD.encode(sig.to_bytes());

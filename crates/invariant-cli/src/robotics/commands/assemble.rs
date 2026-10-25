@@ -544,7 +544,11 @@ fn sha256_file_hex(path: &Path) -> Result<String, String> {
     let bytes = std::fs::read(path).map_err(|e| format!("read {}: {e}", path.display()))?;
     let mut h = Sha256::new();
     h.update(&bytes);
-    Ok(format!("{:x}", h.finalize()))
+    let mut hex = String::with_capacity(64);
+    for b in h.finalize() {
+        hex.push_str(&format!("{b:02x}"));
+    }
+    Ok(hex)
 }
 
 fn load_state(sidecar: &Path, output: &Path) -> Result<AssembleState, String> {
@@ -854,7 +858,7 @@ mod tests {
         let body = format!(r#"{{"seq":{seq},"prev":"{prev}"}}"#);
         let mut h = Sha256::new();
         h.update(body.as_bytes());
-        let entry_hash = format!("{:x}", h.finalize());
+        let entry_hash: String = h.finalize().iter().map(|b| format!("{b:02x}")).collect();
         let sig_payload = format!("{kid}:{entry_hash}");
         let sig = sk.sign(sig_payload.as_bytes());
         let sig_b64 = STANDARD.encode(sig.to_bytes());

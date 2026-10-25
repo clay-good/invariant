@@ -5,7 +5,6 @@
 //! 2. A `manifest.json` file adjacent to the binary (if present)
 //! 3. If neither is available, prints the current hash for manual verification
 
-use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -61,8 +60,7 @@ pub fn hash_current_binary() -> Result<String, String> {
 /// Compute SHA-256 of a file, returning `sha256:<hex>`.
 pub fn hash_file(path: &Path) -> Result<String, String> {
     let data = std::fs::read(path).map_err(|e| format!("cannot read {}: {e}", path.display()))?;
-    let hash = Sha256::digest(&data);
-    Ok(format!("sha256:{:x}", hash))
+    Ok(invariant_robotics::util::sha256_hex(&data))
 }
 
 /// Look for a manifest file adjacent to the binary.
@@ -317,7 +315,13 @@ mod tests {
         // the binary bytes, this test catches it.
         let exe = std::env::current_exe().unwrap();
         let bytes = std::fs::read(&exe).unwrap();
-        let expected = format!("sha256:{:x}", Sha256::digest(&bytes));
+        use sha2::{Digest, Sha256};
+        let expected = Sha256::digest(&bytes)
+            .iter()
+            .fold("sha256:".to_string(), |mut acc, b| {
+                acc.push_str(&format!("{b:02x}"));
+                acc
+            });
         let got = hash_current_binary().unwrap();
         assert_eq!(got, expected);
     }

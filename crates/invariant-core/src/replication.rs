@@ -69,7 +69,7 @@ pub fn merkle_root(leaves: &[String]) -> Option<String> {
         current = next;
     }
 
-    Some(format!("sha256:{:x}", Sha256::digest(&current[0])))
+    Some(crate::util::sha256_hex(&current[0]))
 }
 
 /// Compute Merkle root from an audit log JSONL file.

@@ -15,7 +15,6 @@
 //! `serve` command's tokio runtime) is responsible for scheduling checks at
 //! the appropriate frequency and acting on failures.
 
-use sha2::{Digest, Sha256};
 use std::path::Path;
 use std::time::Instant;
 
@@ -135,8 +134,7 @@ fn hash_file_at_current_exe() -> Result<String, String> {
 /// SHA-256 a file, returning `sha256:<hex>`.
 pub fn hash_file(path: &Path) -> Result<String, String> {
     let data = std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
-    let h = Sha256::digest(&data);
-    Ok(format!("sha256:{h:x}"))
+    Ok(crate::util::sha256_hex(&data))
 }
 
 // ---------------------------------------------------------------------------
