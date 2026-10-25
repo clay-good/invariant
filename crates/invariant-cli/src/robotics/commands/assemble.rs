@@ -832,12 +832,27 @@ fn default_binary_hash() -> String {
         Ok(b) => b,
         Err(_) => return "sha256:unknown".into(),
     };
-    format!("sha256:{}", invariant_robotics::util::sha256_hex(&bytes))
+    // `sha256_hex` already prefixes `"sha256:"`.
+    invariant_robotics::util::sha256_hex(&bytes)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn default_binary_hash_matches_verify_self() {
+        // The `--binary-hash` flag documents its default as "the SHA-256 of
+        // the running binary (matches `verify-self`)". `sha256_hex` already
+        // prefixes `"sha256:"`, so wrapping it in another `format!` once
+        // produced `sha256:sha256:<hex>` and broke that promise.
+        let got = default_binary_hash();
+        let expected =
+            crate::robotics::commands::verify_self::hash_current_binary().expect("hash own binary");
+        assert_eq!(got, expected);
+        assert_eq!(got.matches("sha256:").count(), 1, "doubled prefix: {got}");
+    }
+
     use base64::{engine::general_purpose::STANDARD, Engine};
     use ed25519_dalek::Signer;
     use rand::rngs::OsRng;
