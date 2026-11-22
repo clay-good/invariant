@@ -7,10 +7,10 @@
 
 use std::collections::HashMap;
 
-use chrono::TimeZone;
 use invariant_core::proof_package::{
     canonical_json, CampaignSummary, ProofPackageManifest, CURRENT_FORMAT_VERSION,
 };
+use invariant_core::time::Timestamp;
 
 fn fixture_manifest() -> ProofPackageManifest {
     let mut file_hashes = HashMap::new();
@@ -31,7 +31,7 @@ fn fixture_manifest() -> ProofPackageManifest {
         format_version: CURRENT_FORMAT_VERSION,
         version: "1.0.0".to_string(),
         // Frozen timestamp so the golden bytes don't drift.
-        generated_at: chrono::Utc.with_ymd_and_hms(2026, 5, 16, 12, 0, 0).unwrap(),
+        generated_at: Timestamp::parse_rfc3339("2026-05-16T12:00:00Z").unwrap(),
         campaign_name: "golden".to_string(),
         profile_name: "ur10e".to_string(),
         profile_hash: "sha256:profile-golden".to_string(),

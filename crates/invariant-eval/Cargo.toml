@@ -16,7 +16,6 @@ invariant-robotics.workspace = true
 invariant-biosynthesis.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-chrono.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]

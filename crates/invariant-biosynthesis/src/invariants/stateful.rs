@@ -262,7 +262,7 @@ mod tests {
 
     fn dna_bundle(seq: &str) -> SynthesisBundle {
         SynthesisBundle {
-            timestamp: chrono::Utc::now(),
+            timestamp: invariant_core::time::Timestamp::now(),
             source: "test".into(),
             sequence: 1,
             payload: SynthesisPayload::Dna {

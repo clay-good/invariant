@@ -80,7 +80,7 @@ pub fn run(args: &BenchArgs) -> i32 {
         .collect();
 
     let cmd = Command {
-        timestamp: chrono::Utc::now(),
+        timestamp: invariant_core::time::Timestamp::now(),
         source: "bench".into(),
         sequence: 0,
         joint_states,
@@ -103,7 +103,7 @@ pub fn run(args: &BenchArgs) -> i32 {
         environment_state: None,
     };
 
-    let now = chrono::Utc::now();
+    let now = invariant_core::time::Timestamp::now();
     let n = args.iterations as usize;
     let mut latencies = Vec::with_capacity(n);
 

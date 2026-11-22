@@ -10,7 +10,7 @@
 //! v11 prompt 2.6 — see `docs/robotics/spec-v11.md` and
 //! `docs/robotics/spec-15m-campaign.md` §3.
 
-use chrono::Utc;
+use invariant_core::time::Timestamp;
 use invariant_robotics::models::authority::Operation;
 use invariant_robotics::profiles::load_builtin;
 use invariant_sim::robotics::scenario::{ScenarioGenerator, ScenarioType};
@@ -154,7 +154,7 @@ fn g_08_expired_chain_timestamps_are_one_year_in_past() {
     let profile = load_ur10();
     let count = 6;
     let pca = "harness_supplied_chain_b64";
-    let now = Utc::now();
+    let now = Timestamp::now();
     let cmds = ScenarioGenerator::new(&profile, ScenarioType::ExpiredChain).generate_commands(
         count,
         pca,
@@ -164,7 +164,7 @@ fn g_08_expired_chain_timestamps_are_one_year_in_past() {
 
     const ONE_YEAR_SECONDS: i64 = 365 * 24 * 3600;
     for (i, c) in cmds.iter().enumerate() {
-        let age = (now - c.timestamp).num_seconds();
+        let age = (now - c.timestamp).as_secs();
         // Allow a small wall-clock band for test-execution latency, but
         // every command must be at least ~1 year old.
         assert!(

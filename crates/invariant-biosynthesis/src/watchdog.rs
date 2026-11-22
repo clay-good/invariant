@@ -8,7 +8,7 @@
 //! The full timing logic is ported in Step 3; Step 0 only defines the
 //! type shape so downstream crates can link.
 
-use chrono::{DateTime, Utc};
+use invariant_core::time::Timestamp;
 use serde::{Deserialize, Serialize};
 
 /// A safe-stop action to execute when the watchdog times out.
@@ -25,7 +25,7 @@ pub struct Heartbeat {
     /// Monotonic sequence number of this heartbeat.
     pub sequence: u64,
     /// Timestamp the heartbeat was emitted.
-    pub timestamp: DateTime<Utc>,
+    pub timestamp: Timestamp,
     /// Configured timeout in milliseconds — if the next heartbeat does not
     /// arrive within this window the platform must execute `on_timeout`.
     pub timeout_ms: u64,

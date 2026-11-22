@@ -142,7 +142,7 @@ pub fn list_injections() -> &'static [InjectionType] {
 ///
 /// ```
 /// use std::collections::HashMap;
-/// use chrono::Utc;
+/// use invariant_core::time::Timestamp;
 /// use invariant_sim::robotics::injector::{inject, InjectionType};
 /// use invariant_robotics::models::command::{Command, CommandAuthority, JointState};
 ///
@@ -152,7 +152,7 @@ pub fn list_injections() -> &'static [InjectionType] {
 /// // Start with a command whose joint velocities are within limits.
 /// let original_velocity = 0.1_f64;
 /// let mut cmd = Command {
-///     timestamp: Utc::now(),
+///     timestamp: Timestamp::now(),
 ///     source: "test".to_string(),
 ///     sequence: 0,
 ///     joint_states: vec![JointState {
@@ -829,7 +829,7 @@ mod tests {
 
     /// Build a minimal valid command from the given profile.
     fn make_cmd(profile: &RobotProfile) -> Command {
-        use chrono::Utc;
+        use invariant_core::time::Timestamp;
 
         let joint_states = profile
             .joints
@@ -854,7 +854,7 @@ mod tests {
         };
 
         Command {
-            timestamp: Utc::now(),
+            timestamp: Timestamp::now(),
             source: "test_agent".to_owned(),
             sequence: 42,
             joint_states,

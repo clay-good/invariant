@@ -40,8 +40,8 @@ mod tests {
     use crate::validator::ValidatorConfig;
     use base64::engine::general_purpose::STANDARD;
     use base64::Engine;
-    use chrono::Utc;
     use ed25519_dalek::SigningKey;
+    use invariant_core::time::Timestamp;
     use rand::rngs::OsRng;
     use std::collections::{BTreeSet, HashMap};
 
@@ -107,7 +107,7 @@ mod tests {
     #[allow(dead_code)]
     fn make_command(chain_b64: &str, required_ops: Vec<Operation>) -> Command {
         Command {
-            timestamp: Utc::now(),
+            timestamp: Timestamp::now(),
             source: "test".into(),
             sequence: 1,
             joint_states: vec![JointState {
@@ -163,7 +163,7 @@ mod tests {
         let mut cmd = command.clone();
         cmd.authority.pca_chain = chain_b64;
 
-        let result = config.validate(&cmd, Utc::now(), None).unwrap();
+        let result = config.validate(&cmd, Timestamp::now(), None).unwrap();
         (result.signed_verdict, config, sign_sk)
     }
 
@@ -171,9 +171,8 @@ mod tests {
         let (sign_sk, _) = make_keypair();
         // Use a fixed timestamp so that entry_hash values are deterministic
         // across repeated calls (Finding 49).
-        let fixed_ts = chrono::DateTime::parse_from_rfc3339("2024-01-01T00:00:00Z")
-            .unwrap()
-            .with_timezone(&Utc);
+        let fixed_ts =
+            invariant_core::time::Timestamp::parse_rfc3339("2024-01-01T00:00:00Z").unwrap();
         let verdict = Verdict {
             approved: true,
             command_hash: "sha256:abc123".into(),
@@ -212,7 +211,7 @@ mod tests {
 
     fn make_simple_command() -> Command {
         Command {
-            timestamp: Utc::now(),
+            timestamp: Timestamp::now(),
             source: "test".into(),
             sequence: 1,
             joint_states: vec![JointState {
@@ -468,7 +467,7 @@ mod tests {
         // same heap values), the JSON serialisation is byte-identical across
         // both invocations, making the entry_hash and the Ed25519 signature
         // deterministic.  If each call were to use a freshly-constructed
-        // command or verdict with Utc::now() inside, clock drift between the
+        // command or verdict with Timestamp::now() inside, clock drift between the
         // two calls could produce different hashes and this assertion would
         // fail non-deterministically.
         let (sign_sk, _) = make_keypair();
@@ -498,7 +497,7 @@ mod tests {
             approved: false,
             command_hash: "sha256:rejected".into(),
             command_sequence: 1,
-            timestamp: Utc::now(),
+            timestamp: Timestamp::now(),
             checks: vec![CheckResult {
                 name: "authority".into(),
                 category: "authority".into(),

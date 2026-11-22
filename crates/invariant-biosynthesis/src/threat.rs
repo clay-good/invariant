@@ -393,7 +393,7 @@ fn jaccard(a: &[u64], b: &[u64]) -> f64 {
 mod tests {
     use super::*;
     use crate::models::bundle::{BundleAuthority, SynthesisPayload};
-    use chrono::Utc;
+    use invariant_core::time::Timestamp;
 
     fn profile() -> BioProfile {
         BioProfile {
@@ -421,7 +421,7 @@ mod tests {
 
     fn dna_bundle(seq: &str, sequence_no: u64) -> SynthesisBundle {
         SynthesisBundle {
-            timestamp: Utc::now(),
+            timestamp: Timestamp::now(),
             source: "t".into(),
             sequence: sequence_no,
             payload: SynthesisPayload::Dna {

@@ -8,8 +8,8 @@
 #[cfg(test)]
 mod tests {
     use base64::{engine::general_purpose::STANDARD, Engine};
-    use chrono::Utc;
     use ed25519_dalek::SigningKey;
+    use invariant_core::time::Timestamp;
     use invariant_robotics::audit::{verify_log, AuditLogger};
     use invariant_robotics::authority::crypto::generate_keypair;
     use invariant_robotics::models::command::{Command, CommandAuthority, JointState};
@@ -27,7 +27,7 @@ mod tests {
 
     fn minimal_command() -> Command {
         Command {
-            timestamp: Utc::now(),
+            timestamp: Timestamp::now(),
             source: "sa-test".into(),
             sequence: 0,
             joint_states: vec![JointState {
@@ -59,7 +59,7 @@ mod tests {
                 approved: true,
                 command_hash: format!("sha256:cmd-{seq}"),
                 command_sequence: seq,
-                timestamp: Utc::now(),
+                timestamp: Timestamp::now(),
                 checks: vec![CheckResult {
                     name: "test".into(),
                     category: "test".into(),

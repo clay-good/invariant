@@ -89,9 +89,9 @@ use invariant_robotics::models::trace::Trace;
 /// use invariant_robotics::models::command::{Command, CommandAuthority, JointState};
 /// use invariant_robotics::models::verdict::{SignedVerdict, Verdict, CheckResult, AuthoritySummary};
 ///
-/// let ts = chrono::DateTime::parse_from_rfc3339("2024-01-01T00:00:00Z")
+/// let ts = invariant_core::time::Timestamp::parse_rfc3339("2024-01-01T00:00:00Z")
 ///     .unwrap()
-///     .with_timezone(&chrono::Utc);
+///     ;
 ///
 /// // Build a single-step trace where "authority" passed.
 /// let cmd = Command {

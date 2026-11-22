@@ -11,8 +11,8 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use base64::{engine::general_purpose::STANDARD, Engine};
-use chrono::{DateTime, Utc};
 use ed25519_dalek::{Signer, SigningKey, VerifyingKey};
+use invariant_core::time::Timestamp;
 use thiserror::Error;
 
 use crate::attestation::{AttestationVerifier, AttestedInput};
@@ -259,7 +259,7 @@ impl ValidatorConfig {
     pub fn validate(
         &self,
         bundle: &SynthesisBundle,
-        now: DateTime<Utc>,
+        now: Timestamp,
         _extra: Option<&[u8]>,
     ) -> Result<ValidationOutput, ValidatorError> {
         self.validate_with_attested_inputs(bundle, &[], None, now)
@@ -273,7 +273,7 @@ impl ValidatorConfig {
         bundle: &SynthesisBundle,
         attested_inputs: &[AttestedInput],
         verifier: Option<&mut AttestationVerifier>,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<ValidationOutput, ValidatorError> {
         // Emit a warning when the stateful detector was explicitly bypassed.
         if let Some(ref reason) = self.stateful_bypass_reason {
@@ -333,7 +333,7 @@ impl ValidatorConfig {
         bundle: &SynthesisBundle,
         attestation_check: Option<CheckResult>,
         attestation_passed: bool,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<ValidationOutput, ValidatorError> {
         // ---- Bundle shape pre-check (V10-2, V10-3, V10-4) ----
         // Validates source length, metadata bounds, and payload-size caps
@@ -792,7 +792,7 @@ mod tests {
 
     fn make_bundle() -> SynthesisBundle {
         SynthesisBundle {
-            timestamp: Utc::now(),
+            timestamp: Timestamp::now(),
             source: "test".into(),
             sequence: 1,
             payload: SynthesisPayload::Dna {
@@ -820,7 +820,9 @@ mod tests {
         let cfg =
             ValidatorConfig::new(make_profile(), HashMap::new(), sk, "validator-key-1".into())
                 .unwrap();
-        let out = cfg.validate(&make_bundle(), Utc::now(), None).unwrap();
+        let out = cfg
+            .validate(&make_bundle(), Timestamp::now(), None)
+            .unwrap();
         assert_eq!(out.invariant_results.len(), 34);
         // 1 authority + 1 screening + 34 invariants + 1 homology_engine_status + 1 chemistry_engine_status + 1 stateful detector.
         assert_eq!(out.signed_verdict.verdict.checks.len(), 39);
@@ -832,7 +834,9 @@ mod tests {
         let cfg =
             ValidatorConfig::new(make_profile(), HashMap::new(), sk, "validator-key-1".into())
                 .unwrap();
-        let out = cfg.validate(&make_bundle(), Utc::now(), None).unwrap();
+        let out = cfg
+            .validate(&make_bundle(), Timestamp::now(), None)
+            .unwrap();
         assert!(out
             .signed_verdict
             .verdict
@@ -850,7 +854,9 @@ mod tests {
         let cfg =
             ValidatorConfig::new(make_profile(), HashMap::new(), sk, "validator-key-1".into())
                 .unwrap();
-        let out = cfg.validate(&make_bundle(), Utc::now(), None).unwrap();
+        let out = cfg
+            .validate(&make_bundle(), Timestamp::now(), None)
+            .unwrap();
         assert!(!out.signed_verdict.verdict.approved);
     }
 
@@ -860,7 +866,9 @@ mod tests {
         let cfg =
             ValidatorConfig::new(make_profile(), HashMap::new(), sk, "validator-key-1".into())
                 .unwrap();
-        let out = cfg.validate(&make_bundle(), Utc::now(), None).unwrap();
+        let out = cfg
+            .validate(&make_bundle(), Timestamp::now(), None)
+            .unwrap();
         assert_eq!(out.signed_verdict.signer_kid, "validator-key-1");
         assert!(!out.signed_verdict.verdict_signature.is_empty());
     }
@@ -881,7 +889,9 @@ mod tests {
             ValidatorConfig::new(make_profile(), HashMap::new(), sk, "validator-key-1".into())
                 .unwrap()
                 .with_invariant_selection(sel);
-        let out = cfg.validate(&make_bundle(), Utc::now(), None).unwrap();
+        let out = cfg
+            .validate(&make_bundle(), Timestamp::now(), None)
+            .unwrap();
         assert_eq!(out.invariant_results.len(), 10);
     }
 
@@ -918,7 +928,9 @@ mod tests {
         let cfg =
             ValidatorConfig::new(make_profile(), HashMap::new(), sk, "validator-key-1".into())
                 .unwrap();
-        let out = cfg.validate(&make_bundle(), Utc::now(), None).unwrap();
+        let out = cfg
+            .validate(&make_bundle(), Timestamp::now(), None)
+            .unwrap();
         let screening = out
             .signed_verdict
             .verdict
@@ -940,7 +952,9 @@ mod tests {
             ValidatorConfig::new(make_profile(), HashMap::new(), sk, "validator-key-1".into())
                 .unwrap()
                 .with_allow_missing_hazard_db(true);
-        let out = cfg.validate(&make_bundle(), Utc::now(), None).unwrap();
+        let out = cfg
+            .validate(&make_bundle(), Timestamp::now(), None)
+            .unwrap();
         let screening = out
             .signed_verdict
             .verdict
@@ -959,7 +973,9 @@ mod tests {
             ValidatorConfig::new(make_profile(), HashMap::new(), sk, "validator-key-1".into())
                 .unwrap()
                 .with_hazard_db(db_with_dna_pattern("ZZZZZZ"));
-        let out = cfg.validate(&make_bundle(), Utc::now(), None).unwrap();
+        let out = cfg
+            .validate(&make_bundle(), Timestamp::now(), None)
+            .unwrap();
         let screening = out
             .signed_verdict
             .verdict
@@ -979,7 +995,9 @@ mod tests {
             ValidatorConfig::new(make_profile(), HashMap::new(), sk, "validator-key-1".into())
                 .unwrap()
                 .with_hazard_db(db_with_dna_pattern("ATGCGT"));
-        let out = cfg.validate(&make_bundle(), Utc::now(), None).unwrap();
+        let out = cfg
+            .validate(&make_bundle(), Timestamp::now(), None)
+            .unwrap();
         let screening = out
             .signed_verdict
             .verdict
@@ -1010,7 +1028,7 @@ mod tests {
         let mut keys = HashMap::new();
         keys.insert("att-1".into(), signer.verifying_key());
         let mut v = AttestationVerifier::new(keys);
-        let now = Utc::now();
+        let now = Timestamp::now();
         let input = sign_attested_input("scr", now, "n1", "{}", "att-1", &signer);
         let out = cfg
             .validate_with_attested_inputs(&make_bundle(), &[input], Some(&mut v), now)
@@ -1030,7 +1048,7 @@ mod tests {
     fn validator_missing_verifier_fails_closed_when_inputs_present() {
         let cfg = cfg_for_attestation_tests();
         let signer = SigningKey::generate(&mut OsRng);
-        let now = Utc::now();
+        let now = Timestamp::now();
         let input = sign_attested_input("scr", now, "n2", "{}", "att-1", &signer);
         let out = cfg
             .validate_with_attested_inputs(&make_bundle(), &[input], None, now)
@@ -1053,7 +1071,7 @@ mod tests {
         // No trusted keys -> verification fails on UnknownKid.
         let mut v = AttestationVerifier::new(HashMap::new());
         let signer = SigningKey::generate(&mut OsRng);
-        let now = Utc::now();
+        let now = Timestamp::now();
         let input = sign_attested_input("scr", now, "n3", "{}", "att-1", &signer);
         let out = cfg
             .validate_with_attested_inputs(&make_bundle(), &[input], Some(&mut v), now)
@@ -1073,7 +1091,9 @@ mod tests {
     #[test]
     fn validator_no_attested_inputs_no_attestation_check() {
         let cfg = cfg_for_attestation_tests();
-        let out = cfg.validate(&make_bundle(), Utc::now(), None).unwrap();
+        let out = cfg
+            .validate(&make_bundle(), Timestamp::now(), None)
+            .unwrap();
         assert!(out
             .signed_verdict
             .verdict
@@ -1094,7 +1114,9 @@ mod tests {
         let cfg =
             ValidatorConfig::new(make_profile(), HashMap::new(), sk, "validator-key-1".into())
                 .unwrap();
-        let out = cfg.validate(&make_bundle(), Utc::now(), None).unwrap();
+        let out = cfg
+            .validate(&make_bundle(), Timestamp::now(), None)
+            .unwrap();
         assert!(out
             .signed_verdict
             .verdict
@@ -1116,7 +1138,9 @@ mod tests {
             ValidatorConfig::new(make_profile(), HashMap::new(), sk, "validator-key-1".into())
                 .unwrap()
                 .with_threat_scorer(scorer);
-        let out = cfg.validate(&make_bundle(), Utc::now(), None).unwrap();
+        let out = cfg
+            .validate(&make_bundle(), Timestamp::now(), None)
+            .unwrap();
 
         let threat_check = out
             .signed_verdict
@@ -1153,7 +1177,7 @@ mod tests {
             let pf = make_profile();
             for i in 0..6u64 {
                 let b = SynthesisBundle {
-                    timestamp: Utc::now(),
+                    timestamp: Timestamp::now(),
                     source: "t".into(),
                     sequence: i,
                     payload: crate::models::bundle::SynthesisPayload::Dna {
@@ -1174,7 +1198,9 @@ mod tests {
                 .unwrap()
                 .with_threat_scorer(scorer)
                 .with_threat_alert_threshold(0.0);
-        let out = cfg.validate(&make_bundle(), Utc::now(), None).unwrap();
+        let out = cfg
+            .validate(&make_bundle(), Timestamp::now(), None)
+            .unwrap();
 
         let threat_check = out
             .signed_verdict
@@ -1203,7 +1229,9 @@ mod tests {
             ValidatorConfig::new(make_profile(), HashMap::new(), sk, "validator-key-1".into())
                 .unwrap()
                 .with_threat_scorer(scorer);
-        let out = cfg.validate(&make_bundle(), Utc::now(), None).unwrap();
+        let out = cfg
+            .validate(&make_bundle(), Timestamp::now(), None)
+            .unwrap();
 
         let analysis = out
             .threat_analysis
@@ -1240,7 +1268,9 @@ mod tests {
             cfg.stateful_detector.is_some(),
             "S1 fragmentation detector must be default-on"
         );
-        let out = cfg.validate(&make_bundle(), Utc::now(), None).unwrap();
+        let out = cfg
+            .validate(&make_bundle(), Timestamp::now(), None)
+            .unwrap();
         let s1 = out
             .signed_verdict
             .verdict
@@ -1261,7 +1291,9 @@ mod tests {
                 .without_stateful_detector()
                 .unwrap();
         assert!(cfg.stateful_detector.is_none());
-        let out = cfg.validate(&make_bundle(), Utc::now(), None).unwrap();
+        let out = cfg
+            .validate(&make_bundle(), Timestamp::now(), None)
+            .unwrap();
         assert!(out
             .signed_verdict
             .verdict
@@ -1276,7 +1308,9 @@ mod tests {
         let cfg =
             ValidatorConfig::new(make_profile(), HashMap::new(), sk, "validator-key-1".into())
                 .unwrap();
-        let out = cfg.validate(&make_bundle(), Utc::now(), None).unwrap();
+        let out = cfg
+            .validate(&make_bundle(), Timestamp::now(), None)
+            .unwrap();
         let status = out
             .signed_verdict
             .verdict
@@ -1333,7 +1367,9 @@ mod tests {
         assert!(cfg.stateful_detector.is_none());
         assert_eq!(cfg.stateful_bypass_reason.as_deref(), Some("testing"));
         // Validation must still run without panicking.
-        let out = cfg.validate(&make_bundle(), Utc::now(), None).unwrap();
+        let out = cfg
+            .validate(&make_bundle(), Timestamp::now(), None)
+            .unwrap();
         assert!(out
             .signed_verdict
             .verdict
@@ -1382,7 +1418,9 @@ mod tests {
         let sk = SigningKey::generate(&mut OsRng);
         let cfg =
             ValidatorConfig::new(make_bsl3_profile(), HashMap::new(), sk, "v-key".into()).unwrap();
-        let out = cfg.validate(&make_bundle(), Utc::now(), None).unwrap();
+        let out = cfg
+            .validate(&make_bundle(), Timestamp::now(), None)
+            .unwrap();
         assert!(
             out.threat_analysis.is_some(),
             "BSL-3 validator must produce ThreatAnalysis by default"

@@ -783,12 +783,12 @@ mod tests {
     use crate::models::command::{
         CommandAuthority, EndEffectorForce, EndEffectorPosition, JointState,
     };
-    use chrono::Utc;
+    use invariant_core::time::Timestamp;
     use std::collections::HashMap;
 
     fn make_payload_command() -> Command {
         Command {
-            timestamp: Utc::now(),
+            timestamp: Timestamp::now(),
             source: "sr2-test".into(),
             sequence: 1,
             joint_states: vec![JointState {

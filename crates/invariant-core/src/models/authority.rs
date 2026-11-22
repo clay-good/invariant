@@ -1,4 +1,4 @@
-use chrono::{DateTime, Utc};
+use crate::time::Timestamp;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::collections::BTreeSet;
 use std::fmt;
@@ -181,9 +181,9 @@ impl<'de> Deserialize<'de> for Operation {
 ///     ops,
 ///     kid: "validator-key-001".into(),
 ///     exp: Some(
-///         chrono::DateTime::parse_from_rfc3339("2025-01-01T00:00:00Z")
+///         invariant_core::time::Timestamp::parse_rfc3339("2025-01-01T00:00:00Z")
 ///             .unwrap()
-///             .with_timezone(&chrono::Utc),
+///             ,
 ///     ),
 ///     nbf: None,
 ///     predecessor_digest: [0u8; 32], // v11 1.2 — all-zero at root.
@@ -202,9 +202,9 @@ pub struct Pca {
     /// Key ID of the issuing signer.
     pub kid: String,
     /// Optional expiry (A3 temporal constraint). Replay is rejected after this time.
-    pub exp: Option<DateTime<Utc>>,
+    pub exp: Option<Timestamp>,
     /// Optional not-before (A3 temporal constraint). Rejected before this time.
-    pub nbf: Option<DateTime<Utc>>,
+    pub nbf: Option<Timestamp>,
     /// v11 1.2 — A3 causal binding. SHA-256 of `canonical_bytes(parent)` for
     /// hops at index ≥ 1; all-zero (the `Default` value) for the root hop or
     /// for legacy chains that have not been migrated to set the digest yet.
@@ -261,10 +261,10 @@ impl Pca {
         out.extend_from_slice(kid_bytes);
         // exp / nbf — always emitted as i64 BE; 0 == not present.
         out.push(0x02);
-        let exp_ms = self.exp.map(|t| t.timestamp_millis()).unwrap_or(0);
+        let exp_ms = self.exp.map(|t| t.as_unix_millis()).unwrap_or(0);
         out.extend_from_slice(&exp_ms.to_be_bytes());
         out.push(0x02);
-        let nbf_ms = self.nbf.map(|t| t.timestamp_millis()).unwrap_or(0);
+        let nbf_ms = self.nbf.map(|t| t.as_unix_millis()).unwrap_or(0);
         out.extend_from_slice(&nbf_ms.to_be_bytes());
         out
     }

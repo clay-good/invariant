@@ -3,7 +3,7 @@
 mod tests {
     use std::collections::{BTreeSet, HashMap};
 
-    use chrono::{Duration, Utc};
+    use crate::time::{SignedDuration, Timestamp};
     use ed25519_dalek::SigningKey;
     use rand::rngs::OsRng;
 
@@ -358,7 +358,7 @@ mod tests {
         }
 
         let keys = trusted_keys(&[("key-1", &vk)]);
-        let result = verify_chain(&[signed], &keys, Utc::now());
+        let result = verify_chain(&[signed], &keys, Timestamp::now());
         assert!(result.is_err());
     }
 
@@ -371,7 +371,7 @@ mod tests {
         let signed = sign_pca(&claim, &sk).unwrap();
 
         let keys = trusted_keys(&[("key-1", &vk)]);
-        let chain = verify_chain(&[signed], &keys, Utc::now()).unwrap();
+        let chain = verify_chain(&[signed], &keys, Timestamp::now()).unwrap();
 
         assert_eq!(chain.origin_principal(), "alice");
         assert_eq!(*chain.final_ops(), ops(&["actuate:arm:*"]));
@@ -397,7 +397,7 @@ mod tests {
         let signed1 = sign_pca(&claims[1], &sk2).unwrap();
 
         let keys = trusted_keys(&[("key-1", &vk1), ("key-2", &vk2)]);
-        let chain = verify_chain(&[signed0, signed1], &keys, Utc::now()).unwrap();
+        let chain = verify_chain(&[signed0, signed1], &keys, Timestamp::now()).unwrap();
 
         assert_eq!(chain.origin_principal(), "alice");
         assert_eq!(
@@ -425,7 +425,7 @@ mod tests {
         let signed2 = sign_pca(&claims[2], &sk3).unwrap();
 
         let keys = trusted_keys(&[("key-1", &vk1), ("key-2", &vk2), ("key-3", &vk3)]);
-        let chain = verify_chain(&[signed0, signed1, signed2], &keys, Utc::now()).unwrap();
+        let chain = verify_chain(&[signed0, signed1, signed2], &keys, Timestamp::now()).unwrap();
 
         assert_eq!(*chain.final_ops(), ops(&["actuate:arm:shoulder"]));
     }
@@ -433,7 +433,7 @@ mod tests {
     #[test]
     fn empty_chain_rejected() {
         let keys: HashMap<String, ed25519_dalek::VerifyingKey> = HashMap::new();
-        let result = verify_chain(&[], &keys, Utc::now());
+        let result = verify_chain(&[], &keys, Timestamp::now());
         assert!(matches!(result, Err(AuthorityError::EmptyChain)));
     }
 
@@ -449,7 +449,7 @@ mod tests {
         let signed1 = sign_pca(&claim1, &sk2).unwrap();
 
         let keys = trusted_keys(&[("key-1", &vk1), ("key-2", &vk2)]);
-        let result = verify_chain(&[signed0, signed1], &keys, Utc::now());
+        let result = verify_chain(&[signed0, signed1], &keys, Timestamp::now());
 
         match result {
             Err(AuthorityError::ProvenanceMismatch {
@@ -480,7 +480,7 @@ mod tests {
         let signed1 = sign_pca(&claim1, &sk2).unwrap();
 
         let keys = trusted_keys(&[("key-1", &vk1), ("key-2", &vk2)]);
-        let result = verify_chain(&[signed0, signed1], &keys, Utc::now());
+        let result = verify_chain(&[signed0, signed1], &keys, Timestamp::now());
 
         match result {
             Err(AuthorityError::MonotonicityViolation { hop: 1, op }) => {
@@ -497,7 +497,7 @@ mod tests {
         let signed = sign_pca(&claim, &sk).unwrap();
 
         let keys: HashMap<String, ed25519_dalek::VerifyingKey> = HashMap::new();
-        let result = verify_chain(&[signed], &keys, Utc::now());
+        let result = verify_chain(&[signed], &keys, Timestamp::now());
 
         match result {
             Err(AuthorityError::UnknownKeyId { hop: 0, kid }) => {
@@ -517,7 +517,7 @@ mod tests {
 
         // Register a different key under the same kid.
         let keys = trusted_keys(&[("key-1", &vk2)]);
-        let result = verify_chain(&[signed], &keys, Utc::now());
+        let result = verify_chain(&[signed], &keys, Timestamp::now());
 
         assert!(matches!(
             result,
@@ -532,14 +532,14 @@ mod tests {
             p_0: "alice".into(),
             ops: ops(&["actuate:arm:*"]),
             kid: "key-1".into(),
-            exp: Some(Utc::now() - Duration::seconds(10)),
+            exp: Some(Timestamp::now() - SignedDuration::from_secs(10)),
             nbf: None,
             predecessor_digest: [0u8; 32],
         };
         let signed = sign_pca(&claim, &sk).unwrap();
 
         let keys = trusted_keys(&[("key-1", &vk)]);
-        let result = verify_chain(&[signed], &keys, Utc::now());
+        let result = verify_chain(&[signed], &keys, Timestamp::now());
 
         assert!(matches!(
             result,
@@ -555,13 +555,13 @@ mod tests {
             ops: ops(&["actuate:arm:*"]),
             kid: "key-1".into(),
             exp: None,
-            nbf: Some(Utc::now() + Duration::seconds(3600)),
+            nbf: Some(Timestamp::now() + SignedDuration::from_secs(3600)),
             predecessor_digest: [0u8; 32],
         };
         let signed = sign_pca(&claim, &sk).unwrap();
 
         let keys = trusted_keys(&[("key-1", &vk)]);
-        let result = verify_chain(&[signed], &keys, Utc::now());
+        let result = verify_chain(&[signed], &keys, Timestamp::now());
 
         assert!(matches!(
             result,
@@ -572,13 +572,13 @@ mod tests {
     #[test]
     fn temporal_valid_window() {
         let (sk, vk) = make_keypair();
-        let now = Utc::now();
+        let now = Timestamp::now();
         let claim = Pca {
             p_0: "alice".into(),
             ops: ops(&["actuate:arm:*"]),
             kid: "key-1".into(),
-            exp: Some(now + Duration::seconds(3600)),
-            nbf: Some(now - Duration::seconds(60)),
+            exp: Some(now + SignedDuration::from_secs(3600)),
+            nbf: Some(now - SignedDuration::from_secs(60)),
             predecessor_digest: [0u8; 32],
         };
         let signed = sign_pca(&claim, &sk).unwrap();
@@ -592,7 +592,7 @@ mod tests {
     #[test]
     fn temporal_exp_exactly_now_is_expired() {
         let (sk, vk) = make_keypair();
-        let now = Utc::now();
+        let now = Timestamp::now();
         let claim = Pca {
             p_0: "alice".into(),
             ops: ops(&["actuate:arm:*"]),
@@ -616,12 +616,12 @@ mod tests {
     #[test]
     fn temporal_nbf_exactly_now_is_valid() {
         let (sk, vk) = make_keypair();
-        let now = Utc::now();
+        let now = Timestamp::now();
         let claim = Pca {
             p_0: "alice".into(),
             ops: ops(&["actuate:arm:*"]),
             kid: "key-1".into(),
-            exp: Some(now + Duration::seconds(3600)),
+            exp: Some(now + SignedDuration::from_secs(3600)),
             nbf: Some(now),
             predecessor_digest: [0u8; 32],
         };
@@ -640,7 +640,7 @@ mod tests {
         let signed = sign_pca(&claim, &sk).unwrap();
 
         let keys = trusted_keys(&[("key-1", &vk)]);
-        let chain = verify_chain(&[signed], &keys, Utc::now()).unwrap();
+        let chain = verify_chain(&[signed], &keys, Timestamp::now()).unwrap();
 
         let required = vec![op("actuate:arm:shoulder")];
         assert!(check_required_ops(&chain, &required).is_ok());
@@ -657,7 +657,7 @@ mod tests {
         let signed = sign_pca(&claim, &sk).unwrap();
 
         let keys = trusted_keys(&[("key-1", &vk)]);
-        let chain = verify_chain(&[signed], &keys, Utc::now()).unwrap();
+        let chain = verify_chain(&[signed], &keys, Timestamp::now()).unwrap();
 
         assert!(check_required_ops(&chain, &[]).is_ok());
     }
@@ -669,7 +669,7 @@ mod tests {
         let signed = sign_pca(&claim, &sk).unwrap();
 
         let keys = trusted_keys(&[("key-1", &vk)]);
-        let chain = verify_chain(&[signed], &keys, Utc::now()).unwrap();
+        let chain = verify_chain(&[signed], &keys, Timestamp::now()).unwrap();
 
         let required = vec![op("actuate:arm:shoulder"), op("actuate:arm:elbow")];
         let result = check_required_ops(&chain, &required);
@@ -698,7 +698,7 @@ mod tests {
         let signed1 = sign_pca(&claims[1], &sk2).unwrap();
 
         let keys = trusted_keys(&[("key-1", &vk1), ("key-2", &vk2)]);
-        assert!(verify_chain(&[signed0, signed1], &keys, Utc::now()).is_ok());
+        assert!(verify_chain(&[signed0, signed1], &keys, Timestamp::now()).is_ok());
     }
 
     #[test]
@@ -723,7 +723,7 @@ mod tests {
         let signed1 = sign_pca(&claims[1], &sk2).unwrap();
 
         let keys = trusted_keys(&[("key-1", &vk1), ("key-2", &vk2)]);
-        let chain = verify_chain(&[signed0, signed1], &keys, Utc::now()).unwrap();
+        let chain = verify_chain(&[signed0, signed1], &keys, Timestamp::now()).unwrap();
         assert!(chain.final_ops().is_empty());
     }
 
@@ -770,7 +770,7 @@ mod tests {
         }
 
         let keys = trusted_keys(&[("key-1", &vk)]);
-        let result = verify_chain(&hops, &keys, Utc::now());
+        let result = verify_chain(&hops, &keys, Timestamp::now());
         assert_eq!(
             result.unwrap_err(),
             AuthorityError::ChainTooLong { len: 17, max: 16 }
@@ -789,7 +789,7 @@ mod tests {
 
         // trusted_keys doesn't contain "unknown-key".
         let keys: HashMap<String, ed25519_dalek::VerifyingKey> = HashMap::new();
-        let result = verify_chain(&[signed], &keys, Utc::now());
+        let result = verify_chain(&[signed], &keys, Timestamp::now());
 
         // Should fail with UnknownKeyId — origin must not have been extracted
         // from the unverified hop.
@@ -808,7 +808,7 @@ mod tests {
         let hops = vec![sign_pca(&claim, &sk).unwrap()];
         let keys = trusted_keys(&[("key-1", &vk)]);
 
-        let chain = verify_chain(&hops, &keys, Utc::now()).unwrap();
+        let chain = verify_chain(&hops, &keys, Timestamp::now()).unwrap();
         let result = check_required_ops(&chain, &[op("actuate:arm:shoulder")]);
         assert!(
             result.is_ok(),
@@ -823,7 +823,7 @@ mod tests {
         let hops = vec![sign_pca(&claim, &sk).unwrap()];
         let keys = trusted_keys(&[("key-1", &vk)]);
 
-        let chain = verify_chain(&hops, &keys, Utc::now()).unwrap();
+        let chain = verify_chain(&hops, &keys, Timestamp::now()).unwrap();
         let result = check_required_ops(&chain, &[op("actuate:leg:knee")]);
         assert!(
             matches!(result, Err(AuthorityError::InsufficientOps { .. })),
@@ -838,7 +838,7 @@ mod tests {
         let hops = vec![sign_pca(&claim, &sk).unwrap()];
         let keys = trusted_keys(&[("key-1", &vk)]);
 
-        let chain = verify_chain(&hops, &keys, Utc::now()).unwrap();
+        let chain = verify_chain(&hops, &keys, Timestamp::now()).unwrap();
         let result = check_required_ops(&chain, &[]);
         assert!(result.is_ok(), "empty required_ops must always pass");
     }
@@ -847,11 +847,11 @@ mod tests {
     fn single_hop_chain_expired_pca_rejected() {
         let (sk, vk) = make_keypair();
         let mut claim = make_pca("alice", "key-1", &["actuate:*"]);
-        claim.exp = Some(Utc::now() - Duration::hours(1)); // expired 1 hour ago
+        claim.exp = Some(Timestamp::now() - SignedDuration::from_hours(1)); // expired 1 hour ago
         let hops = vec![sign_pca(&claim, &sk).unwrap()];
         let keys = trusted_keys(&[("key-1", &vk)]);
 
-        let result = verify_chain(&hops, &keys, Utc::now());
+        let result = verify_chain(&hops, &keys, Timestamp::now());
         assert!(
             matches!(result, Err(AuthorityError::Expired { hop: 0, .. })),
             "expired single-hop chain must be rejected"
@@ -868,7 +868,7 @@ mod tests {
         let hops: Vec<_> = claims.iter().map(|c| sign_pca(c, &sk).unwrap()).collect();
 
         let keys = trusted_keys(&[("key-1", &vk)]);
-        let result = verify_chain(&hops, &keys, Utc::now());
+        let result = verify_chain(&hops, &keys, Timestamp::now());
         assert!(result.is_ok());
     }
 
@@ -883,7 +883,7 @@ mod tests {
         }];
         let (_, vk) = make_keypair();
         let keys = trusted_keys(&[("key-1", &vk)]);
-        let result = verify_chain(&hops, &keys, Utc::now());
+        let result = verify_chain(&hops, &keys, Timestamp::now());
         assert!(result.is_err(), "empty COSE bytes must return error");
         // Should be a CoseDecode (granular variant), not a panic.
         match result.unwrap_err() {
@@ -900,7 +900,7 @@ mod tests {
         }];
         let (_, vk) = make_keypair();
         let keys = trusted_keys(&[("key-1", &vk)]);
-        let result = verify_chain(&hops, &keys, Utc::now());
+        let result = verify_chain(&hops, &keys, Timestamp::now());
         assert!(
             result.is_err(),
             "garbage COSE bytes must return error, not panic"
@@ -913,7 +913,7 @@ mod tests {
         let hops = vec![SignedPca { raw: vec![0x00] }];
         let (_, vk) = make_keypair();
         let keys = trusted_keys(&[("key-1", &vk)]);
-        let result = verify_chain(&hops, &keys, Utc::now());
+        let result = verify_chain(&hops, &keys, Timestamp::now());
         assert!(result.is_err());
     }
 }

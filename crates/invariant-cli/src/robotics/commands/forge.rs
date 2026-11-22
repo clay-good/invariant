@@ -69,7 +69,7 @@ mod tests {
 
     fn make_cmd(ops: Vec<Operation>) -> Command {
         Command {
-            timestamp: chrono::Utc::now(),
+            timestamp: invariant_core::time::Timestamp::now(),
             source: "test".to_string(),
             sequence: 1,
             joint_states: vec![JointState {
@@ -150,7 +150,7 @@ mod tests {
         let mut cmd = make_cmd(vec![op]);
         forge_authority(&mut cmd, &sk, &kid, "forge").unwrap();
 
-        let now = chrono::Utc::now();
+        let now = invariant_core::time::Timestamp::now();
         let result = config.validate(&cmd, now, None).unwrap();
         // The authority check must pass; physics may or may not depending on profile.
         let authority_check = result

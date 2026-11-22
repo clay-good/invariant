@@ -12,7 +12,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use chrono::{DateTime, Utc};
+use crate::time::Timestamp;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -247,7 +247,7 @@ pub struct ProofPackageManifest {
     /// Human-readable semver of the package contract.
     pub version: String,
     /// When the package was generated.
-    pub generated_at: DateTime<Utc>,
+    pub generated_at: Timestamp,
     /// Name of the campaign that produced this package.
     pub campaign_name: String,
     /// Robot profile name.
@@ -587,7 +587,7 @@ pub fn assemble(inputs: &PackageInputs, output_dir: &Path) -> Result<ProofPackag
     let mut manifest = ProofPackageManifest {
         format_version: CURRENT_FORMAT_VERSION,
         version: "1.0.0".into(),
-        generated_at: Utc::now(),
+        generated_at: Timestamp::now(),
         campaign_name: inputs.campaign_name.clone(),
         profile_name: inputs.profile_name.clone(),
         profile_hash: inputs
@@ -1028,7 +1028,7 @@ mod tests {
         let manifest = ProofPackageManifest {
             format_version: CURRENT_FORMAT_VERSION,
             version: "1.0.0".into(),
-            generated_at: Utc::now(),
+            generated_at: Timestamp::now(),
             campaign_name: "readme_test".into(),
             profile_name: "test_robot".into(),
             profile_hash: "sha256:abc".into(),
@@ -1052,7 +1052,7 @@ mod tests {
         let manifest = ProofPackageManifest {
             format_version: CURRENT_FORMAT_VERSION,
             version: "1.0.0".into(),
-            generated_at: Utc::now(),
+            generated_at: Timestamp::now(),
             campaign_name: "serde_test".into(),
             profile_name: "test".into(),
             profile_hash: "sha256:abc".into(),

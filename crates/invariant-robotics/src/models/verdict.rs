@@ -1,4 +1,4 @@
-use chrono::{DateTime, Utc};
+use invariant_core::time::Timestamp;
 use serde::{Deserialize, Serialize};
 
 /// A safety decision produced by the validator for a single command.
@@ -12,9 +12,9 @@ use serde::{Deserialize, Serialize};
 ///     approved: true,
 ///     command_hash: "sha256:abcdef1234567890".into(),
 ///     command_sequence: 42,
-///     timestamp: chrono::DateTime::parse_from_rfc3339("2024-01-01T00:00:00Z")
+///     timestamp: invariant_core::time::Timestamp::parse_rfc3339("2024-01-01T00:00:00Z")
 ///         .unwrap()
-///         .with_timezone(&chrono::Utc),
+///         ,
 ///     checks: vec![
 ///         CheckResult::new("joint_limits", "physics", true, "all joints within bounds"),
 ///         CheckResult::new("workspace", "physics", true, "end-effector inside workspace"),
@@ -42,7 +42,7 @@ pub struct Verdict {
     /// Monotonic sequence number copied from the command.
     pub command_sequence: u64,
     /// Typed timestamp for precise ordering and replay-prevention (P1-3).
-    pub timestamp: DateTime<Utc>,
+    pub timestamp: Timestamp,
     /// Results of all individual safety checks (physics + authority).
     pub checks: Vec<CheckResult>,
     /// Name of the robot profile used for validation.
@@ -254,9 +254,9 @@ pub struct AuthoritySummary {
 ///     approved: true,
 ///     command_hash: "sha256:deadbeef".into(),
 ///     command_sequence: 1,
-///     timestamp: chrono::DateTime::parse_from_rfc3339("2024-01-01T00:00:00Z")
+///     timestamp: invariant_core::time::Timestamp::parse_rfc3339("2024-01-01T00:00:00Z")
 ///         .unwrap()
-///         .with_timezone(&chrono::Utc),
+///         ,
 ///     checks: vec![CheckResult::new("velocity", "physics", true, "ok")],
 ///     profile_name: "ur10e".into(),
 ///     profile_hash: "sha256:profile".into(),

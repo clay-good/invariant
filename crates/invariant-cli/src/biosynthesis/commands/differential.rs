@@ -102,10 +102,10 @@ fn load_verdict(path: &PathBuf) -> Result<SignedVerdict, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::Utc;
     use invariant_biosynthesis::models::verdict::{
         AuthoritySummary, CheckResult, SignedVerdict, Verdict,
     };
+    use invariant_core::time::Timestamp;
     use tempfile::TempDir;
 
     fn signed(checks: Vec<CheckResult>, approved: bool, hash: &str) -> SignedVerdict {
@@ -113,7 +113,7 @@ mod tests {
             approved,
             command_hash: hash.to_string(),
             command_sequence: 1,
-            timestamp: Utc::now(),
+            timestamp: Timestamp::now(),
             checks,
             profile_name: "p".into(),
             profile_hash: "sha256:p".into(),

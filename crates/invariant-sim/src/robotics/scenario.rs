@@ -8,7 +8,7 @@ use std::collections::{HashMap, HashSet};
 
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine as _;
-use chrono::{DateTime, Duration, Utc};
+use invariant_core::time::{SignedDuration, Timestamp};
 use invariant_robotics::models::authority::Operation;
 use invariant_robotics::models::command::{
     Command, CommandAuthority, EndEffectorForce, EndEffectorPosition, FootState, JointState,
@@ -1668,7 +1668,7 @@ impl<'a> ScenarioGenerator<'a> {
     // -----------------------------------------------------------------------
 
     fn baseline(&self, count: usize, pca_chain_b64: &str, ops: &[Operation]) -> Vec<Command> {
-        let base_ts: DateTime<Utc> = Utc::now();
+        let base_ts: Timestamp = Timestamp::now();
         let end_effector_positions = Self::safe_end_effectors(self.profile);
         let delta_time = self.profile.max_delta_time * 0.5;
         // Pre-compute once — identical for every command in this scenario.
@@ -1683,7 +1683,7 @@ impl<'a> ScenarioGenerator<'a> {
         (0..count)
             .map(|i| {
                 let timestamp = base_ts
-                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                    + SignedDuration::from_millis(Self::ms_offset_to_i64(
                         i as f64 * delta_time * 1_000.0,
                     ));
                 Command {
@@ -1708,7 +1708,7 @@ impl<'a> ScenarioGenerator<'a> {
     }
 
     fn aggressive(&self, count: usize, pca_chain_b64: &str, ops: &[Operation]) -> Vec<Command> {
-        let base_ts: DateTime<Utc> = Utc::now();
+        let base_ts: Timestamp = Timestamp::now();
         // Use delta_time at 98 % of the maximum.
         let delta_time = self.profile.max_delta_time * 0.98;
 
@@ -1730,7 +1730,7 @@ impl<'a> ScenarioGenerator<'a> {
         (0..count)
             .map(|i| {
                 let timestamp = base_ts
-                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                    + SignedDuration::from_millis(Self::ms_offset_to_i64(
                         i as f64 * delta_time * 1_000.0,
                     ));
                 Command {
@@ -1758,7 +1758,7 @@ impl<'a> ScenarioGenerator<'a> {
     /// retract. All commands stay within joint/workspace limits. 6 phases
     /// distributed evenly across `count` steps.
     fn pick_and_place(&self, count: usize, pca_chain_b64: &str, ops: &[Operation]) -> Vec<Command> {
-        let base_ts: DateTime<Utc> = Utc::now();
+        let base_ts: Timestamp = Timestamp::now();
         let delta_time = self.profile.max_delta_time * 0.5;
         let meta_template = Self::metadata_template(self.scenario);
         let authority = Self::authority(pca_chain_b64, ops);
@@ -1786,7 +1786,7 @@ impl<'a> ScenarioGenerator<'a> {
         (0..count)
             .map(|i| {
                 let timestamp = base_ts
-                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                    + SignedDuration::from_millis(Self::ms_offset_to_i64(
                         i as f64 * delta_time * 1_000.0,
                     ));
                 // 6 phases: approach, grasp, lift, transport, place, retract.
@@ -1836,7 +1836,7 @@ impl<'a> ScenarioGenerator<'a> {
     /// A-04: Walking gait cycle — alternating stance/swing phases at safe
     /// velocity. All locomotion parameters stay within profile limits.
     fn walking_gait(&self, count: usize, pca_chain_b64: &str, ops: &[Operation]) -> Vec<Command> {
-        let base_ts: DateTime<Utc> = Utc::now();
+        let base_ts: Timestamp = Timestamp::now();
         let delta_time = self.profile.max_delta_time * 0.5;
         let meta_template = Self::metadata_template(self.scenario);
         let authority = Self::authority(pca_chain_b64, ops);
@@ -1861,7 +1861,7 @@ impl<'a> ScenarioGenerator<'a> {
         (0..count)
             .map(|i| {
                 let timestamp = base_ts
-                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                    + SignedDuration::from_millis(Self::ms_offset_to_i64(
                         i as f64 * delta_time * 1_000.0,
                     ));
 
@@ -1932,7 +1932,7 @@ impl<'a> ScenarioGenerator<'a> {
         pca_chain_b64: &str,
         ops: &[Operation],
     ) -> Vec<Command> {
-        let base_ts: DateTime<Utc> = Utc::now();
+        let base_ts: Timestamp = Timestamp::now();
         let delta_time = self.profile.max_delta_time * 0.5;
         let meta_template = Self::metadata_template(self.scenario);
         let authority = Self::authority(pca_chain_b64, ops);
@@ -1954,7 +1954,7 @@ impl<'a> ScenarioGenerator<'a> {
         (0..count)
             .map(|i| {
                 let timestamp = base_ts
-                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                    + SignedDuration::from_millis(Self::ms_offset_to_i64(
                         i as f64 * delta_time * 1_000.0,
                     ));
 
@@ -2009,7 +2009,7 @@ impl<'a> ScenarioGenerator<'a> {
         pca_chain_b64: &str,
         ops: &[Operation],
     ) -> Vec<Command> {
-        let base_ts: DateTime<Utc> = Utc::now();
+        let base_ts: Timestamp = Timestamp::now();
         let delta_time = self.profile.max_delta_time * 0.5;
         let meta_template = Self::metadata_template(self.scenario);
         let authority = Self::authority(pca_chain_b64, ops);
@@ -2054,7 +2054,7 @@ impl<'a> ScenarioGenerator<'a> {
         (0..count)
             .map(|i| {
                 let timestamp = base_ts
-                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                    + SignedDuration::from_millis(Self::ms_offset_to_i64(
                         i as f64 * delta_time * 1_000.0,
                     ));
 
@@ -2115,7 +2115,7 @@ impl<'a> ScenarioGenerator<'a> {
         pca_chain_b64: &str,
         ops: &[Operation],
     ) -> Vec<Command> {
-        let base_ts: DateTime<Utc> = Utc::now();
+        let base_ts: Timestamp = Timestamp::now();
         let delta_time = self.profile.max_delta_time * 0.5;
         let meta_template = Self::metadata_template(self.scenario);
         let authority = Self::authority(pca_chain_b64, ops);
@@ -2136,7 +2136,7 @@ impl<'a> ScenarioGenerator<'a> {
         (0..count)
             .map(|i| {
                 let timestamp = base_ts
-                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                    + SignedDuration::from_millis(Self::ms_offset_to_i64(
                         i as f64 * delta_time * 1_000.0,
                     ));
 
@@ -2206,7 +2206,7 @@ impl<'a> ScenarioGenerator<'a> {
         pca_chain_b64: &str,
         ops: &[Operation],
     ) -> Vec<Command> {
-        let base_ts: DateTime<Utc> = Utc::now();
+        let base_ts: Timestamp = Timestamp::now();
         let delta_time = self.profile.max_delta_time * 0.5;
         let meta_template = Self::metadata_template(self.scenario);
         let authority = Self::authority(pca_chain_b64, ops);
@@ -2219,7 +2219,7 @@ impl<'a> ScenarioGenerator<'a> {
         (0..count)
             .map(|i| {
                 let timestamp = base_ts
-                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                    + SignedDuration::from_millis(Self::ms_offset_to_i64(
                         i as f64 * delta_time * 1_000.0,
                     ));
                 let source = sources[i % 2].to_owned();
@@ -2246,7 +2246,7 @@ impl<'a> ScenarioGenerator<'a> {
     }
 
     fn exclusion_zone(&self, count: usize, pca_chain_b64: &str, ops: &[Operation]) -> Vec<Command> {
-        let base_ts: DateTime<Utc> = Utc::now();
+        let base_ts: Timestamp = Timestamp::now();
         let delta_time = self.profile.max_delta_time * 0.5;
         let bad_pos = Self::exclusion_zone_point(self.profile);
         // Pre-compute once — identical for every command in this scenario.
@@ -2256,7 +2256,7 @@ impl<'a> ScenarioGenerator<'a> {
         (0..count)
             .map(|i| {
                 let timestamp = base_ts
-                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                    + SignedDuration::from_millis(Self::ms_offset_to_i64(
                         i as f64 * delta_time * 1_000.0,
                     ));
                 Command {
@@ -2285,7 +2285,7 @@ impl<'a> ScenarioGenerator<'a> {
 
     /// Valid physics, but empty `pca_chain` — triggers authority failure.
     fn authority_escalation(&self, count: usize, ops: &[Operation]) -> Vec<Command> {
-        let base_ts: DateTime<Utc> = Utc::now();
+        let base_ts: Timestamp = Timestamp::now();
         let delta_time = self.profile.max_delta_time * 0.5;
         let ee_pos = Self::safe_end_effector(self.profile);
         // Pre-compute once — identical for every command in this scenario.
@@ -2295,7 +2295,7 @@ impl<'a> ScenarioGenerator<'a> {
         (0..count)
             .map(|i| {
                 let timestamp = base_ts
-                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                    + SignedDuration::from_millis(Self::ms_offset_to_i64(
                         i as f64 * delta_time * 1_000.0,
                     ));
                 Command {
@@ -2328,7 +2328,7 @@ impl<'a> ScenarioGenerator<'a> {
 
     /// Garbage base64 in `pca_chain` — triggers chain parse/verify failure.
     fn chain_forgery(&self, count: usize, ops: &[Operation]) -> Vec<Command> {
-        let base_ts: DateTime<Utc> = Utc::now();
+        let base_ts: Timestamp = Timestamp::now();
         let delta_time = self.profile.max_delta_time * 0.5;
         let ee_pos = Self::safe_end_effector(self.profile);
         // Pre-compute once — identical for every command in this scenario.
@@ -2338,7 +2338,7 @@ impl<'a> ScenarioGenerator<'a> {
         (0..count)
             .map(|i| {
                 let timestamp = base_ts
-                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                    + SignedDuration::from_millis(Self::ms_offset_to_i64(
                         i as f64 * delta_time * 1_000.0,
                     ));
                 // Produce varied garbage for each command so tests can tell
@@ -2379,14 +2379,14 @@ impl<'a> ScenarioGenerator<'a> {
         pca_chain_b64: &str,
         ops: &[Operation],
     ) -> Vec<Command> {
-        let base_ts: DateTime<Utc> = Utc::now();
+        let base_ts: Timestamp = Timestamp::now();
         let delta_time = self.profile.max_delta_time * 0.5;
         let meta_template = Self::metadata_template(self.scenario);
 
         (0..count)
             .map(|i| {
                 let timestamp = base_ts
-                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                    + SignedDuration::from_millis(Self::ms_offset_to_i64(
                         i as f64 * delta_time * 1_000.0,
                     ));
 
@@ -2450,7 +2450,7 @@ impl<'a> ScenarioGenerator<'a> {
         pca_chain_b64: &str,
         ops: &[Operation],
     ) -> Vec<Command> {
-        let base_ts: DateTime<Utc> = Utc::now();
+        let base_ts: Timestamp = Timestamp::now();
         let delta_time = self.profile.max_delta_time * 0.5;
         let ee_pos = Self::safe_end_effector(self.profile);
         // Pre-compute once — identical for every command in this scenario.
@@ -2464,7 +2464,7 @@ impl<'a> ScenarioGenerator<'a> {
         (0..count)
             .map(|i| {
                 let timestamp = base_ts
-                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                    + SignedDuration::from_millis(Self::ms_offset_to_i64(
                         i as f64 * delta_time * 1_000.0,
                     ));
 
@@ -2541,7 +2541,7 @@ impl<'a> ScenarioGenerator<'a> {
         pca_chain_b64: &str,
         ops: &[Operation],
     ) -> Vec<Command> {
-        let base_ts: DateTime<Utc> = Utc::now();
+        let base_ts: Timestamp = Timestamp::now();
         let delta_time = self.profile.max_delta_time * 0.5;
         let ee_pos = Self::safe_end_effector(self.profile);
         let joint_states = self.baseline_joint_states();
@@ -2559,7 +2559,7 @@ impl<'a> ScenarioGenerator<'a> {
                 // Ramp from 0.5*max to 3*max over the scenario.
                 let speed = max_vel * (0.5 + t * 2.5);
                 let timestamp = base_ts
-                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                    + SignedDuration::from_millis(Self::ms_offset_to_i64(
                         i as f64 * delta_time * 1_000.0,
                     ));
                 let mut loco = Self::baseline_locomotion_state();
@@ -2595,7 +2595,7 @@ impl<'a> ScenarioGenerator<'a> {
         pca_chain_b64: &str,
         ops: &[Operation],
     ) -> Vec<Command> {
-        let base_ts: DateTime<Utc> = Utc::now();
+        let base_ts: Timestamp = Timestamp::now();
         let delta_time = self.profile.max_delta_time * 0.5;
         let ee_pos = Self::safe_end_effector(self.profile);
         let joint_states = self.baseline_joint_states();
@@ -2611,7 +2611,7 @@ impl<'a> ScenarioGenerator<'a> {
             .map(|i| {
                 let t = i as f64 / count.max(1) as f64;
                 let timestamp = base_ts
-                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                    + SignedDuration::from_millis(Self::ms_offset_to_i64(
                         i as f64 * delta_time * 1_000.0,
                     ));
                 // Normal force = 400 N. Tangential ramps from 0 to 3× friction limit.
@@ -2653,7 +2653,7 @@ impl<'a> ScenarioGenerator<'a> {
         pca_chain_b64: &str,
         ops: &[Operation],
     ) -> Vec<Command> {
-        let base_ts: DateTime<Utc> = Utc::now();
+        let base_ts: Timestamp = Timestamp::now();
         let delta_time = self.profile.max_delta_time * 0.5;
         let ee_pos = Self::safe_end_effector(self.profile);
         let joint_states = self.baseline_joint_states();
@@ -2669,7 +2669,7 @@ impl<'a> ScenarioGenerator<'a> {
             .map(|i| {
                 let t = i as f64 / count.max(1) as f64;
                 let timestamp = base_ts
-                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                    + SignedDuration::from_millis(Self::ms_offset_to_i64(
                         i as f64 * delta_time * 1_000.0,
                     ));
                 // Clearance ramps from 3× min_clearance to -min_clearance.
@@ -2710,7 +2710,7 @@ impl<'a> ScenarioGenerator<'a> {
         pca_chain_b64: &str,
         ops: &[Operation],
     ) -> Vec<Command> {
-        let base_ts: DateTime<Utc> = Utc::now();
+        let base_ts: Timestamp = Timestamp::now();
         let delta_time = self.profile.max_delta_time * 0.5;
         let ee_pos = Self::safe_end_effector(self.profile);
         let joint_states = self.baseline_joint_states();
@@ -2731,7 +2731,7 @@ impl<'a> ScenarioGenerator<'a> {
         (0..count)
             .map(|i| {
                 let timestamp = base_ts
-                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                    + SignedDuration::from_millis(Self::ms_offset_to_i64(
                         i as f64 * delta_time * 1_000.0,
                     ));
                 let mut loco = Self::baseline_locomotion_state();
@@ -2773,7 +2773,7 @@ impl<'a> ScenarioGenerator<'a> {
         pca_chain_b64: &str,
         ops: &[Operation],
     ) -> Vec<Command> {
-        let base_ts: DateTime<Utc> = Utc::now();
+        let base_ts: Timestamp = Timestamp::now();
         let delta_time = self.profile.max_delta_time * 0.5;
         let ee_pos = Self::safe_end_effector(self.profile);
         let joint_states = self.baseline_joint_states();
@@ -2789,7 +2789,7 @@ impl<'a> ScenarioGenerator<'a> {
             .map(|i| {
                 let t = i as f64 / count.max(1) as f64;
                 let timestamp = base_ts
-                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                    + SignedDuration::from_millis(Self::ms_offset_to_i64(
                         i as f64 * delta_time * 1_000.0,
                     ));
                 // Height ramps from 0.5× max_height to 3× max_height.
@@ -2834,7 +2834,7 @@ impl<'a> ScenarioGenerator<'a> {
     /// zone. If no conditional zone exists, all commands use the workspace
     /// center (both phases should pass).
     fn cnc_tending(&self, count: usize, pca_chain_b64: &str, ops: &[Operation]) -> Vec<Command> {
-        let base_ts: DateTime<Utc> = Utc::now();
+        let base_ts: Timestamp = Timestamp::now();
         let delta_time = self.profile.max_delta_time * 0.5;
         let joint_states = self.baseline_joint_states();
         let meta_template = Self::metadata_template(self.scenario);
@@ -2881,7 +2881,7 @@ impl<'a> ScenarioGenerator<'a> {
         (0..count)
             .map(|i| {
                 let timestamp = base_ts
-                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                    + SignedDuration::from_millis(Self::ms_offset_to_i64(
                         i as f64 * delta_time * 1_000.0,
                     ));
 
@@ -2944,7 +2944,7 @@ impl<'a> ScenarioGenerator<'a> {
         use invariant_robotics::models::command::{ActuatorTemperature, EnvironmentState};
 
         let meta_template = Self::metadata_template(ScenarioType::EnvironmentFault);
-        let timestamp = chrono::Utc::now();
+        let timestamp = invariant_core::time::Timestamp::now();
         let source = "env_fault_agent".to_owned();
         let delta_time = self.profile.max_delta_time * 0.5;
 
@@ -3076,7 +3076,7 @@ impl<'a> ScenarioGenerator<'a> {
         pca_chain_b64: &str,
         ops: &[Operation],
     ) -> Vec<Command> {
-        let base_ts: DateTime<Utc> = Utc::now();
+        let base_ts: Timestamp = Timestamp::now();
         let delta_time = self.profile.max_delta_time * 0.5;
         let joint_states = self.baseline_joint_states();
         let ee_pos = Self::safe_end_effector(self.profile);
@@ -3086,7 +3086,7 @@ impl<'a> ScenarioGenerator<'a> {
             .map(|i| {
                 let t = i as f64 / count.max(1) as f64;
                 let timestamp = base_ts
-                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                    + SignedDuration::from_millis(Self::ms_offset_to_i64(
                         i as f64 * delta_time * 1_000.0,
                     ));
 
@@ -3145,7 +3145,7 @@ impl<'a> ScenarioGenerator<'a> {
         pca_chain_b64: &str,
         ops: &[Operation],
     ) -> Vec<Command> {
-        let base_ts: DateTime<Utc> = Utc::now();
+        let base_ts: Timestamp = Timestamp::now();
         let delta_time = self.profile.max_delta_time * 0.5;
         let joint_states = self.baseline_joint_states();
         let safe_pos = Self::safe_end_effector(self.profile);
@@ -3163,7 +3163,7 @@ impl<'a> ScenarioGenerator<'a> {
             .map(|i| {
                 let t = i as f64 / count.max(1) as f64;
                 let timestamp = base_ts
-                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                    + SignedDuration::from_millis(Self::ms_offset_to_i64(
                         i as f64 * delta_time * 1_000.0,
                     ));
 
@@ -3202,7 +3202,7 @@ impl<'a> ScenarioGenerator<'a> {
         pca_chain_b64: &str,
         ops: &[Operation],
     ) -> Vec<Command> {
-        let base_ts: DateTime<Utc> = Utc::now();
+        let base_ts: Timestamp = Timestamp::now();
         let delta_time = self.profile.max_delta_time * 0.5;
         let meta_template = Self::metadata_template(self.scenario);
         let ee_pos = Self::safe_end_effector(self.profile);
@@ -3211,7 +3211,7 @@ impl<'a> ScenarioGenerator<'a> {
             .map(|i| {
                 let t = i as f64 / count.max(1) as f64;
                 let timestamp = base_ts
-                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                    + SignedDuration::from_millis(Self::ms_offset_to_i64(
                         i as f64 * delta_time * 1_000.0,
                     ));
 
@@ -3273,7 +3273,7 @@ impl<'a> ScenarioGenerator<'a> {
     ) -> Vec<Command> {
         use invariant_robotics::models::command::EnvironmentState;
 
-        let base_ts: DateTime<Utc> = Utc::now();
+        let base_ts: Timestamp = Timestamp::now();
         let delta_time = self.profile.max_delta_time * 0.5;
         let meta_template = Self::metadata_template(self.scenario);
         let ee_pos = Self::safe_end_effector(self.profile);
@@ -3282,7 +3282,7 @@ impl<'a> ScenarioGenerator<'a> {
             .map(|i| {
                 let t = i as f64 / count.max(1) as f64;
                 let timestamp = base_ts
-                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                    + SignedDuration::from_millis(Self::ms_offset_to_i64(
                         i as f64 * delta_time * 1_000.0,
                     ));
 
@@ -3348,7 +3348,7 @@ impl<'a> ScenarioGenerator<'a> {
         pca_chain_b64: &str,
         ops: &[Operation],
     ) -> Vec<Command> {
-        let base_ts: DateTime<Utc> = Utc::now();
+        let base_ts: Timestamp = Timestamp::now();
         let joint_states = self.baseline_joint_states();
         let ee_pos = Self::safe_end_effector(self.profile);
         let meta_template = Self::metadata_template(self.scenario);
@@ -3363,7 +3363,7 @@ impl<'a> ScenarioGenerator<'a> {
                     self.profile.max_delta_time * 0.5
                 };
                 let timestamp = base_ts
-                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                    + SignedDuration::from_millis(Self::ms_offset_to_i64(
                         i as f64 * delta_time * 1_000.0,
                     ));
 
@@ -3401,7 +3401,7 @@ impl<'a> ScenarioGenerator<'a> {
         pca_chain_b64: &str,
         ops: &[Operation],
     ) -> Vec<Command> {
-        let base_ts: DateTime<Utc> = Utc::now();
+        let base_ts: Timestamp = Timestamp::now();
         let delta_time = self.profile.max_delta_time * 0.5;
         let ee_pos = Self::safe_end_effector(self.profile);
         let meta_template = Self::metadata_template(self.scenario);
@@ -3409,7 +3409,7 @@ impl<'a> ScenarioGenerator<'a> {
         (0..count)
             .map(|i| {
                 let timestamp = base_ts
-                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                    + SignedDuration::from_millis(Self::ms_offset_to_i64(
                         i as f64 * delta_time * 1_000.0,
                     ));
 
@@ -3466,7 +3466,7 @@ impl<'a> ScenarioGenerator<'a> {
         pca_chain_b64: &str,
         ops: &[Operation],
     ) -> Vec<Command> {
-        let base_ts: DateTime<Utc> = Utc::now();
+        let base_ts: Timestamp = Timestamp::now();
         let delta_time = self.profile.max_delta_time * 0.5;
         let ee_pos = Self::safe_end_effector(self.profile);
         let meta_template = Self::metadata_template(self.scenario);
@@ -3474,7 +3474,7 @@ impl<'a> ScenarioGenerator<'a> {
         (0..count)
             .map(|i| {
                 let timestamp = base_ts
-                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                    + SignedDuration::from_millis(Self::ms_offset_to_i64(
                         i as f64 * delta_time * 1_000.0,
                     ));
 
@@ -3529,7 +3529,7 @@ impl<'a> ScenarioGenerator<'a> {
         pca_chain_b64: &str,
         ops: &[Operation],
     ) -> Vec<Command> {
-        let base_ts: DateTime<Utc> = Utc::now();
+        let base_ts: Timestamp = Timestamp::now();
         let delta_time = self.profile.max_delta_time * 0.5;
         let ee_pos = Self::safe_end_effector(self.profile);
         let meta_template = Self::metadata_template(self.scenario);
@@ -3537,7 +3537,7 @@ impl<'a> ScenarioGenerator<'a> {
         (0..count)
             .map(|i| {
                 let timestamp = base_ts
-                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                    + SignedDuration::from_millis(Self::ms_offset_to_i64(
                         i as f64 * delta_time * 1_000.0,
                     ));
 
@@ -3600,7 +3600,7 @@ impl<'a> ScenarioGenerator<'a> {
         pca_chain_b64: &str,
         ops: &[Operation],
     ) -> Vec<Command> {
-        let base_ts: DateTime<Utc> = Utc::now();
+        let base_ts: Timestamp = Timestamp::now();
         let delta_time = self.profile.max_delta_time * 0.5;
         let ee_pos = Self::safe_end_effector(self.profile);
         let meta_template = Self::metadata_template(self.scenario);
@@ -3611,7 +3611,7 @@ impl<'a> ScenarioGenerator<'a> {
         (0..count)
             .map(|i| {
                 let timestamp = base_ts
-                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                    + SignedDuration::from_millis(Self::ms_offset_to_i64(
                         i as f64 * delta_time * 1_000.0,
                     ));
 
@@ -3677,7 +3677,7 @@ impl<'a> ScenarioGenerator<'a> {
         pca_chain_b64: &str,
         ops: &[Operation],
     ) -> Vec<Command> {
-        let base_ts: DateTime<Utc> = Utc::now();
+        let base_ts: Timestamp = Timestamp::now();
         let delta_time = self.profile.max_delta_time * 0.5;
         let ee_pos = Self::safe_end_effector(self.profile);
         let meta_template = Self::metadata_template(self.scenario);
@@ -3688,7 +3688,7 @@ impl<'a> ScenarioGenerator<'a> {
         (0..count)
             .map(|i| {
                 let timestamp = base_ts
-                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                    + SignedDuration::from_millis(Self::ms_offset_to_i64(
                         i as f64 * delta_time * 1_000.0,
                     ));
 
@@ -3753,7 +3753,7 @@ impl<'a> ScenarioGenerator<'a> {
         pca_chain_b64: &str,
         ops: &[Operation],
     ) -> Vec<Command> {
-        let base_ts: DateTime<Utc> = Utc::now();
+        let base_ts: Timestamp = Timestamp::now();
         let delta_time = self.profile.max_delta_time * 0.5;
         let ee_pos = Self::safe_end_effector(self.profile);
         let meta_template = Self::metadata_template(self.scenario);
@@ -3764,7 +3764,7 @@ impl<'a> ScenarioGenerator<'a> {
         (0..count)
             .map(|i| {
                 let timestamp = base_ts
-                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                    + SignedDuration::from_millis(Self::ms_offset_to_i64(
                         i as f64 * delta_time * 1_000.0,
                     ));
 
@@ -3828,7 +3828,7 @@ impl<'a> ScenarioGenerator<'a> {
         pca_chain_b64: &str,
         ops: &[Operation],
     ) -> Vec<Command> {
-        let base_ts: DateTime<Utc> = Utc::now();
+        let base_ts: Timestamp = Timestamp::now();
         let delta_time = self.profile.max_delta_time * 0.5;
         let ee_pos = Self::safe_end_effector(self.profile);
         let meta_template = Self::metadata_template(self.scenario);
@@ -3838,7 +3838,7 @@ impl<'a> ScenarioGenerator<'a> {
         (0..count)
             .map(|i| {
                 let timestamp = base_ts
-                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                    + SignedDuration::from_millis(Self::ms_offset_to_i64(
                         i as f64 * delta_time * 1_000.0,
                     ));
 
@@ -3894,7 +3894,7 @@ impl<'a> ScenarioGenerator<'a> {
         pca_chain_b64: &str,
         ops: &[Operation],
     ) -> Vec<Command> {
-        let base_ts: DateTime<Utc> = Utc::now();
+        let base_ts: Timestamp = Timestamp::now();
         let delta_time = self.profile.max_delta_time * 0.5;
         let ee_pos = Self::safe_end_effector(self.profile);
         let meta_template = Self::metadata_template(self.scenario);
@@ -3903,7 +3903,7 @@ impl<'a> ScenarioGenerator<'a> {
         (0..count)
             .map(|i| {
                 let timestamp = base_ts
-                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                    + SignedDuration::from_millis(Self::ms_offset_to_i64(
                         i as f64 * delta_time * 1_000.0,
                     ));
 
@@ -3958,7 +3958,7 @@ impl<'a> ScenarioGenerator<'a> {
         pca_chain_b64: &str,
         ops: &[Operation],
     ) -> Vec<Command> {
-        let base_ts: DateTime<Utc> = Utc::now();
+        let base_ts: Timestamp = Timestamp::now();
         let delta_time = self.profile.max_delta_time * 0.5;
         let ee_pos = Self::safe_end_effector(self.profile);
         let meta_template = Self::metadata_template(self.scenario);
@@ -3967,7 +3967,7 @@ impl<'a> ScenarioGenerator<'a> {
         (0..count)
             .map(|i| {
                 let timestamp = base_ts
-                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                    + SignedDuration::from_millis(Self::ms_offset_to_i64(
                         i as f64 * delta_time * 1_000.0,
                     ));
 
@@ -4022,7 +4022,7 @@ impl<'a> ScenarioGenerator<'a> {
         pca_chain_b64: &str,
         ops: &[Operation],
     ) -> Vec<Command> {
-        let base_ts: DateTime<Utc> = Utc::now();
+        let base_ts: Timestamp = Timestamp::now();
         let delta_time = self.profile.max_delta_time * 0.5;
         let ee_pos = Self::safe_end_effector(self.profile);
         let meta_template = Self::metadata_template(self.scenario);
@@ -4043,7 +4043,7 @@ impl<'a> ScenarioGenerator<'a> {
         (0..count)
             .map(|i| {
                 let timestamp = base_ts
-                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                    + SignedDuration::from_millis(Self::ms_offset_to_i64(
                         i as f64 * delta_time * 1_000.0,
                     ));
 
@@ -4100,7 +4100,7 @@ impl<'a> ScenarioGenerator<'a> {
         pca_chain_b64: &str,
         ops: &[Operation],
     ) -> Vec<Command> {
-        let base_ts: DateTime<Utc> = Utc::now();
+        let base_ts: Timestamp = Timestamp::now();
         let delta_time = self.profile.max_delta_time * 0.5;
         let ee_pos = Self::safe_end_effector(self.profile);
         let meta_template = Self::metadata_template(self.scenario);
@@ -4110,7 +4110,7 @@ impl<'a> ScenarioGenerator<'a> {
         (0..count)
             .map(|i| {
                 let timestamp = base_ts
-                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                    + SignedDuration::from_millis(Self::ms_offset_to_i64(
                         i as f64 * delta_time * 1_000.0,
                     ));
 
@@ -4179,7 +4179,7 @@ impl<'a> ScenarioGenerator<'a> {
     ) -> Vec<Command> {
         const SEQUENCE_REPLAY_VALUE: u64 = 1;
 
-        let base_ts: DateTime<Utc> = Utc::now();
+        let base_ts: Timestamp = Timestamp::now();
         let delta_time = self.profile.max_delta_time * 0.5;
         let joint_states = self.baseline_joint_states();
         let ee_pos = Self::safe_end_effector(self.profile);
@@ -4190,7 +4190,7 @@ impl<'a> ScenarioGenerator<'a> {
         (0..count)
             .map(|i| {
                 let timestamp = base_ts
-                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                    + SignedDuration::from_millis(Self::ms_offset_to_i64(
                         i as f64 * delta_time * 1_000.0,
                     ));
                 Command {
@@ -4227,7 +4227,7 @@ impl<'a> ScenarioGenerator<'a> {
     fn sequence_gap(&self, count: usize, pca_chain_b64: &str, ops: &[Operation]) -> Vec<Command> {
         const GAP_BASE: u64 = 1_000_000;
 
-        let base_ts: DateTime<Utc> = Utc::now();
+        let base_ts: Timestamp = Timestamp::now();
         let delta_time = self.profile.max_delta_time * 0.5;
         let joint_states = self.baseline_joint_states();
         let ee_pos = Self::safe_end_effector(self.profile);
@@ -4238,7 +4238,7 @@ impl<'a> ScenarioGenerator<'a> {
         (0..count)
             .map(|i| {
                 let timestamp = base_ts
-                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                    + SignedDuration::from_millis(Self::ms_offset_to_i64(
                         i as f64 * delta_time * 1_000.0,
                     ));
                 let sequence = if i == 0 { 0 } else { GAP_BASE + i as u64 };
@@ -4279,7 +4279,7 @@ impl<'a> ScenarioGenerator<'a> {
         pca_chain_b64: &str,
         ops: &[Operation],
     ) -> Vec<Command> {
-        let base_ts: DateTime<Utc> = Utc::now();
+        let base_ts: Timestamp = Timestamp::now();
         let joint_states = self.baseline_joint_states();
         let ee_pos = Self::safe_end_effector(self.profile);
         let meta_template = Self::metadata_template(self.scenario);
@@ -4294,7 +4294,9 @@ impl<'a> ScenarioGenerator<'a> {
         (0..count)
             .map(|i| {
                 let timestamp = base_ts
-                    + Duration::milliseconds(Self::ms_offset_to_i64(i as f64 * stamp_dt * 1_000.0));
+                    + SignedDuration::from_millis(Self::ms_offset_to_i64(
+                        i as f64 * stamp_dt * 1_000.0,
+                    ));
                 let delta_time = attack_dts[i % attack_dts.len()];
                 Command {
                     timestamp,
@@ -4333,7 +4335,7 @@ impl<'a> ScenarioGenerator<'a> {
         pca_chain_b64: &str,
         ops: &[Operation],
     ) -> Vec<Command> {
-        let base_ts: DateTime<Utc> = Utc::now();
+        let base_ts: Timestamp = Timestamp::now();
         let delta_time = self.profile.max_delta_time * 0.5;
         let joint_states = self.baseline_joint_states();
         let meta_template = Self::metadata_template(self.scenario);
@@ -4346,7 +4348,7 @@ impl<'a> ScenarioGenerator<'a> {
         (0..count)
             .map(|i| {
                 let timestamp = base_ts
-                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                    + SignedDuration::from_millis(Self::ms_offset_to_i64(
                         i as f64 * delta_time * 1_000.0,
                     ));
                 let bad = corrupt_values[i % corrupt_values.len()];
@@ -4391,7 +4393,7 @@ impl<'a> ScenarioGenerator<'a> {
         pca_chain_b64: &str,
         ops: &[Operation],
     ) -> Vec<Command> {
-        let base_ts: DateTime<Utc> = Utc::now();
+        let base_ts: Timestamp = Timestamp::now();
         let delta_time = self.profile.max_delta_time * 0.5;
         let joint_states = self.baseline_joint_states();
         let meta_template = Self::metadata_template(self.scenario);
@@ -4438,7 +4440,7 @@ impl<'a> ScenarioGenerator<'a> {
         (0..count)
             .map(|i| {
                 let timestamp = base_ts
-                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                    + SignedDuration::from_millis(Self::ms_offset_to_i64(
                         i as f64 * delta_time * 1_000.0,
                     ));
                 let phase = i % 16;
@@ -4485,7 +4487,7 @@ impl<'a> ScenarioGenerator<'a> {
         pca_chain_b64: &str,
         ops: &[Operation],
     ) -> Vec<Command> {
-        let base_ts: DateTime<Utc> = Utc::now();
+        let base_ts: Timestamp = Timestamp::now();
         let delta_time = self.profile.max_delta_time * 0.5;
         let joint_states = self.baseline_joint_states();
         let meta_template = Self::metadata_template(self.scenario);
@@ -4504,7 +4506,7 @@ impl<'a> ScenarioGenerator<'a> {
         (0..count)
             .map(|i| {
                 let timestamp = base_ts
-                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                    + SignedDuration::from_millis(Self::ms_offset_to_i64(
                         i as f64 * delta_time * 1_000.0,
                     ));
                 // separation: 2.0 → 0.1 (× min_dist), linearly.
@@ -4557,7 +4559,7 @@ impl<'a> ScenarioGenerator<'a> {
         pca_chain_b64: &str,
         ops: &[Operation],
     ) -> Vec<Command> {
-        let base_ts: DateTime<Utc> = Utc::now();
+        let base_ts: Timestamp = Timestamp::now();
         let delta_time = self.profile.max_delta_time * 0.5;
         let joint_states = self.baseline_joint_states();
         let meta_template = Self::metadata_template(self.scenario);
@@ -4576,7 +4578,7 @@ impl<'a> ScenarioGenerator<'a> {
         (0..count)
             .map(|i| {
                 let timestamp = base_ts
-                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                    + SignedDuration::from_millis(Self::ms_offset_to_i64(
                         i as f64 * delta_time * 1_000.0,
                     ));
                 let pos = if zone_points.is_empty() {
@@ -4623,7 +4625,7 @@ impl<'a> ScenarioGenerator<'a> {
         ops: &[Operation],
     ) -> Vec<Command> {
         use invariant_robotics::models::command::EnvironmentState;
-        let base_ts: DateTime<Utc> = Utc::now();
+        let base_ts: Timestamp = Timestamp::now();
         let delta_time = self.profile.max_delta_time * 0.5;
         let joint_states = self.baseline_joint_states();
         let ee_pos = Self::safe_end_effector(self.profile);
@@ -4635,7 +4637,7 @@ impl<'a> ScenarioGenerator<'a> {
         (0..count)
             .map(|i| {
                 let timestamp = base_ts
-                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                    + SignedDuration::from_millis(Self::ms_offset_to_i64(
                         i as f64 * delta_time * 1_000.0,
                     ));
                 let engaged = i < half;
@@ -4683,7 +4685,7 @@ impl<'a> ScenarioGenerator<'a> {
         pca_chain_b64: &str,
         ops: &[Operation],
     ) -> Vec<Command> {
-        let base_ts: DateTime<Utc> = Utc::now();
+        let base_ts: Timestamp = Timestamp::now();
         let delta_time = self.profile.max_delta_time * 0.5;
         let ee_pos = Self::safe_end_effector(self.profile);
         let mut meta_template = Self::metadata_template(self.scenario);
@@ -4694,7 +4696,7 @@ impl<'a> ScenarioGenerator<'a> {
         (0..count)
             .map(|i| {
                 let timestamp = base_ts
-                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                    + SignedDuration::from_millis(Self::ms_offset_to_i64(
                         i as f64 * delta_time * 1_000.0,
                     ));
                 // Slow sinusoid, period 100 commands, 20 % amplitude
@@ -4753,7 +4755,7 @@ impl<'a> ScenarioGenerator<'a> {
         pca_chain_b64: &str,
         ops: &[Operation],
     ) -> Vec<Command> {
-        let base_ts: DateTime<Utc> = Utc::now();
+        let base_ts: Timestamp = Timestamp::now();
         let delta_time = self.profile.max_delta_time * 0.5;
         let joint_states = self.baseline_joint_states();
         let ee_pos = Self::safe_end_effector(self.profile);
@@ -4768,7 +4770,7 @@ impl<'a> ScenarioGenerator<'a> {
         (0..count)
             .map(|i| {
                 let timestamp = base_ts
-                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                    + SignedDuration::from_millis(Self::ms_offset_to_i64(
                         i as f64 * delta_time * 1_000.0,
                     ));
                 let seq = start.saturating_add(i as u64);
@@ -4808,7 +4810,7 @@ impl<'a> ScenarioGenerator<'a> {
         pca_chain_b64: &str,
         ops: &[Operation],
     ) -> Vec<Command> {
-        let base_ts: DateTime<Utc> = Utc::now();
+        let base_ts: Timestamp = Timestamp::now();
         let delta_time = self.profile.max_delta_time * 0.5;
         let baseline = self.baseline_joint_states();
         let ee_pos = Self::safe_end_effector(self.profile);
@@ -4827,7 +4829,7 @@ impl<'a> ScenarioGenerator<'a> {
         (0..count)
             .map(|i| {
                 let timestamp = base_ts
-                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                    + SignedDuration::from_millis(Self::ms_offset_to_i64(
                         i as f64 * delta_time * 1_000.0,
                     ));
                 let joint_states = if i.is_multiple_of(2) {
@@ -4878,7 +4880,7 @@ impl<'a> ScenarioGenerator<'a> {
     ) -> Vec<Command> {
         use invariant_robotics::models::command::EndEffectorForce;
         const STUFF: usize = 256;
-        let base_ts: DateTime<Utc> = Utc::now();
+        let base_ts: Timestamp = Timestamp::now();
         let delta_time = self.profile.max_delta_time * 0.5;
         let meta_template = Self::metadata_template(self.scenario);
         let authority = Self::authority(pca_chain_b64, ops);
@@ -4911,7 +4913,7 @@ impl<'a> ScenarioGenerator<'a> {
         (0..count)
             .map(|i| {
                 let timestamp = base_ts
-                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                    + SignedDuration::from_millis(Self::ms_offset_to_i64(
                         i as f64 * delta_time * 1_000.0,
                     ));
                 Command {
@@ -4947,7 +4949,7 @@ impl<'a> ScenarioGenerator<'a> {
         pca_chain_b64: &str,
         ops: &[Operation],
     ) -> Vec<Command> {
-        let base_ts: DateTime<Utc> = Utc::now();
+        let base_ts: Timestamp = Timestamp::now();
         let delta_time = self.profile.max_delta_time * 0.5;
         let meta_template = Self::metadata_template(self.scenario);
         let authority = Self::authority(pca_chain_b64, ops);
@@ -4969,7 +4971,7 @@ impl<'a> ScenarioGenerator<'a> {
         (0..count)
             .map(|i| {
                 let timestamp = base_ts
-                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                    + SignedDuration::from_millis(Self::ms_offset_to_i64(
                         i as f64 * delta_time * 1_000.0,
                     ));
                 Command {
@@ -4999,7 +5001,7 @@ impl<'a> ScenarioGenerator<'a> {
     /// check the validator runs first must still fail-closed, and
     /// removing either failure mode must surface a regression.
     fn nan_authority_bypass(&self, count: usize, ops: &[Operation]) -> Vec<Command> {
-        let base_ts: DateTime<Utc> = Utc::now();
+        let base_ts: Timestamp = Timestamp::now();
         let delta_time = self.profile.max_delta_time * 0.5;
         let ee_pos = Self::safe_end_effector(self.profile);
         let meta_template = Self::metadata_template(self.scenario);
@@ -5013,7 +5015,7 @@ impl<'a> ScenarioGenerator<'a> {
         (0..count)
             .map(|i| {
                 let timestamp = base_ts
-                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                    + SignedDuration::from_millis(Self::ms_offset_to_i64(
                         i as f64 * delta_time * 1_000.0,
                     ));
                 let mut joint_states = baseline.clone();
@@ -5058,7 +5060,7 @@ impl<'a> ScenarioGenerator<'a> {
         pca_chain_b64: &str,
         ops: &[Operation],
     ) -> Vec<Command> {
-        let base_ts: DateTime<Utc> = Utc::now();
+        let base_ts: Timestamp = Timestamp::now();
         let delta_time = self.profile.max_delta_time * 0.5;
         let ee_pos = Self::safe_end_effector(self.profile);
         let meta_template = Self::metadata_template(self.scenario);
@@ -5070,7 +5072,7 @@ impl<'a> ScenarioGenerator<'a> {
         (0..count)
             .map(|i| {
                 let timestamp = base_ts
-                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                    + SignedDuration::from_millis(Self::ms_offset_to_i64(
                         i as f64 * delta_time * 1_000.0,
                     ));
                 let joint_states: Vec<JointState> = self
@@ -5135,7 +5137,7 @@ impl<'a> ScenarioGenerator<'a> {
         pca_chain_b64: &str,
         ops: &[Operation],
     ) -> Vec<Command> {
-        let base_ts: DateTime<Utc> = Utc::now();
+        let base_ts: Timestamp = Timestamp::now();
         let delta_time = self.profile.max_delta_time * 0.5;
         let baseline = self.baseline_joint_states();
         let ee_pos = Self::safe_end_effector(self.profile);
@@ -5155,7 +5157,7 @@ impl<'a> ScenarioGenerator<'a> {
         (0..count)
             .map(|i| {
                 let timestamp = base_ts
-                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                    + SignedDuration::from_millis(Self::ms_offset_to_i64(
                         i as f64 * delta_time * 1_000.0,
                     ));
                 let (source, joint_states, seq) = if i.is_multiple_of(2) {
@@ -5208,7 +5210,7 @@ impl<'a> ScenarioGenerator<'a> {
         pca_chain_b64: &str,
         ops: &[Operation],
     ) -> Vec<Command> {
-        let base_ts: DateTime<Utc> = Utc::now();
+        let base_ts: Timestamp = Timestamp::now();
         let normal_dt = self.profile.max_delta_time * 0.5;
         let missed_dt = self.profile.max_delta_time * 5.0;
         let joint_states = self.baseline_joint_states();
@@ -5227,7 +5229,7 @@ impl<'a> ScenarioGenerator<'a> {
                     normal_dt
                 };
                 let timestamp = base_ts
-                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                    + SignedDuration::from_millis(Self::ms_offset_to_i64(
                         i as f64 * normal_dt * 1_000.0,
                     ));
                 Command {
@@ -5266,7 +5268,7 @@ impl<'a> ScenarioGenerator<'a> {
         pca_chain_b64: &str,
         ops: &[Operation],
     ) -> Vec<Command> {
-        let base_ts: DateTime<Utc> = Utc::now();
+        let base_ts: Timestamp = Timestamp::now();
         let delta_time = self.profile.max_delta_time * 0.5;
         let baseline = self.baseline_joint_states();
         let invalid = self.profile.joints.first().map(|j| {
@@ -5284,7 +5286,7 @@ impl<'a> ScenarioGenerator<'a> {
         (0..count)
             .map(|i| {
                 let timestamp = base_ts
-                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                    + SignedDuration::from_millis(Self::ms_offset_to_i64(
                         i as f64 * delta_time * 1_000.0,
                     ));
                 // 9 valid + 1 invalid per cycle of 10.
@@ -5326,7 +5328,7 @@ impl<'a> ScenarioGenerator<'a> {
     /// fields appear in the rejection reason to map the
     /// validator's internal structure.
     fn error_mining(&self, count: usize, pca_chain_b64: &str, ops: &[Operation]) -> Vec<Command> {
-        let base_ts: DateTime<Utc> = Utc::now();
+        let base_ts: Timestamp = Timestamp::now();
         let delta_time = self.profile.max_delta_time * 0.5;
         let baseline = self.baseline_joint_states();
         let ee_pos = Self::safe_end_effector(self.profile);
@@ -5344,7 +5346,7 @@ impl<'a> ScenarioGenerator<'a> {
         (0..count)
             .map(|i| {
                 let timestamp = base_ts
-                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                    + SignedDuration::from_millis(Self::ms_offset_to_i64(
                         i as f64 * delta_time * 1_000.0,
                     ));
                 let mut joint_states = baseline.clone();
@@ -5412,7 +5414,7 @@ impl<'a> ScenarioGenerator<'a> {
         pca_chain_b64: &str,
         ops: &[Operation],
     ) -> Vec<Command> {
-        let base_ts: DateTime<Utc> = Utc::now();
+        let base_ts: Timestamp = Timestamp::now();
         let delta_time = self.profile.max_delta_time * 0.5;
         let ee_pos = Self::safe_end_effector(self.profile);
         let meta_template = Self::metadata_template(self.scenario);
@@ -5423,7 +5425,7 @@ impl<'a> ScenarioGenerator<'a> {
         (0..count)
             .map(|i| {
                 let timestamp = base_ts
-                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                    + SignedDuration::from_millis(Self::ms_offset_to_i64(
                         i as f64 * delta_time * 1_000.0,
                     ));
 
@@ -5491,7 +5493,7 @@ impl<'a> ScenarioGenerator<'a> {
         pca_chain_b64: &str,
         ops: &[Operation],
     ) -> Vec<Command> {
-        let base_ts: DateTime<Utc> = Utc::now();
+        let base_ts: Timestamp = Timestamp::now();
         let delta_time = self.profile.max_delta_time * 0.5;
         let ee_pos = Self::safe_end_effector(self.profile);
         let meta_template = Self::metadata_template(self.scenario);
@@ -5502,7 +5504,7 @@ impl<'a> ScenarioGenerator<'a> {
         (0..count)
             .map(|i| {
                 let timestamp = base_ts
-                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                    + SignedDuration::from_millis(Self::ms_offset_to_i64(
                         i as f64 * delta_time * 1_000.0,
                     ));
 
@@ -5567,7 +5569,7 @@ impl<'a> ScenarioGenerator<'a> {
         pca_chain_b64: &str,
         ops: &[Operation],
     ) -> Vec<Command> {
-        let base_ts: DateTime<Utc> = Utc::now();
+        let base_ts: Timestamp = Timestamp::now();
         let normal_delta_time = self.profile.max_delta_time * 0.5;
         let missed_heartbeat_dt = self.profile.max_delta_time * 5.0;
         let joint_states = self.baseline_joint_states();
@@ -5581,7 +5583,7 @@ impl<'a> ScenarioGenerator<'a> {
         (0..count)
             .map(|i| {
                 let timestamp = base_ts
-                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                    + SignedDuration::from_millis(Self::ms_offset_to_i64(
                         i as f64 * normal_delta_time * 1_000.0,
                     ));
                 let (delta_time, sequence) = if i < phase_boundary {
@@ -5628,7 +5630,7 @@ impl<'a> ScenarioGenerator<'a> {
         pca_chain_b64: &str,
         ops: &[Operation],
     ) -> Vec<Command> {
-        let base_ts: DateTime<Utc> = Utc::now();
+        let base_ts: Timestamp = Timestamp::now();
         let delta_time = self.profile.max_delta_time.clamp(1e-4, 0.001);
         let baseline = self.baseline_joint_states();
         let invalid = self.profile.joints.first().map(|j| {
@@ -5646,7 +5648,7 @@ impl<'a> ScenarioGenerator<'a> {
         (0..count)
             .map(|i| {
                 let timestamp = base_ts
-                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                    + SignedDuration::from_millis(Self::ms_offset_to_i64(
                         i as f64 * delta_time * 1_000.0,
                     ));
                 let joint_states = if i.is_multiple_of(2) {
@@ -5693,7 +5695,7 @@ impl<'a> ScenarioGenerator<'a> {
         pca_chain_b64: &str,
         ops: &[Operation],
     ) -> Vec<Command> {
-        let base_ts: DateTime<Utc> = Utc::now();
+        let base_ts: Timestamp = Timestamp::now();
         let delta_time = self.profile.max_delta_time.clamp(1e-4, 0.001);
         let joint_states = self.baseline_joint_states();
         let ee_pos = Self::safe_end_effector(self.profile);
@@ -5704,7 +5706,7 @@ impl<'a> ScenarioGenerator<'a> {
         (0..count)
             .map(|i| {
                 let timestamp = base_ts
-                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                    + SignedDuration::from_millis(Self::ms_offset_to_i64(
                         i as f64 * delta_time * 1_000.0,
                     ));
                 let mut metadata = Self::metadata_stamp(&meta_template, i);
@@ -5750,7 +5752,7 @@ impl<'a> ScenarioGenerator<'a> {
         pca_chain_b64: &str,
         ops: &[Operation],
     ) -> Vec<Command> {
-        let base_ts: DateTime<Utc> = Utc::now();
+        let base_ts: Timestamp = Timestamp::now();
         let delta_time = self.profile.max_delta_time * 0.5;
         let joint_states = self.baseline_joint_states();
         let meta_template = Self::metadata_template(self.scenario);
@@ -5775,7 +5777,7 @@ impl<'a> ScenarioGenerator<'a> {
         (0..count)
             .map(|i| {
                 let timestamp = base_ts
-                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                    + SignedDuration::from_millis(Self::ms_offset_to_i64(
                         i as f64 * delta_time * 1_000.0,
                     ));
                 let mut metadata = Self::metadata_stamp(&meta_template, i);
@@ -5825,7 +5827,7 @@ impl<'a> ScenarioGenerator<'a> {
         pca_chain_b64: &str,
         ops: &[Operation],
     ) -> Vec<Command> {
-        let base_ts: DateTime<Utc> = Utc::now();
+        let base_ts: Timestamp = Timestamp::now();
         let delta_time = self.profile.max_delta_time * 0.5;
         let joint_states = self.baseline_joint_states();
         let ee_pos = Self::safe_end_effector(self.profile);
@@ -5843,7 +5845,7 @@ impl<'a> ScenarioGenerator<'a> {
         (0..count)
             .map(|i| {
                 let timestamp = base_ts
-                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                    + SignedDuration::from_millis(Self::ms_offset_to_i64(
                         i as f64 * delta_time * 1_000.0,
                     ));
                 let mut metadata = Self::metadata_stamp(&meta_template, i);
@@ -5901,7 +5903,7 @@ impl<'a> ScenarioGenerator<'a> {
         pca_chain_b64: &str,
         ops: &[Operation],
     ) -> Vec<Command> {
-        let base_ts: DateTime<Utc> = Utc::now();
+        let base_ts: Timestamp = Timestamp::now();
         let delta_time = self.profile.max_delta_time * 0.5;
         let joint_states = self.baseline_joint_states();
         let ee_pos = Self::safe_end_effector(self.profile);
@@ -5912,7 +5914,7 @@ impl<'a> ScenarioGenerator<'a> {
         (0..count)
             .map(|i| {
                 let timestamp = base_ts
-                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                    + SignedDuration::from_millis(Self::ms_offset_to_i64(
                         i as f64 * delta_time * 1_000.0,
                     ));
                 let source_idx = i % sources.len();
@@ -5959,7 +5961,7 @@ impl<'a> ScenarioGenerator<'a> {
         pca_chain_b64: &str,
         ops: &[Operation],
     ) -> Vec<Command> {
-        let base_ts: DateTime<Utc> = Utc::now();
+        let base_ts: Timestamp = Timestamp::now();
         let delta_time = self.profile.max_delta_time * 0.5;
         let ee_pos = Self::safe_end_effector(self.profile);
         let meta_template = Self::metadata_template(self.scenario);
@@ -5976,7 +5978,7 @@ impl<'a> ScenarioGenerator<'a> {
         (0..count)
             .map(|i| {
                 let timestamp = base_ts
-                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                    + SignedDuration::from_millis(Self::ms_offset_to_i64(
                         i as f64 * delta_time * 1_000.0,
                     ));
                 // Fraction of the [mid, max] margin consumed at step i.
@@ -6039,7 +6041,7 @@ impl<'a> ScenarioGenerator<'a> {
         pca_chain_b64: &str,
         ops: &[Operation],
     ) -> Vec<Command> {
-        let base_ts: DateTime<Utc> = Utc::now();
+        let base_ts: Timestamp = Timestamp::now();
         let delta_time = self.profile.max_delta_time * 0.5;
         let joint_states = self.baseline_joint_states();
         let ee_pos = Self::safe_end_effector(self.profile);
@@ -6051,7 +6053,7 @@ impl<'a> ScenarioGenerator<'a> {
         (0..count)
             .map(|i| {
                 let timestamp = base_ts
-                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                    + SignedDuration::from_millis(Self::ms_offset_to_i64(
                         i as f64 * delta_time * 1_000.0,
                     ));
 
@@ -6091,7 +6093,7 @@ impl<'a> ScenarioGenerator<'a> {
         pca_chain_b64: &str,
         ops: &[Operation],
     ) -> Vec<Command> {
-        let base_ts: DateTime<Utc> = Utc::now();
+        let base_ts: Timestamp = Timestamp::now();
         let delta_time = self.profile.max_delta_time * 0.5;
         let joint_states = self.baseline_joint_states();
         let ee_pos = Self::safe_end_effector(self.profile);
@@ -6104,7 +6106,7 @@ impl<'a> ScenarioGenerator<'a> {
         (0..count)
             .map(|i| {
                 let timestamp = base_ts
-                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                    + SignedDuration::from_millis(Self::ms_offset_to_i64(
                         i as f64 * delta_time * 1_000.0,
                     ));
                 let generation = (i / segment_size) + 1;
@@ -6147,7 +6149,7 @@ impl<'a> ScenarioGenerator<'a> {
     /// REJECT under P1 (finite-bounds) or the fail-closed spatial
     /// input check.
     fn pure_fuzz(&self, count: usize, pca_chain_b64: &str, ops: &[Operation]) -> Vec<Command> {
-        let base_ts: DateTime<Utc> = Utc::now();
+        let base_ts: Timestamp = Timestamp::now();
         let delta_time = self.profile.max_delta_time * 0.5;
         let ee_pos = Self::safe_end_effector(self.profile);
         let meta_template = Self::metadata_template(self.scenario);
@@ -6159,7 +6161,7 @@ impl<'a> ScenarioGenerator<'a> {
         (0..count)
             .map(|i| {
                 let timestamp = base_ts
-                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                    + SignedDuration::from_millis(Self::ms_offset_to_i64(
                         i as f64 * delta_time * 1_000.0,
                     ));
                 // Deterministic LCG (Numerical Recipes) over (index, seed)
@@ -6227,7 +6229,7 @@ impl<'a> ScenarioGenerator<'a> {
     /// (no operator delegation) so authority rejects on every step.
     /// Joint state is baseline-safe to isolate the failure mode.
     fn authority_laundering(&self, count: usize, _ops: &[Operation]) -> Vec<Command> {
-        let base_ts: DateTime<Utc> = Utc::now();
+        let base_ts: Timestamp = Timestamp::now();
         let delta_time = self.profile.max_delta_time * 0.5;
         let joint_states = self.baseline_joint_states();
         let ee_pos = Self::safe_end_effector(self.profile);
@@ -6245,7 +6247,7 @@ impl<'a> ScenarioGenerator<'a> {
         (0..count)
             .map(|i| {
                 let timestamp = base_ts
-                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                    + SignedDuration::from_millis(Self::ms_offset_to_i64(
                         i as f64 * delta_time * 1_000.0,
                     ));
                 let tier_idx = i % tiers.len();
@@ -6295,7 +6297,7 @@ impl<'a> ScenarioGenerator<'a> {
         pca_chain_b64: &str,
         ops: &[Operation],
     ) -> Vec<Command> {
-        let base_ts: DateTime<Utc> = Utc::now();
+        let base_ts: Timestamp = Timestamp::now();
         let normal_dt = self.profile.max_delta_time * 0.5;
         let missed_dt = self.profile.max_delta_time * 5.0;
         let joint_states = self.baseline_joint_states();
@@ -6318,7 +6320,7 @@ impl<'a> ScenarioGenerator<'a> {
                     (normal_dt, pca_chain_b64.to_owned(), "C")
                 };
                 let timestamp = base_ts
-                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                    + SignedDuration::from_millis(Self::ms_offset_to_i64(
                         i as f64 * normal_dt * 1_000.0,
                     ));
                 let mut metadata = Self::metadata_stamp(&meta_template, i);
@@ -6360,7 +6362,7 @@ impl<'a> ScenarioGenerator<'a> {
     /// Per-source `sequence` is strictly monotonic so the failure
     /// mode isolates authority, not order.
     fn multi_agent_collusion(&self, count: usize) -> Vec<Command> {
-        let base_ts: DateTime<Utc> = Utc::now();
+        let base_ts: Timestamp = Timestamp::now();
         let delta_time = self.profile.max_delta_time * 0.5;
         let joint_states = self.baseline_joint_states();
         let ee_pos = Self::safe_end_effector(self.profile);
@@ -6371,7 +6373,7 @@ impl<'a> ScenarioGenerator<'a> {
         (0..count)
             .map(|i| {
                 let timestamp = base_ts
-                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                    + SignedDuration::from_millis(Self::ms_offset_to_i64(
                         i as f64 * delta_time * 1_000.0,
                     ));
                 let is_a = i % 2 == 0;
@@ -6435,7 +6437,7 @@ impl<'a> ScenarioGenerator<'a> {
         pca_chain_b64: &str,
         ops: &[Operation],
     ) -> Vec<Command> {
-        let base_ts: DateTime<Utc> = Utc::now();
+        let base_ts: Timestamp = Timestamp::now();
         let delta_time = self.profile.max_delta_time * 0.5;
         let joint_states = self.baseline_joint_states();
         let ee_pos = Self::safe_end_effector(self.profile);
@@ -6446,7 +6448,7 @@ impl<'a> ScenarioGenerator<'a> {
         (0..count)
             .map(|i| {
                 let timestamp = base_ts
-                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                    + SignedDuration::from_millis(Self::ms_offset_to_i64(
                         i as f64 * delta_time * 1_000.0,
                     ));
                 let (source, sequence) = if i < half {
@@ -6493,7 +6495,7 @@ impl<'a> ScenarioGenerator<'a> {
         pca_chain_b64: &str,
         ops: &[Operation],
     ) -> Vec<Command> {
-        let base_ts: DateTime<Utc> = Utc::now();
+        let base_ts: Timestamp = Timestamp::now();
         let delta_time = self.profile.max_delta_time * 0.5;
         let joint_states = self.baseline_joint_states();
         let ee_pos = Self::safe_end_effector(self.profile);
@@ -6504,7 +6506,7 @@ impl<'a> ScenarioGenerator<'a> {
         (0..count)
             .map(|i| {
                 let timestamp = base_ts
-                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                    + SignedDuration::from_millis(Self::ms_offset_to_i64(
                         i as f64 * delta_time * 1_000.0,
                     ));
                 let mut metadata = Self::metadata_stamp(&meta_template, i);
@@ -6546,7 +6548,7 @@ impl<'a> ScenarioGenerator<'a> {
         pca_chain_b64: &str,
         ops: &[Operation],
     ) -> Vec<Command> {
-        let base_ts: DateTime<Utc> = Utc::now();
+        let base_ts: Timestamp = Timestamp::now();
         let delta_time = self.profile.max_delta_time * 0.5;
         let joint_states = self.baseline_joint_states();
         let ee_pos = Self::safe_end_effector(self.profile);
@@ -6556,7 +6558,7 @@ impl<'a> ScenarioGenerator<'a> {
         (0..count)
             .map(|i| {
                 let timestamp = base_ts
-                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                    + SignedDuration::from_millis(Self::ms_offset_to_i64(
                         i as f64 * delta_time * 1_000.0,
                     ));
                 // Deterministic per-command tampered envelope. Stays in
@@ -6606,7 +6608,7 @@ impl<'a> ScenarioGenerator<'a> {
     /// scope-mismatch check must reject any command whose claimed
     /// ops exceed what the chain authorises.
     fn privilege_escalation(&self, count: usize, pca_chain_b64: &str) -> Vec<Command> {
-        let base_ts: DateTime<Utc> = Utc::now();
+        let base_ts: Timestamp = Timestamp::now();
         let delta_time = self.profile.max_delta_time * 0.5;
         let joint_states = self.baseline_joint_states();
         let ee_pos = Self::safe_end_effector(self.profile);
@@ -6623,7 +6625,7 @@ impl<'a> ScenarioGenerator<'a> {
         (0..count)
             .map(|i| {
                 let timestamp = base_ts
-                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                    + SignedDuration::from_millis(Self::ms_offset_to_i64(
                         i as f64 * delta_time * 1_000.0,
                     ));
                 let breadth = (i % tier_ladder.len()) + 1;
@@ -6667,8 +6669,8 @@ impl<'a> ScenarioGenerator<'a> {
     /// temporal-window check (A3) rejects.
     fn expired_chain(&self, count: usize, pca_chain_b64: &str, ops: &[Operation]) -> Vec<Command> {
         const ONE_YEAR_SECONDS: i64 = 365 * 24 * 3600;
-        let now: DateTime<Utc> = Utc::now();
-        let base_ts = now - Duration::seconds(ONE_YEAR_SECONDS);
+        let now: Timestamp = Timestamp::now();
+        let base_ts = now - SignedDuration::from_secs(ONE_YEAR_SECONDS);
         let delta_time = self.profile.max_delta_time * 0.5;
         let joint_states = self.baseline_joint_states();
         let ee_pos = Self::safe_end_effector(self.profile);
@@ -6679,7 +6681,7 @@ impl<'a> ScenarioGenerator<'a> {
         (0..count)
             .map(|i| {
                 let timestamp = base_ts
-                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                    + SignedDuration::from_millis(Self::ms_offset_to_i64(
                         i as f64 * delta_time * 1_000.0,
                     ));
                 let mut metadata = Self::metadata_stamp(&meta_template, i);
@@ -6720,7 +6722,7 @@ impl<'a> ScenarioGenerator<'a> {
     /// `pca_chain_b64` is deliberately *not* used — this scenario
     /// stands in for a chain signed with an entirely different key.
     fn key_substitution(&self, count: usize, ops: &[Operation]) -> Vec<Command> {
-        let base_ts: DateTime<Utc> = Utc::now();
+        let base_ts: Timestamp = Timestamp::now();
         let delta_time = self.profile.max_delta_time * 0.5;
         let joint_states = self.baseline_joint_states();
         let ee_pos = Self::safe_end_effector(self.profile);
@@ -6730,7 +6732,7 @@ impl<'a> ScenarioGenerator<'a> {
         (0..count)
             .map(|i| {
                 let timestamp = base_ts
-                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                    + SignedDuration::from_millis(Self::ms_offset_to_i64(
                         i as f64 * delta_time * 1_000.0,
                     ));
                 let kid = format!("untrusted_kid_{i:08}");
@@ -6786,7 +6788,7 @@ impl<'a> ScenarioGenerator<'a> {
     /// "agent_beta_<i>"` — violating A1 (origin-principal continuity).
     /// The validator must reject every command.
     fn provenance_mutation(&self, count: usize, ops: &[Operation]) -> Vec<Command> {
-        let base_ts: DateTime<Utc> = Utc::now();
+        let base_ts: Timestamp = Timestamp::now();
         let delta_time = self.profile.max_delta_time * 0.5;
         let joint_states = self.baseline_joint_states();
         let ee_pos = Self::safe_end_effector(self.profile);
@@ -6796,7 +6798,7 @@ impl<'a> ScenarioGenerator<'a> {
         (0..count)
             .map(|i| {
                 let timestamp = base_ts
-                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                    + SignedDuration::from_millis(Self::ms_offset_to_i64(
                         i as f64 * delta_time * 1_000.0,
                     ));
                 let mutated_p0 = format!("agent_beta_{i:08}");
@@ -6849,7 +6851,7 @@ impl<'a> ScenarioGenerator<'a> {
     /// `actuate:*` does not subsume reads or admin/debug scopes, so
     /// scope-check rejects every command.
     fn wildcard_exploit(&self, count: usize, pca_chain_b64: &str) -> Vec<Command> {
-        let base_ts: DateTime<Utc> = Utc::now();
+        let base_ts: Timestamp = Timestamp::now();
         let delta_time = self.profile.max_delta_time * 0.5;
         let joint_states = self.baseline_joint_states();
         let ee_pos = Self::safe_end_effector(self.profile);
@@ -6867,7 +6869,7 @@ impl<'a> ScenarioGenerator<'a> {
         (0..count)
             .map(|i| {
                 let timestamp = base_ts
-                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                    + SignedDuration::from_millis(Self::ms_offset_to_i64(
                         i as f64 * delta_time * 1_000.0,
                     ));
                 let op_str = outside_scope_ops[i % outside_scope_ops.len()];
@@ -6917,7 +6919,7 @@ impl<'a> ScenarioGenerator<'a> {
         pca_chain_b64: &str,
         ops: &[Operation],
     ) -> Vec<Command> {
-        let base_ts: DateTime<Utc> = Utc::now();
+        let base_ts: Timestamp = Timestamp::now();
         let delta_time = self.profile.max_delta_time * 0.5;
         let joint_states = self.baseline_joint_states();
         let ee_pos = Self::safe_end_effector(self.profile);
@@ -6935,7 +6937,7 @@ impl<'a> ScenarioGenerator<'a> {
         (0..count)
             .map(|i| {
                 let timestamp = base_ts
-                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                    + SignedDuration::from_millis(Self::ms_offset_to_i64(
                         i as f64 * delta_time * 1_000.0,
                     ));
                 // Ramp 0 → 3.0 across the sequence.
@@ -6981,7 +6983,7 @@ impl<'a> ScenarioGenerator<'a> {
         ops: &[Operation],
     ) -> Vec<Command> {
         use invariant_robotics::models::command::EndEffectorForce;
-        let base_ts: DateTime<Utc> = Utc::now();
+        let base_ts: Timestamp = Timestamp::now();
         let delta_time = self.profile.max_delta_time * 0.5;
         let joint_states = self.baseline_joint_states();
         let ee_pos = Self::safe_end_effector(self.profile);
@@ -6999,7 +7001,7 @@ impl<'a> ScenarioGenerator<'a> {
         (0..count)
             .map(|i| {
                 let timestamp = base_ts
-                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                    + SignedDuration::from_millis(Self::ms_offset_to_i64(
                         i as f64 * delta_time * 1_000.0,
                     ));
                 // Ramp 0 → 3.0 across the sequence.
@@ -7049,7 +7051,7 @@ impl<'a> ScenarioGenerator<'a> {
         ops: &[Operation],
     ) -> Vec<Command> {
         use invariant_robotics::models::command::EndEffectorForce;
-        let base_ts: DateTime<Utc> = Utc::now();
+        let base_ts: Timestamp = Timestamp::now();
         let delta_time = self.profile.max_delta_time * 0.5;
         let joint_states = self.baseline_joint_states();
         let ee_pos = Self::safe_end_effector(self.profile);
@@ -7068,7 +7070,7 @@ impl<'a> ScenarioGenerator<'a> {
         (0..count)
             .map(|i| {
                 let timestamp = base_ts
-                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                    + SignedDuration::from_millis(Self::ms_offset_to_i64(
                         i as f64 * delta_time * 1_000.0,
                     ));
                 let grasp = regimes[i % regimes.len()];
@@ -7116,7 +7118,7 @@ impl<'a> ScenarioGenerator<'a> {
         ops: &[Operation],
     ) -> Vec<Command> {
         use invariant_robotics::models::command::EndEffectorForce;
-        let base_ts: DateTime<Utc> = Utc::now();
+        let base_ts: Timestamp = Timestamp::now();
         let delta_time = self.profile.max_delta_time * 0.5;
         let joint_states = self.baseline_joint_states();
         let ee_pos = Self::safe_end_effector(self.profile);
@@ -7134,7 +7136,7 @@ impl<'a> ScenarioGenerator<'a> {
         (0..count)
             .map(|i| {
                 let timestamp = base_ts
-                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                    + SignedDuration::from_millis(Self::ms_offset_to_i64(
                         i as f64 * delta_time * 1_000.0,
                     ));
                 let sequence = i as u64 + 1;
@@ -7193,7 +7195,7 @@ impl<'a> ScenarioGenerator<'a> {
     ) -> Vec<Command> {
         use base64::Engine as _;
         use invariant_robotics::sensor::{SensorPayload, SensorReading, SignedSensorReading};
-        let base_ts: DateTime<Utc> = Utc::now();
+        let base_ts: Timestamp = Timestamp::now();
         let delta_time = self.profile.max_delta_time * 0.5;
         let joint_states = self.baseline_joint_states();
         let ee_pos = Self::safe_end_effector(self.profile);
@@ -7203,13 +7205,13 @@ impl<'a> ScenarioGenerator<'a> {
         // 10 seconds of look-ahead is the spec citation (spec-15m-campaign
         // §3 H-06). A typical sensor max_age window is a few hundred ms,
         // so this is comfortably outside.
-        let future_offset = Duration::seconds(10);
+        let future_offset = SignedDuration::from_secs(10);
         let stub_sig = base64::engine::general_purpose::STANDARD.encode([0u8; 32]);
 
         (0..count)
             .map(|i| {
                 let timestamp = base_ts
-                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                    + SignedDuration::from_millis(Self::ms_offset_to_i64(
                         i as f64 * delta_time * 1_000.0,
                     ));
                 let reading = SensorReading {
@@ -7264,7 +7266,7 @@ impl<'a> ScenarioGenerator<'a> {
         ops: &[Operation],
     ) -> Vec<Command> {
         use invariant_robotics::models::command::{ActuatorTemperature, EnvironmentState};
-        let base_ts: DateTime<Utc> = Utc::now();
+        let base_ts: Timestamp = Timestamp::now();
         let delta_time = self.profile.max_delta_time * 0.5;
         let joint_states = self.baseline_joint_states();
         let ee_pos = Self::safe_end_effector(self.profile);
@@ -7284,7 +7286,7 @@ impl<'a> ScenarioGenerator<'a> {
         (0..count)
             .map(|i| {
                 let timestamp = base_ts
-                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                    + SignedDuration::from_millis(Self::ms_offset_to_i64(
                         i as f64 * delta_time * 1_000.0,
                     ));
                 let t = ambient + (peak - ambient) * (i as f64 / count_f);
@@ -7336,7 +7338,7 @@ impl<'a> ScenarioGenerator<'a> {
     /// `critical_battery_pct` (P23).
     fn battery_drain(&self, count: usize, pca_chain_b64: &str, ops: &[Operation]) -> Vec<Command> {
         use invariant_robotics::models::command::EnvironmentState;
-        let base_ts: DateTime<Utc> = Utc::now();
+        let base_ts: Timestamp = Timestamp::now();
         let delta_time = self.profile.max_delta_time * 0.5;
         let joint_states = self.baseline_joint_states();
         let ee_pos = Self::safe_end_effector(self.profile);
@@ -7348,7 +7350,7 @@ impl<'a> ScenarioGenerator<'a> {
         (0..count)
             .map(|i| {
                 let timestamp = base_ts
-                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                    + SignedDuration::from_millis(Self::ms_offset_to_i64(
                         i as f64 * delta_time * 1_000.0,
                     ));
                 let pct = 100.0 * (1.0 - (i as f64 / count_f));
@@ -7390,7 +7392,7 @@ impl<'a> ScenarioGenerator<'a> {
     /// `max_latency_ms` (REJECT, P24).
     fn latency_spike(&self, count: usize, pca_chain_b64: &str, ops: &[Operation]) -> Vec<Command> {
         use invariant_robotics::models::command::EnvironmentState;
-        let base_ts: DateTime<Utc> = Utc::now();
+        let base_ts: Timestamp = Timestamp::now();
         let delta_time = self.profile.max_delta_time * 0.5;
         let joint_states = self.baseline_joint_states();
         let ee_pos = Self::safe_end_effector(self.profile);
@@ -7409,7 +7411,7 @@ impl<'a> ScenarioGenerator<'a> {
         (0..count)
             .map(|i| {
                 let timestamp = base_ts
-                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                    + SignedDuration::from_millis(Self::ms_offset_to_i64(
                         i as f64 * delta_time * 1_000.0,
                     ));
                 let latency = peak * (i as f64 / count_f);
@@ -7457,7 +7459,7 @@ impl<'a> ScenarioGenerator<'a> {
         ops: &[Operation],
     ) -> Vec<Command> {
         use invariant_robotics::models::command::EnvironmentState;
-        let base_ts: DateTime<Utc> = Utc::now();
+        let base_ts: Timestamp = Timestamp::now();
         let delta_time = self.profile.max_delta_time * 0.5;
         let joint_states = self.baseline_joint_states();
         let ee_pos = Self::safe_end_effector(self.profile);
@@ -7468,7 +7470,7 @@ impl<'a> ScenarioGenerator<'a> {
         (0..count)
             .map(|i| {
                 let timestamp = base_ts
-                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                    + SignedDuration::from_millis(Self::ms_offset_to_i64(
                         i as f64 * delta_time * 1_000.0,
                     ));
                 let engaged = !i.is_multiple_of(2);
@@ -7518,7 +7520,7 @@ impl<'a> ScenarioGenerator<'a> {
         ops: &[Operation],
     ) -> Vec<Command> {
         use invariant_robotics::models::command::{ActuatorTemperature, EnvironmentState};
-        let base_ts: DateTime<Utc> = Utc::now();
+        let base_ts: Timestamp = Timestamp::now();
         let delta_time = self.profile.max_delta_time * 0.5;
         let joint_states = self.baseline_joint_states();
         let ee_pos = Self::safe_end_effector(self.profile);
@@ -7529,7 +7531,7 @@ impl<'a> ScenarioGenerator<'a> {
         (0..count)
             .map(|i| {
                 let timestamp = base_ts
-                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                    + SignedDuration::from_millis(Self::ms_offset_to_i64(
                         i as f64 * delta_time * 1_000.0,
                     ));
                 let mut env = EnvironmentState {
@@ -7602,7 +7604,7 @@ impl<'a> ScenarioGenerator<'a> {
         ops: &[Operation],
     ) -> Vec<Command> {
         use invariant_robotics::models::command::EndEffectorForce;
-        let base_ts: DateTime<Utc> = Utc::now();
+        let base_ts: Timestamp = Timestamp::now();
         let delta_time = self.profile.max_delta_time * 0.5;
         let baseline_joints = self.baseline_joint_states();
         let safe_ee = Self::safe_end_effector(self.profile);
@@ -7616,7 +7618,7 @@ impl<'a> ScenarioGenerator<'a> {
         (0..count)
             .map(|i| {
                 let timestamp = base_ts
-                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                    + SignedDuration::from_millis(Self::ms_offset_to_i64(
                         i as f64 * delta_time * 1_000.0,
                     ));
                 let mut joint_states = baseline_joints.clone();
@@ -7685,7 +7687,7 @@ impl<'a> ScenarioGenerator<'a> {
     ) -> Vec<Command> {
         use base64::Engine as _;
         use invariant_robotics::sensor::{SensorPayload, SensorReading, SignedSensorReading};
-        let base_ts: DateTime<Utc> = Utc::now();
+        let base_ts: Timestamp = Timestamp::now();
         let delta_time = self.profile.max_delta_time * 0.5;
         let joint_states = self.baseline_joint_states();
         let ee_pos = Self::safe_end_effector(self.profile);
@@ -7699,7 +7701,7 @@ impl<'a> ScenarioGenerator<'a> {
         (0..count)
             .map(|i| {
                 let timestamp = base_ts
-                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                    + SignedDuration::from_millis(Self::ms_offset_to_i64(
                         i as f64 * delta_time * 1_000.0,
                     ));
                 let reading_a = SensorReading {
@@ -7768,7 +7770,7 @@ impl<'a> ScenarioGenerator<'a> {
         pca_chain_b64: &str,
         ops: &[Operation],
     ) -> Vec<Command> {
-        let base_ts: DateTime<Utc> = Utc::now();
+        let base_ts: Timestamp = Timestamp::now();
         let delta_time = self.profile.max_delta_time * 0.5;
         let joint_states = self.baseline_joint_states();
         let ee_pos = Self::safe_end_effector(self.profile);
@@ -7796,7 +7798,7 @@ impl<'a> ScenarioGenerator<'a> {
         (0..count)
             .map(|i| {
                 let timestamp = base_ts
-                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                    + SignedDuration::from_millis(Self::ms_offset_to_i64(
                         i as f64 * delta_time * 1_000.0,
                     ));
                 let com = match i % 4 {
@@ -7843,7 +7845,7 @@ impl<'a> ScenarioGenerator<'a> {
         pca_chain_b64: &str,
         ops: &[Operation],
     ) -> Vec<Command> {
-        let base_ts: DateTime<Utc> = Utc::now();
+        let base_ts: Timestamp = Timestamp::now();
         let delta_time = self.profile.max_delta_time * 0.5;
         let joint_states = self.baseline_joint_states();
         let ee_pos = Self::safe_end_effector(self.profile);
@@ -7861,7 +7863,7 @@ impl<'a> ScenarioGenerator<'a> {
         (0..count)
             .map(|i| {
                 let timestamp = base_ts
-                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                    + SignedDuration::from_millis(Self::ms_offset_to_i64(
                         i as f64 * delta_time * 1_000.0,
                     ));
                 let mut loco_state = Self::baseline_locomotion_state();
@@ -7911,7 +7913,7 @@ impl<'a> ScenarioGenerator<'a> {
         pca_chain_b64: &str,
         ops: &[Operation],
     ) -> Vec<Command> {
-        let base_ts: DateTime<Utc> = Utc::now();
+        let base_ts: Timestamp = Timestamp::now();
         let delta_time = self.profile.max_delta_time * 0.5;
         let joint_states = self.baseline_joint_states();
         let ee_pos = Self::safe_end_effector(self.profile);
@@ -7929,7 +7931,7 @@ impl<'a> ScenarioGenerator<'a> {
         (0..count)
             .map(|i| {
                 let timestamp = base_ts
-                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                    + SignedDuration::from_millis(Self::ms_offset_to_i64(
                         i as f64 * delta_time * 1_000.0,
                     ));
                 let t = i as f64 / count_f;
@@ -7971,7 +7973,7 @@ impl<'a> ScenarioGenerator<'a> {
         pca_chain_b64: &str,
         ops: &[Operation],
     ) -> Vec<Command> {
-        let base_ts: DateTime<Utc> = Utc::now();
+        let base_ts: Timestamp = Timestamp::now();
         let delta_time = self.profile.max_delta_time * 0.5;
         let joint_states = self.baseline_joint_states();
         let ee_pos = Self::safe_end_effector(self.profile);
@@ -7989,7 +7991,7 @@ impl<'a> ScenarioGenerator<'a> {
         (0..count)
             .map(|i| {
                 let timestamp = base_ts
-                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                    + SignedDuration::from_millis(Self::ms_offset_to_i64(
                         i as f64 * delta_time * 1_000.0,
                     ));
                 let t = i as f64 / count_f;
@@ -8033,7 +8035,7 @@ impl<'a> ScenarioGenerator<'a> {
         ops: &[Operation],
     ) -> Vec<Command> {
         use invariant_robotics::models::command::EnvironmentState;
-        let base_ts: DateTime<Utc> = Utc::now();
+        let base_ts: Timestamp = Timestamp::now();
         let delta_time = self.profile.max_delta_time * 0.5;
         let joint_states = self.baseline_joint_states();
         let ee_pos = Self::safe_end_effector(self.profile);
@@ -8046,7 +8048,7 @@ impl<'a> ScenarioGenerator<'a> {
         (0..count)
             .map(|i| {
                 let timestamp = base_ts
-                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                    + SignedDuration::from_millis(Self::ms_offset_to_i64(
                         i as f64 * delta_time * 1_000.0,
                     ));
                 let pitch = peak_rad * (i as f64 / count_f);
@@ -8088,7 +8090,7 @@ impl<'a> ScenarioGenerator<'a> {
     /// (upper bound). Companion to [`Self::delta_time_attack`] which
     /// targets the non-finite / non-positive cases.
     fn stale_command(&self, count: usize, pca_chain_b64: &str, ops: &[Operation]) -> Vec<Command> {
-        let base_ts: DateTime<Utc> = Utc::now();
+        let base_ts: Timestamp = Timestamp::now();
         let joint_states = self.baseline_joint_states();
         let ee_pos = Self::safe_end_effector(self.profile);
         let meta_template = Self::metadata_template(self.scenario);
@@ -8100,7 +8102,9 @@ impl<'a> ScenarioGenerator<'a> {
         (0..count)
             .map(|i| {
                 let timestamp = base_ts
-                    + Duration::milliseconds(Self::ms_offset_to_i64(i as f64 * stamp_dt * 1_000.0));
+                    + SignedDuration::from_millis(Self::ms_offset_to_i64(
+                        i as f64 * stamp_dt * 1_000.0,
+                    ));
                 Command {
                     timestamp,
                     source: source.clone(),
@@ -8148,7 +8152,7 @@ impl<'a> ScenarioGenerator<'a> {
         ops: &[Operation],
     ) -> Vec<Command> {
         const SEED: u64 = 0xFA25_1234;
-        let base_ts: DateTime<Utc> = Utc::now();
+        let base_ts: Timestamp = Timestamp::now();
         let delta_time = self.profile.max_delta_time * 0.5;
         let ee_pos = Self::safe_end_effector(self.profile);
         let meta_template = Self::metadata_template(self.scenario);
@@ -8158,7 +8162,7 @@ impl<'a> ScenarioGenerator<'a> {
         (0..count)
             .map(|i| {
                 let timestamp = base_ts
-                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                    + SignedDuration::from_millis(Self::ms_offset_to_i64(
                         i as f64 * delta_time * 1_000.0,
                     ));
                 let joint_states: Vec<JointState> = self
@@ -8215,7 +8219,7 @@ impl<'a> ScenarioGenerator<'a> {
         pca_chain_b64: &str,
         ops: &[Operation],
     ) -> Vec<Command> {
-        let base_ts: DateTime<Utc> = Utc::now();
+        let base_ts: Timestamp = Timestamp::now();
         let base_delta = self.profile.max_delta_time * 0.5;
         let baseline_joints = self.baseline_joint_states();
         let ee_pos = Self::safe_end_effector(self.profile);
@@ -8226,7 +8230,7 @@ impl<'a> ScenarioGenerator<'a> {
         (0..count)
             .map(|i| {
                 let timestamp = base_ts
-                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                    + SignedDuration::from_millis(Self::ms_offset_to_i64(
                         i as f64 * base_delta * 1_000.0,
                     ));
                 let mut joint_states = baseline_joints.clone();
@@ -8300,7 +8304,7 @@ impl<'a> ScenarioGenerator<'a> {
         pca_chain_b64: &str,
         ops: &[Operation],
     ) -> Vec<Command> {
-        let base_ts: DateTime<Utc> = Utc::now();
+        let base_ts: Timestamp = Timestamp::now();
         let delta_time = self.profile.max_delta_time * 0.5;
         let baseline_joints = self.baseline_joint_states();
         let ee_pos = Self::safe_end_effector(self.profile);
@@ -8318,7 +8322,7 @@ impl<'a> ScenarioGenerator<'a> {
         (0..count)
             .map(|i| {
                 let timestamp = base_ts
-                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                    + SignedDuration::from_millis(Self::ms_offset_to_i64(
                         i as f64 * delta_time * 1_000.0,
                     ));
                 let (kind, decorator) = kinds[i % kinds.len()];
@@ -8365,7 +8369,7 @@ impl<'a> ScenarioGenerator<'a> {
     /// mode) detects the mismatch and rejects every command with
     /// `AuthorityError::PredecessorDigestMismatch { hop: 1 }`.
     fn cross_chain_splice(&self, count: usize, ops: &[Operation]) -> Vec<Command> {
-        let base_ts: DateTime<Utc> = Utc::now();
+        let base_ts: Timestamp = Timestamp::now();
         let delta_time = self.profile.max_delta_time * 0.5;
         let joint_states = self.baseline_joint_states();
         let ee_pos = Self::safe_end_effector(self.profile);
@@ -8375,7 +8379,7 @@ impl<'a> ScenarioGenerator<'a> {
         (0..count)
             .map(|i| {
                 let timestamp = base_ts
-                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                    + SignedDuration::from_millis(Self::ms_offset_to_i64(
                         i as f64 * delta_time * 1_000.0,
                     ));
                 // Deterministic per-index mismatched-digest byte so each
@@ -8439,7 +8443,7 @@ impl<'a> ScenarioGenerator<'a> {
         pca_chain_b64: &str,
         ops: &[Operation],
     ) -> Vec<Command> {
-        let base_ts: DateTime<Utc> = Utc::now();
+        let base_ts: Timestamp = Timestamp::now();
         let delta_time = self.profile.max_delta_time * 0.5;
         let joint_states = self.baseline_joint_states();
         let ee_pos = Self::safe_end_effector(self.profile);
@@ -8457,7 +8461,7 @@ impl<'a> ScenarioGenerator<'a> {
         (0..count)
             .map(|i| {
                 let timestamp = base_ts
-                    + Duration::milliseconds(Self::ms_offset_to_i64(
+                    + SignedDuration::from_millis(Self::ms_offset_to_i64(
                         i as f64 * delta_time * 1_000.0,
                     ));
                 let (sequence, kind) = bounds[i % bounds.len()];
@@ -10448,8 +10452,8 @@ mod tests {
                     profile.name
                 );
                 // Timestamp must be a recent UTC time (within 60 seconds of now).
-                let now = chrono::Utc::now();
-                let diff = (now - cmd.timestamp).num_seconds().abs();
+                let now = invariant_core::time::Timestamp::now();
+                let diff = (now - cmd.timestamp).as_secs().abs();
                 assert!(
                     diff < 60,
                     "profile '{}' command timestamp should be recent (diff={diff}s)",

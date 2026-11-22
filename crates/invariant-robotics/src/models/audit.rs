@@ -16,9 +16,9 @@
 //! use invariant_robotics::models::verdict::{SignedVerdict, Verdict, CheckResult, AuthoritySummary};
 //! use invariant_robotics::models::authority::Operation;
 //!
-//! let ts = chrono::DateTime::parse_from_rfc3339("2024-01-01T00:00:00Z")
+//! let ts = invariant_core::time::Timestamp::parse_rfc3339("2024-01-01T00:00:00Z")
 //!     .unwrap()
-//!     .with_timezone(&chrono::Utc);
+//!     ;
 //!
 //! let cmd = Command {
 //!     timestamp: ts,

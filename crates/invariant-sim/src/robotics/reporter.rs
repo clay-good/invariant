@@ -562,7 +562,7 @@ fn compute_confidence(n_trials: u64, n_escapes: u64) -> ConfidenceStats {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::Utc;
+    use invariant_core::time::Timestamp;
     use invariant_robotics::models::verdict::{
         AuthoritySummary, CheckResult, SignedVerdict, Verdict,
     };
@@ -583,7 +583,7 @@ mod tests {
                 approved,
                 command_hash: "sha256:abc".into(),
                 command_sequence: 1,
-                timestamp: Utc::now(),
+                timestamp: Timestamp::now(),
                 checks,
                 profile_name: "franka_panda".into(),
                 profile_hash: "sha256:def".into(),

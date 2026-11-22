@@ -364,11 +364,11 @@ mod tests {
     use super::*;
     use crate::models::bundle::{BundleAuthority, SynthesisPayload};
     use crate::models::profile::BioProfile;
-    use chrono::Utc;
+    use invariant_core::time::Timestamp;
 
     fn protocol(steps: Vec<&str>) -> SynthesisBundle {
         SynthesisBundle {
-            timestamp: Utc::now(),
+            timestamp: Timestamp::now(),
             source: "t".into(),
             sequence: 0,
             payload: SynthesisPayload::Protocol {
@@ -385,7 +385,7 @@ mod tests {
 
     fn dna_bundle() -> SynthesisBundle {
         SynthesisBundle {
-            timestamp: Utc::now(),
+            timestamp: Timestamp::now(),
             source: "t".into(),
             sequence: 0,
             payload: SynthesisPayload::Dna {

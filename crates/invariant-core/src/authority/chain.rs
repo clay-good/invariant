@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 
-use chrono::{DateTime, Utc};
+use crate::time::Timestamp;
 use ed25519_dalek::VerifyingKey;
 
 use crate::models::authority::{AuthorityChain, Operation, Pca, SignedPca};
@@ -25,7 +25,7 @@ pub const DEFAULT_MAX_HOPS: usize = MAX_HOPS;
 pub fn verify_chain_with_max_depth(
     hops: &[SignedPca],
     trusted_keys: &std::collections::HashMap<String, ed25519_dalek::VerifyingKey>,
-    now: chrono::DateTime<chrono::Utc>,
+    now: crate::time::Timestamp,
     max_depth: usize,
 ) -> Result<AuthorityChain, AuthorityError> {
     if hops.is_empty() {
@@ -56,7 +56,7 @@ pub fn verify_chain_with_max_depth(
 pub fn verify_chain(
     hops: &[SignedPca],
     trusted_keys: &HashMap<String, VerifyingKey>,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> Result<AuthorityChain, AuthorityError> {
     if hops.is_empty() {
         return Err(AuthorityError::EmptyChain);
@@ -225,7 +225,7 @@ pub fn verify_predecessor_chain(claims: &[Pca]) -> Result<(), AuthorityError> {
 pub fn verify_chain_strict_predecessor(
     hops: &[SignedPca],
     trusted_keys: &HashMap<String, VerifyingKey>,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> Result<AuthorityChain, AuthorityError> {
     let chain = verify_chain(hops, trusted_keys, now)?;
     // Decode each hop's claim again to feed `verify_predecessor_chain`.

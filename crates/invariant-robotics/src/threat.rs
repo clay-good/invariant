@@ -188,14 +188,14 @@ impl DriftTracker {
 /// use invariant_robotics::threat::{ThreatScorer, ThreatScorerConfig};
 /// use invariant_robotics::profiles::load_builtin;
 /// use invariant_robotics::models::command::{Command, CommandAuthority, JointState};
-/// use chrono::Utc;
+/// use invariant_core::time::Timestamp;
 /// use std::collections::HashMap;
 ///
 /// let profile = load_builtin("ur10").unwrap();
 /// let mut scorer = ThreatScorer::with_defaults();
 ///
 /// let command = Command {
-///     timestamp: Utc::now(),
+///     timestamp: Timestamp::now(),
 ///     source: "operator".to_string(),
 ///     sequence: 0,
 ///     joint_states: vec![
@@ -563,7 +563,7 @@ mod tests {
     use super::*;
     use crate::models::command::*;
     use crate::models::profile::*;
-    use chrono::Utc;
+    use invariant_core::time::Timestamp;
     use std::collections::HashMap;
 
     fn test_profile() -> RobotProfile {
@@ -616,7 +616,7 @@ mod tests {
 
     fn make_command(j1_pos: f64, j2_pos: f64) -> Command {
         Command {
-            timestamp: Utc::now(),
+            timestamp: Timestamp::now(),
             source: "test".into(),
             sequence: 1,
             joint_states: vec![

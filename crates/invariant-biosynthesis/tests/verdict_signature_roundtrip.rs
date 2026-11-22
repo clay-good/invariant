@@ -22,8 +22,8 @@ use std::collections::HashMap;
 
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
-use chrono::Utc;
 use ed25519_dalek::{Signature, SigningKey, VerifyingKey};
+use invariant_core::time::Timestamp;
 
 use invariant_biosynthesis::models::bundle::{BundleAuthority, SynthesisBundle, SynthesisPayload};
 use invariant_biosynthesis::models::profile::BioProfile;
@@ -64,7 +64,7 @@ fn make_profile() -> BioProfile {
 
 fn make_bundle() -> SynthesisBundle {
     SynthesisBundle {
-        timestamp: Utc::now(),
+        timestamp: Timestamp::now(),
         source: "v10_17_test".into(),
         sequence: 1,
         payload: SynthesisPayload::Dna {
@@ -121,7 +121,7 @@ fn signed_verdict_round_trips_through_disk_and_verifies() {
     )
     .expect("validator config");
     let out = cfg
-        .validate(&make_bundle(), Utc::now(), None)
+        .validate(&make_bundle(), Timestamp::now(), None)
         .expect("validation");
 
     // Sanity: the in-memory signature already verifies against the matching
@@ -153,7 +153,7 @@ fn mutating_loaded_verdict_body_invalidates_signature() {
     )
     .expect("validator config");
     let out = cfg
-        .validate(&make_bundle(), Utc::now(), None)
+        .validate(&make_bundle(), Timestamp::now(), None)
         .expect("validation");
 
     let dir = tempfile::tempdir().expect("tempdir");

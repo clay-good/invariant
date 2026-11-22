@@ -12,7 +12,7 @@
 //! the biosynthesis-specific [`VerdictView`] / [`CheckView`] impls plus the
 //! thin [`DifferentialValidator`] wrapper around two [`ValidatorConfig`]s.
 
-use chrono::{DateTime, Utc};
+use invariant_core::time::Timestamp;
 
 use crate::models::bundle::SynthesisBundle;
 use crate::models::verdict::{CheckResult, Verdict};
@@ -85,7 +85,7 @@ impl<'a> DifferentialValidator<'a> {
     pub fn validate(
         &self,
         bundle: &SynthesisBundle,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<DifferentialResult, ValidatorError> {
         let result_a = self.instance_a.validate(bundle, now, None)?;
         let result_b = self.instance_b.validate(bundle, now, None)?;
@@ -137,7 +137,7 @@ mod tests {
 
     fn make_bundle() -> SynthesisBundle {
         SynthesisBundle {
-            timestamp: Utc::now(),
+            timestamp: Timestamp::now(),
             source: "test".into(),
             sequence: 1,
             payload: SynthesisPayload::Dna {
@@ -165,7 +165,7 @@ mod tests {
         let config_b = make_config(make_keypair(), "instance-b");
 
         let diff = DifferentialValidator::new(&config_a, &config_b);
-        let result = diff.validate(&make_bundle(), Utc::now()).unwrap();
+        let result = diff.validate(&make_bundle(), Timestamp::now()).unwrap();
 
         assert!(result.approval_agrees);
         assert!(!result.instance_a_approved);
@@ -179,7 +179,7 @@ mod tests {
 
         let diff = DifferentialValidator::new(&config_a, &config_b);
         let bundle = make_bundle();
-        let result = diff.validate(&bundle, Utc::now()).unwrap();
+        let result = diff.validate(&bundle, Timestamp::now()).unwrap();
 
         assert!(result.command_hash.starts_with("sha256:"));
         assert_eq!(result.command_sequence, 1);
@@ -207,7 +207,7 @@ mod tests {
             approved: true,
             command_hash: "sha256:abc".into(),
             command_sequence: 1,
-            timestamp: Utc::now(),
+            timestamp: Timestamp::now(),
             checks: checks.clone(),
             profile_name: "test".into(),
             profile_hash: "sha256:xyz".into(),
@@ -224,7 +224,7 @@ mod tests {
 
     #[test]
     fn compare_verdicts_with_one_check_disagreement() {
-        let now = Utc::now();
+        let now = Timestamp::now();
         let verdict_a = Verdict {
             approved: true,
             command_hash: "sha256:abc".into(),
@@ -275,7 +275,7 @@ mod tests {
 
     #[test]
     fn compare_verdicts_missing_check_in_one_instance() {
-        let now = Utc::now();
+        let now = Timestamp::now();
         let verdict_a = Verdict {
             approved: false,
             command_hash: "sha256:abc".into(),
@@ -345,7 +345,7 @@ mod tests {
         let config_b = make_config(sk_clone, "instance-shared");
 
         let diff = DifferentialValidator::new(&config_a, &config_b);
-        let result = diff.validate(&make_bundle(), Utc::now()).unwrap();
+        let result = diff.validate(&make_bundle(), Timestamp::now()).unwrap();
         assert!(result.approval_agrees);
     }
 }

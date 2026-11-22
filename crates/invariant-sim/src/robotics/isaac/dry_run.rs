@@ -8,7 +8,7 @@ use std::collections::BTreeSet;
 use std::collections::HashMap;
 
 use base64::{engine::general_purpose::STANDARD, Engine};
-use chrono::Utc;
+use invariant_core::time::Timestamp;
 use invariant_robotics::authority::crypto::{generate_keypair, sign_pca};
 use invariant_robotics::models::authority::{Operation, Pca, SignedPca};
 use invariant_robotics::models::command::EndEffectorForce;
@@ -330,7 +330,7 @@ pub fn run_dry_campaign(
             Vec<invariant_robotics::models::command::EndEffectorForce>,
         > = None;
         for cmd in &commands {
-            let now = Utc::now();
+            let now = Timestamp::now();
             let result = match validator.validate_with_forces(
                 cmd,
                 now,
@@ -817,7 +817,7 @@ fn encode_pca_chain(hops: &[SignedPca]) -> Result<String, DryRunError> {
 fn make_error_verdict(
     profile_name: &str,
     _error_detail: String,
-    now: chrono::DateTime<Utc>,
+    now: invariant_core::time::Timestamp,
 ) -> SignedVerdict {
     use invariant_robotics::models::verdict::{AuthoritySummary, CheckResult, Verdict};
     SignedVerdict {

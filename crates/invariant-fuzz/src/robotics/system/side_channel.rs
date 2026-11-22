@@ -5,7 +5,7 @@
 
 #[cfg(test)]
 mod tests {
-    use chrono::Utc;
+    use invariant_core::time::Timestamp;
     use invariant_robotics::authority::crypto::generate_keypair;
     use invariant_robotics::models::command::{
         Command, CommandAuthority, EndEffectorPosition, JointState,
@@ -41,7 +41,7 @@ mod tests {
         };
 
         Command {
-            timestamp: Utc::now(),
+            timestamp: Timestamp::now(),
             source: "sa15".into(),
             sequence: 1,
             joint_states: vec![JointState {
@@ -80,7 +80,7 @@ mod tests {
     #[test]
     fn sa15_timing_ratio_bounded() {
         let (config, profile) = setup();
-        let now = Utc::now();
+        let now = Timestamp::now();
 
         let valid_cmd = make_command(&profile, true);
         let invalid_cmd = make_command(&profile, false);

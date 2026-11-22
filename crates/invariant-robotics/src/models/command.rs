@@ -1,4 +1,4 @@
-use chrono::{DateTime, Utc};
+use invariant_core::time::Timestamp;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -15,9 +15,9 @@ use crate::sensor::SignedSensorReading;
 /// use invariant_robotics::models::authority::Operation;
 ///
 /// let cmd = Command {
-///     timestamp: chrono::DateTime::parse_from_rfc3339("2024-01-01T00:00:00Z")
+///     timestamp: invariant_core::time::Timestamp::parse_rfc3339("2024-01-01T00:00:00Z")
 ///         .unwrap()
-///         .with_timezone(&chrono::Utc),
+///         ,
 ///     source: "motion_planner_v2".into(),
 ///     sequence: 1,
 ///     joint_states: vec![
@@ -46,9 +46,9 @@ use crate::sensor::SignedSensorReading;
 /// ```
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Command {
-    /// ISO 8601 / RFC 3339 timestamp. Typed as `DateTime<Utc>` to support
+    /// ISO 8601 / RFC 3339 timestamp. Typed as `Timestamp` to support
     /// replay-prevention logic (exp/nbf ordering) (P1-3).
-    pub timestamp: DateTime<Utc>,
+    pub timestamp: Timestamp,
     /// Identifier of the cognitive layer or motion planner that issued this command.
     pub source: String,
     /// Monotonic sequence number. Out-of-order or duplicate commands are rejected.

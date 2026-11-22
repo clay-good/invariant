@@ -667,11 +667,11 @@ mod tests {
     use crate::models::bundle::{BundleAuthority, SynthesisPayload};
     use crate::models::profile::BioProfile;
     use crate::screening::{HazardEntry, HazardHit};
-    use chrono::Utc;
+    use invariant_core::time::Timestamp;
 
     fn chem(s: &str) -> SynthesisBundle {
         SynthesisBundle {
-            timestamp: Utc::now(),
+            timestamp: Timestamp::now(),
             source: "t".into(),
             sequence: 0,
             payload: SynthesisPayload::Chemical { smiles: s.into() },
@@ -1058,7 +1058,7 @@ mod tests {
     fn safe_chemical_bundle_passes_all_c_invariants() {
         let p = profile();
         let bundle = SynthesisBundle {
-            timestamp: Utc::now(),
+            timestamp: Timestamp::now(),
             source: "t".into(),
             sequence: 0,
             payload: SynthesisPayload::Chemical {
@@ -1096,7 +1096,7 @@ mod tests {
         let p = profile();
         let smiles = "[N+](=O)[O-]CC[N+](=O)[O-]CC[N+](=O)[O-]OO";
         let bundle = SynthesisBundle {
-            timestamp: Utc::now(),
+            timestamp: Timestamp::now(),
             source: "t".into(),
             sequence: 0,
             payload: SynthesisPayload::Chemical {
@@ -1123,7 +1123,7 @@ mod tests {
     fn chemical_invariants_pass_for_dna_payload() {
         let p = profile();
         let bundle = SynthesisBundle {
-            timestamp: Utc::now(),
+            timestamp: Timestamp::now(),
             source: "t".into(),
             sequence: 0,
             payload: SynthesisPayload::Dna {

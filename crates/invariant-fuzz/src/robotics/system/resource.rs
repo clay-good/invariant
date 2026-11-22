@@ -5,7 +5,7 @@
 
 #[cfg(test)]
 mod tests {
-    use chrono::Utc;
+    use invariant_core::time::Timestamp;
     use invariant_robotics::authority::crypto::generate_keypair;
     use invariant_robotics::models::command::{Command, CommandAuthority, JointState};
     use invariant_robotics::validator::ValidatorConfig;
@@ -25,7 +25,7 @@ mod tests {
         let config = ValidatorConfig::new(profile.clone(), trusted, sk, kid).unwrap();
 
         let cmd = Command {
-            timestamp: Utc::now(),
+            timestamp: Timestamp::now(),
             source: "sa8-flood".into(),
             sequence: 1,
             joint_states: vec![JointState {
@@ -57,7 +57,7 @@ mod tests {
     #[test]
     fn sa8_flood_10k_commands_no_panic() {
         let (config, cmd) = setup_validator();
-        let now = Utc::now();
+        let now = Timestamp::now();
 
         for _ in 0..10_000 {
             // We expect rejection (no valid PCA chain), but the point is
@@ -70,7 +70,7 @@ mod tests {
     #[test]
     fn sa8_large_metadata_no_crash() {
         let (config, mut cmd) = setup_validator();
-        let now = Utc::now();
+        let now = Timestamp::now();
 
         // Fill metadata with many entries.
         for i in 0..100 {
@@ -84,7 +84,7 @@ mod tests {
     #[test]
     fn sa8_many_joints_no_crash() {
         let (config, mut cmd) = setup_validator();
-        let now = Utc::now();
+        let now = Timestamp::now();
 
         // Add 200 extra joints (profile only defines a few).
         for i in 0..200 {

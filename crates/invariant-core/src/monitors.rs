@@ -554,16 +554,16 @@ mod tests {
 
     #[test]
     fn clock_drift_passes_when_clocks_agree() {
-        let now_ms = chrono::Utc::now().timestamp_millis();
+        let now_ms = crate::time::Timestamp::now().as_unix_millis();
         let monitor = ClockMonitor::new(now_ms, 2000);
         // Check immediately — drift should be ~0.
-        let result = monitor.check(chrono::Utc::now().timestamp_millis());
+        let result = monitor.check(crate::time::Timestamp::now().as_unix_millis());
         assert!(result.is_ok());
     }
 
     #[test]
     fn clock_drift_warns_on_large_skew() {
-        let now_ms = chrono::Utc::now().timestamp_millis();
+        let now_ms = crate::time::Timestamp::now().as_unix_millis();
         let monitor = ClockMonitor::new(now_ms, 100); // tight threshold
                                                       // Simulate wall clock jumping 10 seconds ahead.
         let result = monitor.check(now_ms + 10_000);

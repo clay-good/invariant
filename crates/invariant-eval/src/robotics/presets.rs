@@ -188,9 +188,9 @@ pub struct EvalReport {
 /// use invariant_robotics::models::verdict::{SignedVerdict, Verdict, CheckResult, AuthoritySummary};
 ///
 /// // Build a minimal two-step trace where every step is approved.
-/// let ts = chrono::DateTime::parse_from_rfc3339("2024-01-01T00:00:00Z")
+/// let ts = invariant_core::time::Timestamp::parse_rfc3339("2024-01-01T00:00:00Z")
 ///     .unwrap()
-///     .with_timezone(&chrono::Utc);
+///     ;
 ///
 /// let make_step = |seq: u64| -> TraceStep {
 ///     let cmd = Command {
@@ -282,9 +282,9 @@ pub fn run_preset(name: &str, trace: &Trace) -> Result<EvalReport, EvalError> {
 /// use invariant_robotics::models::command::{Command, CommandAuthority, JointState};
 /// use invariant_robotics::models::verdict::{SignedVerdict, Verdict, CheckResult, AuthoritySummary};
 ///
-/// let ts = chrono::DateTime::parse_from_rfc3339("2024-01-01T00:00:00Z")
+/// let ts = invariant_core::time::Timestamp::parse_rfc3339("2024-01-01T00:00:00Z")
 ///     .unwrap()
-///     .with_timezone(&chrono::Utc);
+///     ;
 ///
 /// let make_step = |seq: u64, approved: bool| -> TraceStep {
 ///     let cmd = Command {
@@ -845,7 +845,7 @@ fn regression_check(baseline: &Trace, candidate: &Trace) -> EvalReport {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::{DateTime, TimeZone, Utc};
+    use invariant_core::time::Timestamp;
     use invariant_robotics::models::command::{Command, CommandAuthority, JointState};
     use invariant_robotics::models::trace::{Trace, TraceStep};
     use invariant_robotics::models::verdict::{
@@ -855,11 +855,11 @@ mod tests {
 
     /// Returns a fixed, deterministic UTC timestamp for use in tests.
     ///
-    /// Using a constant avoids non-determinism from `Utc::now()` and makes
+    /// Using a constant avoids non-determinism from `Timestamp::now()` and makes
     /// timestamp-ordering tests reproducible.
-    fn fixed_ts() -> DateTime<Utc> {
+    fn fixed_ts() -> Timestamp {
         // 2023-11-14 22:13:20 UTC — an arbitrary but stable reference point.
-        Utc.timestamp_opt(1_700_000_000, 0).unwrap()
+        Timestamp::from_unix(1_700_000_000, 0).unwrap()
     }
 
     fn make_check(name: &str, category: &str, passed: bool) -> CheckResult {
@@ -1185,9 +1185,9 @@ mod tests {
 
     #[test]
     fn test_completeness_timestamp_regression() {
-        use chrono::Duration;
+        use invariant_core::time::SignedDuration;
         let mut trace = make_trace(vec![make_step(0, true), make_step(1, true)]);
-        trace.steps[1].timestamp = trace.steps[0].timestamp - Duration::seconds(10);
+        trace.steps[1].timestamp = trace.steps[0].timestamp - SignedDuration::from_secs(10);
         let report = completeness_check(&trace);
         assert!(!report.passed);
         assert!(report

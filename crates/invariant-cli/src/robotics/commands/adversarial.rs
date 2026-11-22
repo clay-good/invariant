@@ -219,7 +219,7 @@ fn run_protocol_suite(
     raw_key_bytes: &[u8; 32],
     report: &mut AdversarialReport,
 ) {
-    let now = chrono::Utc::now();
+    let now = invariant_core::time::Timestamp::now();
 
     // Build a valid signing key for attaching a chain to boundary/numeric cmds.
     let attach_sk = ed25519_dalek::SigningKey::from_bytes(raw_key_bytes);
@@ -314,7 +314,7 @@ fn run_authority_suite(
     raw_key_bytes: &[u8; 32],
     report: &mut AdversarialReport,
 ) {
-    let now = chrono::Utc::now();
+    let now = invariant_core::time::Timestamp::now();
     let attack_sk = ed25519_dalek::SigningKey::from_bytes(raw_key_bytes);
 
     // AA1: Forge signature
@@ -438,7 +438,7 @@ fn build_valid_base_command(
 
     let op = dummy_op(profile);
     let mut cmd = Command {
-        timestamp: chrono::Utc::now(),
+        timestamp: invariant_core::time::Timestamp::now(),
         source: "adversarial".into(),
         sequence: 1,
         joint_states,
@@ -482,7 +482,7 @@ fn build_base_command_with_chain(
         .collect();
 
     Command {
-        timestamp: chrono::Utc::now(),
+        timestamp: invariant_core::time::Timestamp::now(),
         source: "adversarial".into(),
         sequence: 1,
         joint_states,
@@ -517,7 +517,7 @@ fn run_environment_suite(
 ) {
     use invariant_sim::robotics::injector::{inject, InjectionType};
 
-    let now = chrono::Utc::now();
+    let now = invariant_core::time::Timestamp::now();
 
     let env_attacks: &[(&str, InjectionType)] = &[
         ("ENV-P21-terrain-incline", InjectionType::TerrainIncline),
@@ -602,7 +602,7 @@ fn run_fuzz_mode(
     use rand::rngs::StdRng;
     use rand::SeedableRng;
 
-    let now = chrono::Utc::now();
+    let now = invariant_core::time::Timestamp::now();
     let mut report = AdversarialReport::new("fuzz");
     let mut escapes = 0u64;
     let mut total = 0u64;

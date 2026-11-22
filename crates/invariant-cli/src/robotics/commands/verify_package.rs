@@ -530,7 +530,7 @@ mod tests {
         let manifest = ProofPackageManifest {
             format_version: invariant_robotics::proof_package::CURRENT_FORMAT_VERSION,
             version: "1.0.0".into(),
-            generated_at: chrono::Utc::now(),
+            generated_at: invariant_core::time::Timestamp::now(),
             campaign_name: "test".into(),
             profile_name: "test".into(),
             profile_hash: String::new(),

@@ -6,8 +6,8 @@
 
 #[cfg(test)]
 mod tests {
-    use chrono::Utc;
     use ed25519_dalek::SigningKey;
+    use invariant_core::time::Timestamp;
     use invariant_robotics::audit::AuditLogger;
     use invariant_robotics::authority::crypto::generate_keypair;
     use invariant_robotics::models::command::{Command, CommandAuthority, JointState};
@@ -26,7 +26,7 @@ mod tests {
 
     fn minimal_command(joint_name: &str) -> Command {
         Command {
-            timestamp: Utc::now(),
+            timestamp: Timestamp::now(),
             source: "degraded-test".into(),
             sequence: 0,
             joint_states: vec![JointState {
@@ -58,7 +58,7 @@ mod tests {
                 approved: true,
                 command_hash: "sha256:test".into(),
                 command_sequence: 0,
-                timestamp: Utc::now(),
+                timestamp: Timestamp::now(),
                 checks: vec![CheckResult {
                     name: "test".into(),
                     category: "test".into(),
@@ -104,7 +104,7 @@ mod tests {
         let mut wd = Watchdog::new(50, SafeStopProfile::default(), sk, "kid".into(), 0);
 
         // No heartbeats after t=0. Check at t=100 (well past 50ms timeout).
-        let cmd = wd.check(100, Utc::now()).unwrap();
+        let cmd = wd.check(100, Timestamp::now()).unwrap();
         assert!(
             cmd.is_some(),
             "FM1: watchdog must produce safe-stop command"
@@ -120,7 +120,7 @@ mod tests {
 
         // Heartbeat at t=10 then nothing. Check at t=70 (60ms since heartbeat > 50ms).
         wd.heartbeat(10).unwrap();
-        let cmd = wd.check(70, Utc::now()).unwrap();
+        let cmd = wd.check(70, Timestamp::now()).unwrap();
         assert!(cmd.is_some(), "FM2: hang triggers safe-stop");
     }
 
@@ -132,7 +132,7 @@ mod tests {
 
         // Simulate partition: heartbeat at t=50, then nothing until t=200.
         wd.heartbeat(50).unwrap();
-        let cmd = wd.check(200, Utc::now()).unwrap();
+        let cmd = wd.check(200, Timestamp::now()).unwrap();
         assert!(
             cmd.is_some(),
             "FM3: network partition triggers safe-stop after timeout"
@@ -146,7 +146,7 @@ mod tests {
         let mut wd = Watchdog::new(50, SafeStopProfile::default(), sk, "kid".into(), 0);
 
         // Trigger safe-stop.
-        wd.check(100, Utc::now()).unwrap();
+        wd.check(100, Timestamp::now()).unwrap();
         assert_eq!(wd.state(), WatchdogState::Triggered);
 
         // Cognitive layer "recovers" and sends heartbeat — REJECTED.
@@ -200,7 +200,7 @@ mod tests {
         let config = ValidatorConfig::new(profile, HashMap::new(), sk, "kid".into()).unwrap();
 
         let cmd = minimal_command("j1");
-        let result = config.validate(&cmd, Utc::now(), None);
+        let result = config.validate(&cmd, Timestamp::now(), None);
         // Err(_) is also correct — fail-closed
         if let Ok(r) = result {
             assert!(
@@ -392,7 +392,7 @@ mod tests {
     fn section19_2_no_passthrough_mode() {
         let config = make_validator();
         let cmd = minimal_command("j1");
-        let now = Utc::now();
+        let now = Timestamp::now();
 
         // There is no method on ValidatorConfig that returns a signed
         // actuation command without running the full validation pipeline.
@@ -427,12 +427,12 @@ mod tests {
     fn section19_2_only_three_states() {
         // State 1: Full operation.
         let config = make_validator();
-        let _ = config.validate(&minimal_command("j1"), Utc::now(), None);
+        let _ = config.validate(&minimal_command("j1"), Timestamp::now(), None);
 
         // State 2: Safe-stop.
         let sk = make_sk();
         let mut wd = Watchdog::new(50, SafeStopProfile::default(), sk, "kid".into(), 0);
-        let cmd = wd.check(100, Utc::now()).unwrap();
+        let cmd = wd.check(100, Timestamp::now()).unwrap();
         assert!(cmd.is_some()); // safe-stop command issued
         assert_eq!(wd.state(), WatchdogState::Triggered);
 

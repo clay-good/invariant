@@ -38,6 +38,8 @@ pub mod profiles;
 pub mod proof_package;
 /// Audit log replication and Merkle root witness (Section 10.4).
 pub mod replication;
+/// Wall-clock UTC timestamps with a chrono-compatible wire format.
+pub mod time;
 /// Domain abstraction traits — the keystone of the unified design.
 pub mod traits;
 /// Miscellaneous utilities (SHA-256, etc.).

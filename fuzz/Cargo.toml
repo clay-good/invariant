@@ -14,7 +14,6 @@ invariant-robotics = { path = "../crates/invariant-robotics" }
 invariant-fuzz = { path = "../crates/invariant-fuzz" }
 invariant-sim = { path = "../crates/invariant-sim" }
 serde_json = "1.0"
-chrono = { version = "0.4", features = ["serde"] }
 ed25519-dalek = { version = "2.1", features = ["rand_core"] }
 rand = "0.8"
 base64 = "0.22"

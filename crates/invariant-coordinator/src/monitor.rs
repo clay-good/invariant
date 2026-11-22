@@ -7,7 +7,7 @@
 
 use std::collections::HashMap;
 
-use chrono::{DateTime, Utc};
+use invariant_core::time::Timestamp;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -45,11 +45,11 @@ pub enum CoordinatorError {
 ///
 /// ```
 /// use invariant_coordinator::monitor::{RobotState, EndEffectorState};
-/// use chrono::Utc;
+/// use invariant_core::time::Timestamp;
 ///
 /// let state = RobotState {
 ///     robot_id: "ur10e-cell-1".into(),
-///     timestamp: Utc::now(),
+///     timestamp: Timestamp::now(),
 ///     end_effector_positions: vec![
 ///         EndEffectorState { name: "gripper".into(), position: [1.2, 0.5, 0.8] },
 ///     ],
@@ -66,7 +66,7 @@ pub struct RobotState {
     /// Unique identifier for this robot (e.g. "ur10e-cell-1").
     pub robot_id: String,
     /// Timestamp of this state update.
-    pub timestamp: DateTime<Utc>,
+    pub timestamp: Timestamp,
     /// Positions of all end-effectors in world frame [x, y, z].
     pub end_effector_positions: Vec<EndEffectorState>,
     /// Whether the robot is currently active (executing commands).
@@ -252,11 +252,11 @@ pub struct CrossRobotCheck {
 ///     CoordinationVerdict, CrossRobotCheck, CoordinationMonitor,
 ///     CoordinationConfig, RobotState, EndEffectorState,
 /// };
-/// use chrono::Utc;
+/// use invariant_core::time::Timestamp;
 ///
 /// let config = CoordinationConfig::default();
 /// let mut monitor = CoordinationMonitor::new(config);
-/// let now = Utc::now();
+/// let now = Timestamp::now();
 ///
 /// // Register one robot.
 /// monitor.update_state(RobotState {
@@ -290,7 +290,7 @@ pub struct CoordinationVerdict {
     /// The robot being checked.
     pub robot_id: String,
     /// Timestamp of this verdict.
-    pub timestamp: DateTime<Utc>,
+    pub timestamp: Timestamp,
     /// Whether all cross-robot checks passed.
     pub safe: bool,
     /// Individual check results.
@@ -316,12 +316,12 @@ const MAX_EE_PER_ROBOT: usize = 64;
 /// use invariant_coordinator::monitor::{
 ///     CoordinationMonitor, CoordinationConfig, RobotState, EndEffectorState,
 /// };
-/// use chrono::Utc;
+/// use invariant_core::time::Timestamp;
 ///
 /// let mut monitor = CoordinationMonitor::new(CoordinationConfig::default());
 /// let state = RobotState {
 ///     robot_id: "r1".into(),
-///     timestamp: Utc::now(),
+///     timestamp: Timestamp::now(),
 ///     end_effector_positions: vec![
 ///         EndEffectorState { name: "tcp".into(), position: [0.0, 0.0, 1.0] },
 ///     ],
@@ -346,7 +346,7 @@ pub struct UpdateResult {
 ///     CoordinationMonitor, CoordinationConfig, RobotState, EndEffectorState,
 ///     StaleRobotPolicy,
 /// };
-/// use chrono::Utc;
+/// use invariant_core::time::Timestamp;
 ///
 /// // Create a monitor for a two-robot welding cell.
 /// let config = CoordinationConfig {
@@ -358,7 +358,7 @@ pub struct UpdateResult {
 /// let mut monitor = CoordinationMonitor::new(config);
 /// assert_eq!(monitor.robot_count(), 0);
 ///
-/// let now = Utc::now();
+/// let now = Timestamp::now();
 ///
 /// // Register robot A.
 /// monitor.update_state(RobotState {
@@ -454,7 +454,7 @@ impl CoordinationMonitor {
     /// The states are sorted by `robot_id` so the snapshot bytes are
     /// stable across runs with the same inputs (HashMap iteration
     /// order would otherwise be non-deterministic).
-    pub fn snapshot(&self, as_of: DateTime<Utc>) -> FleetSnapshot {
+    pub fn snapshot(&self, as_of: Timestamp) -> FleetSnapshot {
         let mut states: Vec<RobotState> = self.states.values().cloned().collect();
         states.sort_by(|a, b| a.robot_id.cmp(&b.robot_id));
         FleetSnapshot {
@@ -474,7 +474,7 @@ impl CoordinationMonitor {
     ///
     /// `proposed` is the state the robot WILL be in if the command is approved.
     /// `now` is the current time for stale-state detection.
-    pub fn check(&self, proposed: &RobotState, now: DateTime<Utc>) -> CoordinationVerdict {
+    pub fn check(&self, proposed: &RobotState, now: Timestamp) -> CoordinationVerdict {
         let mut checks = Vec::new();
         let mut stale_count = 0usize;
 
@@ -484,7 +484,7 @@ impl CoordinationMonitor {
             }
 
             // Check if the other robot's state is stale.
-            let age_ms = (now - other_state.timestamp).num_milliseconds().max(0) as u64;
+            let age_ms = (now - other_state.timestamp).as_millis().max(0) as u64;
             let is_stale = age_ms > self.config.stale_timeout_ms;
 
             if is_stale {
@@ -619,7 +619,7 @@ pub struct FleetSnapshot {
     /// The active coordination configuration when the snapshot was taken.
     pub config: CoordinationConfig,
     /// Wall-clock time the snapshot was requested.
-    pub as_of: DateTime<Utc>,
+    pub as_of: Timestamp,
     /// Last-known state for every tracked robot, sorted by `robot_id`.
     pub states: Vec<RobotState>,
 }
@@ -639,9 +639,9 @@ fn euclidean_distance(a: &[f64; 3], b: &[f64; 3]) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::Duration;
+    use invariant_core::time::SignedDuration;
 
-    fn robot_state(id: &str, ee_positions: &[(&str, [f64; 3])], now: DateTime<Utc>) -> RobotState {
+    fn robot_state(id: &str, ee_positions: &[(&str, [f64; 3])], now: Timestamp) -> RobotState {
         RobotState {
             robot_id: id.into(),
             timestamp: now,
@@ -663,7 +663,7 @@ mod tests {
             ..Default::default()
         };
         let mut monitor = CoordinationMonitor::new(config);
-        let now = Utc::now();
+        let now = Timestamp::now();
 
         let robot_a = robot_state("robot-a", &[("gripper", [0.0, 0.0, 1.0])], now);
         let robot_b = robot_state("robot-b", &[("gripper", [3.0, 0.0, 1.0])], now);
@@ -686,7 +686,7 @@ mod tests {
             ..Default::default()
         };
         let mut monitor = CoordinationMonitor::new(config);
-        let now = Utc::now();
+        let now = Timestamp::now();
 
         let robot_a = robot_state("robot-a", &[("gripper", [0.0, 0.0, 1.0])], now);
         let robot_b = robot_state("robot-b", &[("gripper", [0.1, 0.0, 1.0])], now);
@@ -709,8 +709,8 @@ mod tests {
             ..Default::default()
         };
         let mut monitor = CoordinationMonitor::new(config);
-        let now = Utc::now();
-        let old = now - Duration::milliseconds(500);
+        let now = Timestamp::now();
+        let old = now - SignedDuration::from_millis(500);
 
         // Robot A reported 500ms ago — stale.
         let robot_a = robot_state("robot-a", &[("gripper", [5.0, 0.0, 1.0])], old);
@@ -733,8 +733,8 @@ mod tests {
             ..Default::default()
         };
         let mut monitor = CoordinationMonitor::new(config);
-        let now = Utc::now();
-        let old = now - Duration::milliseconds(500);
+        let now = Timestamp::now();
+        let old = now - SignedDuration::from_millis(500);
 
         // Robot A is stale but well-separated.
         let robot_a = robot_state("robot-a", &[("gripper", [5.0, 0.0, 1.0])], old);
@@ -756,8 +756,8 @@ mod tests {
             ..Default::default()
         };
         let mut monitor = CoordinationMonitor::new(config);
-        let now = Utc::now();
-        let old = now - Duration::milliseconds(500);
+        let now = Timestamp::now();
+        let old = now - SignedDuration::from_millis(500);
 
         // Robot A is stale AND close.
         let robot_a = robot_state("robot-a", &[("gripper", [0.1, 0.0, 1.0])], old);
@@ -773,7 +773,7 @@ mod tests {
     fn single_robot_always_safe() {
         let config = CoordinationConfig::default();
         let mut monitor = CoordinationMonitor::new(config);
-        let now = Utc::now();
+        let now = Timestamp::now();
 
         let robot = robot_state("robot-a", &[("gripper", [0.0, 0.0, 1.0])], now);
         monitor.update_state(robot.clone()).unwrap();
@@ -791,7 +791,7 @@ mod tests {
             ..Default::default()
         };
         let mut monitor = CoordinationMonitor::new(config);
-        let now = Utc::now();
+        let now = Timestamp::now();
 
         monitor
             .update_state(robot_state("r1", &[("ee", [0.0, 0.0, 1.0])], now))
@@ -818,7 +818,7 @@ mod tests {
             ..Default::default()
         };
         let mut monitor = CoordinationMonitor::new(config);
-        let now = Utc::now();
+        let now = Timestamp::now();
 
         // Robot A has two end-effectors.
         let robot_a = robot_state(
@@ -845,7 +845,7 @@ mod tests {
     fn remove_robot_stops_tracking() {
         let config = CoordinationConfig::default();
         let mut monitor = CoordinationMonitor::new(config);
-        let now = Utc::now();
+        let now = Timestamp::now();
 
         monitor
             .update_state(robot_state("r1", &[("ee", [0.0, 0.0, 1.0])], now))
@@ -868,7 +868,7 @@ mod tests {
             ..Default::default()
         };
         let mut monitor = CoordinationMonitor::new(config);
-        let now = Utc::now();
+        let now = Timestamp::now();
 
         monitor.update_state(robot_state("r1", &[], now)).unwrap();
         monitor.update_state(robot_state("r2", &[], now)).unwrap();
@@ -889,7 +889,7 @@ mod tests {
             ..Default::default()
         };
         let mut monitor = CoordinationMonitor::new(config);
-        let now = Utc::now();
+        let now = Timestamp::now();
 
         // Robot A has no end-effectors.
         let robot_a = robot_state("robot-a", &[], now);
@@ -905,14 +905,14 @@ mod tests {
     fn update_state_replaces_old_state() {
         let config = CoordinationConfig::default();
         let mut monitor = CoordinationMonitor::new(config);
-        let now = Utc::now();
+        let now = Timestamp::now();
 
         monitor
             .update_state(robot_state("r1", &[("ee", [0.0, 0.0, 0.0])], now))
             .unwrap();
 
         // Update to new position.
-        let later = now + Duration::milliseconds(50);
+        let later = now + SignedDuration::from_millis(50);
         monitor
             .update_state(robot_state("r1", &[("ee", [1.0, 1.0, 1.0])], later))
             .unwrap();
@@ -935,7 +935,7 @@ mod tests {
             ..Default::default()
         };
         let mut monitor = CoordinationMonitor::new(config);
-        let now = Utc::now();
+        let now = Timestamp::now();
 
         // Only robot A is registered.
         monitor
@@ -988,7 +988,7 @@ mod tests {
     fn nan_robot_position_fails_separation_check() {
         let config = CoordinationConfig::default();
         let mut monitor = CoordinationMonitor::new(config);
-        let now = Utc::now();
+        let now = Timestamp::now();
 
         monitor
             .update_state(robot_state("r1", &[("ee", [0.0, 0.0, 1.0])], now))
@@ -1004,7 +1004,7 @@ mod tests {
     fn inf_robot_position_fails_separation_check() {
         let config = CoordinationConfig::default();
         let mut monitor = CoordinationMonitor::new(config);
-        let now = Utc::now();
+        let now = Timestamp::now();
 
         monitor
             .update_state(robot_state("r1", &[("ee", [0.0, 0.0, 1.0])], now))
@@ -1028,7 +1028,7 @@ mod tests {
     fn update_state_reports_ee_truncation() {
         let config = CoordinationConfig::default();
         let mut monitor = CoordinationMonitor::new(config);
-        let now = Utc::now();
+        let now = Timestamp::now();
 
         // Create a robot with more than MAX_EE_PER_ROBOT (64) end-effectors.
         let many_ees: Vec<(&str, [f64; 3])> = (0..70).map(|_| ("ee", [0.0, 0.0, 1.0])).collect();
@@ -1051,7 +1051,7 @@ mod tests {
     fn update_state_no_truncation_reports_zero() {
         let config = CoordinationConfig::default();
         let mut monitor = CoordinationMonitor::new(config);
-        let now = Utc::now();
+        let now = Timestamp::now();
 
         let state = robot_state("r1", &[("ee", [0.0, 0.0, 1.0])], now);
         let result = monitor.update_state(state).unwrap();
@@ -1062,7 +1062,7 @@ mod tests {
     fn identical_positions_detected_as_violation() {
         let config = CoordinationConfig::default(); // 0.5m min separation
         let mut monitor = CoordinationMonitor::new(config);
-        let now = Utc::now();
+        let now = Timestamp::now();
 
         // Both robots at the same position.
         monitor

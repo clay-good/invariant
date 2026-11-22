@@ -269,8 +269,8 @@ fn print_text_report(report: &FleetStatusReport, alerts_only: bool) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::{TimeZone, Utc};
     use invariant_coordinator::monitor::{CoordinationConfig, EndEffectorState};
+    use invariant_core::time::Timestamp;
 
     fn snapshot_with(states: Vec<RobotState>, min_sep: f64) -> FleetSnapshot {
         FleetSnapshot {
@@ -280,7 +280,7 @@ mod tests {
                 stale_policy: invariant_coordinator::StaleRobotPolicy::TreatAsObstacle,
                 max_robots: 32,
             },
-            as_of: Utc.with_ymd_and_hms(2026, 5, 16, 12, 0, 0).unwrap(),
+            as_of: Timestamp::parse_rfc3339("2026-05-16T12:00:00Z").unwrap(),
             states,
         }
     }
@@ -288,7 +288,7 @@ mod tests {
     fn robot(id: &str, ee: Vec<(&str, [f64; 3])>, active: bool) -> RobotState {
         RobotState {
             robot_id: id.into(),
-            timestamp: Utc.with_ymd_and_hms(2026, 5, 16, 12, 0, 0).unwrap(),
+            timestamp: Timestamp::parse_rfc3339("2026-05-16T12:00:00Z").unwrap(),
             end_effector_positions: ee
                 .into_iter()
                 .map(|(n, p)| EndEffectorState {

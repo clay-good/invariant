@@ -355,7 +355,8 @@ pub fn self_delegation(signing_key: &SigningKey, kid: &str) -> Vec<SignedPca> {
 /// passed. The verifier must reject despite the crypto being valid.
 pub fn expired_but_signed(signing_key: &SigningKey, kid: &str) -> SignedPca {
     let op = Operation::new("actuate:*").unwrap();
-    let expired = chrono::Utc::now() - chrono::Duration::hours(24);
+    let expired = invariant_core::time::Timestamp::now()
+        - invariant_core::time::SignedDuration::from_hours(24);
 
     let hop = Pca {
         p_0: "root".into(),
@@ -409,7 +410,7 @@ mod tests {
         let kid = "test-kid";
         let forged = forge_signature(&sk, kid);
 
-        let now = chrono::Utc::now();
+        let now = invariant_core::time::Timestamp::now();
         let result = verify_chain(&[forged], &trusted(kid, &sk), now);
         assert!(
             result.is_err(),
@@ -424,7 +425,7 @@ mod tests {
         let chain = escalate_operations(&sk, kid);
         assert_eq!(chain.len(), 2);
 
-        let now = chrono::Utc::now();
+        let now = invariant_core::time::Timestamp::now();
         let result = verify_chain(&chain, &trusted(kid, &sk), now);
         assert!(
             result.is_err(),
@@ -440,7 +441,7 @@ mod tests {
         assert_eq!(chain.len(), 2, "truncated chain must have 2 hops");
 
         // The leaf key is unknown to the verifier (only root key is trusted).
-        let now = chrono::Utc::now();
+        let now = invariant_core::time::Timestamp::now();
         let result = verify_chain(&chain, &trusted(kid, &sk), now);
         assert!(
             result.is_err(),
@@ -501,7 +502,7 @@ mod tests {
         let kid = "test-kid";
         let chain = extend_chain(&sk, kid);
         assert_eq!(chain.len(), 2);
-        let now = chrono::Utc::now();
+        let now = invariant_core::time::Timestamp::now();
         let result = verify_chain(&chain, &trusted(kid, &sk), now);
         assert!(
             result.is_err(),
@@ -515,7 +516,7 @@ mod tests {
         let kid = "test-kid";
         let chain = mutate_provenance(&sk, kid);
         assert_eq!(chain.len(), 2);
-        let now = chrono::Utc::now();
+        let now = invariant_core::time::Timestamp::now();
         let result = verify_chain(&chain, &trusted(kid, &sk), now);
         assert!(result.is_err(), "AA5: provenance mutation must be rejected");
     }
@@ -525,7 +526,7 @@ mod tests {
         let sk = make_sk();
         let kid = "test-kid";
         let chain = wildcard_exploitation(&sk, kid);
-        let now = chrono::Utc::now();
+        let now = invariant_core::time::Timestamp::now();
         let result = verify_chain(&chain, &trusted(kid, &sk), now);
         assert!(result.is_err(), "AA6: wildcard escalation must be rejected");
     }
@@ -535,7 +536,7 @@ mod tests {
         let sk = make_sk();
         let kid = "test-kid";
         let chain = cross_chain_splice(&sk, kid);
-        let now = chrono::Utc::now();
+        let now = invariant_core::time::Timestamp::now();
         let result = verify_chain(&chain, &trusted(kid, &sk), now);
         assert!(result.is_err(), "AA7: cross-chain splice must be rejected");
     }
@@ -546,7 +547,7 @@ mod tests {
         let kid = "test-kid";
         let signed = empty_operations(&sk, kid);
         // Verify the chain itself is valid (empty ops is structurally valid).
-        let now = chrono::Utc::now();
+        let now = invariant_core::time::Timestamp::now();
         let result = verify_chain(&[signed], &trusted(kid, &sk), now);
         // The chain may verify OK but should grant no operations — tested
         // at the validator level where required_ops would not be satisfied.

@@ -8,7 +8,7 @@
 use std::collections::{BTreeSet, HashMap};
 
 use base64::{engine::general_purpose::STANDARD, Engine};
-use chrono::Utc;
+use invariant_core::time::Timestamp;
 
 use invariant_robotics::authority::crypto::sign_pca;
 use invariant_robotics::models::authority::{Operation, Pca};
@@ -67,7 +67,7 @@ fn make_command(
     let chain_json = serde_json::to_vec(&[signed]).unwrap();
 
     Command {
-        timestamp: Utc::now(),
+        timestamp: Timestamp::now(),
         source: "cognitive-escape".into(),
         sequence,
         joint_states: joints,
@@ -297,7 +297,7 @@ pub fn ce4_authority_laundering(
 
     // But the command requires wide ops — monotonicity violation.
     vec![Command {
-        timestamp: Utc::now(),
+        timestamp: Timestamp::now(),
         source: "ce4-launderer".into(),
         sequence: 0,
         joint_states: profile
@@ -446,7 +446,7 @@ pub fn ce7_watchdog_manipulation(
     // After safe-stop, authority requires fresh PCA.  We simulate by sending
     // a command with an empty chain (as if the previous session's chain expired).
     vec![Command {
-        timestamp: Utc::now(),
+        timestamp: Timestamp::now(),
         source: "ce7-post-safestop".into(),
         sequence: 0,
         joint_states: vec![JointState {
@@ -611,7 +611,7 @@ pub fn ce10_rollback_replay(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::Utc;
+    use invariant_core::time::Timestamp;
     use invariant_robotics::authority::crypto::generate_keypair;
     use invariant_robotics::validator::ValidatorConfig;
     use rand::rngs::OsRng;
@@ -636,7 +636,7 @@ mod tests {
 
     /// Count how many commands in a sequence are approved (escapes).
     fn count_escapes(config: &ValidatorConfig, cmds: &[Command]) -> usize {
-        let now = Utc::now();
+        let now = Timestamp::now();
         cmds.iter()
             .filter(|cmd| {
                 config
@@ -660,7 +660,7 @@ mod tests {
     fn ce2_timing_exploitation_invalid_commands_rejected() {
         let (config, profile, sk, kid) = setup();
         let cmds = ce2_timing_exploitation(&profile, &sk, &kid, 50);
-        let now = Utc::now();
+        let now = Timestamp::now();
         // The invalid commands (odd indices) must all be rejected.
         let invalid_escapes: usize = cmds
             .iter()
@@ -700,7 +700,7 @@ mod tests {
     fn ce5_distraction_flooding_violation_rejected() {
         let (config, profile, sk, kid) = setup();
         let cmds = ce5_distraction_flooding(&profile, &sk, &kid, 100);
-        let now = Utc::now();
+        let now = Timestamp::now();
         // The last command is the violating one.
         let last = cmds.last().unwrap();
         let result = config.validate(last, now, None);
@@ -714,7 +714,7 @@ mod tests {
     fn ce6_error_mining_rejection_details_are_structured() {
         let (config, profile, sk, kid) = setup();
         let cmds = ce6_error_mining(&profile, &sk, &kid);
-        let now = Utc::now();
+        let now = Timestamp::now();
 
         for cmd in &cmds {
             if let Ok(result) = config.validate(cmd, now, None) {
@@ -751,7 +751,7 @@ mod tests {
     fn ce8_profile_probing_no_out_of_limit_escapes() {
         let (config, profile, sk, kid) = setup();
         let cmds = ce8_profile_probing(&profile, &sk, &kid);
-        let now = Utc::now();
+        let now = Timestamp::now();
 
         // Commands outside limits must be rejected.
         for cmd in &cmds {
@@ -794,7 +794,7 @@ mod tests {
         // Replayed commands may or may not be rejected by the validator
         // (depends on whether it tracks session sequences).  But they must
         // not produce unauthorized actuation — the authority check must still hold.
-        let now = Utc::now();
+        let now = Timestamp::now();
         for cmd in &cmds {
             if let Ok(result) = config.validate(cmd, now, None) {
                 if result.signed_verdict.verdict.approved {

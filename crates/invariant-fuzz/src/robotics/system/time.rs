@@ -5,8 +5,8 @@
 
 #[cfg(test)]
 mod tests {
-    use chrono::{Duration, Utc};
     use ed25519_dalek::SigningKey;
+    use invariant_core::time::{SignedDuration, Timestamp};
     use invariant_robotics::authority::chain::verify_chain;
     use invariant_robotics::authority::crypto::{generate_keypair, sign_pca};
     use invariant_robotics::models::authority::{Operation, Pca};
@@ -28,7 +28,7 @@ mod tests {
             p_0: "root".into(),
             ops: BTreeSet::from([op]),
             kid: kid.to_string(),
-            exp: Some(Utc::now() - Duration::hours(1)), // expired 1 hour ago
+            exp: Some(Timestamp::now() - SignedDuration::from_hours(1)), // expired 1 hour ago
             nbf: None,
             predecessor_digest: [0u8; 32],
         };
@@ -37,7 +37,7 @@ mod tests {
         let mut trusted = HashMap::new();
         trusted.insert(kid.to_string(), sk.verifying_key());
 
-        let result = verify_chain(&[signed], &trusted, Utc::now());
+        let result = verify_chain(&[signed], &trusted, Timestamp::now());
         assert!(
             result.is_err(),
             "SA9: expired PCA must be rejected at current time"
@@ -56,7 +56,7 @@ mod tests {
             ops: BTreeSet::from([op]),
             kid: kid.to_string(),
             exp: None,
-            nbf: Some(Utc::now() + Duration::hours(1)), // not valid for 1 hour
+            nbf: Some(Timestamp::now() + SignedDuration::from_hours(1)), // not valid for 1 hour
             predecessor_digest: [0u8; 32],
         };
         let signed = sign_pca(&pca, &sk).unwrap();
@@ -64,7 +64,7 @@ mod tests {
         let mut trusted = HashMap::new();
         trusted.insert(kid.to_string(), sk.verifying_key());
 
-        let result = verify_chain(&[signed], &trusted, Utc::now());
+        let result = verify_chain(&[signed], &trusted, Timestamp::now());
         assert!(
             result.is_err(),
             "SA9: not-yet-valid PCA must be rejected at current time"
@@ -79,7 +79,7 @@ mod tests {
         let kid = "sa9-kid";
         let op = Operation::new("actuate:*").unwrap();
 
-        let nbf = Utc::now() + Duration::hours(24);
+        let nbf = Timestamp::now() + SignedDuration::from_hours(24);
         let pca = Pca {
             p_0: "root".into(),
             ops: BTreeSet::from([op]),
@@ -96,7 +96,7 @@ mod tests {
         // Even if an attacker could skew `now` forward, verify_chain takes
         // `now` as an explicit parameter — the caller controls the time source.
         // We test with the real time: must reject.
-        let result = verify_chain(&[signed], &trusted, Utc::now());
+        let result = verify_chain(&[signed], &trusted, Timestamp::now());
         assert!(
             result.is_err(),
             "SA9: future PCA must be rejected with real clock"
@@ -111,7 +111,7 @@ mod tests {
         let kid = "sa9-kid";
         let op = Operation::new("actuate:*").unwrap();
 
-        let exp = Utc::now() - Duration::hours(1);
+        let exp = Timestamp::now() - SignedDuration::from_hours(1);
         let pca = Pca {
             p_0: "root".into(),
             ops: BTreeSet::from([op]),
@@ -126,12 +126,12 @@ mod tests {
         trusted.insert(kid.to_string(), sk.verifying_key());
 
         // Real time: expired.
-        let result = verify_chain(std::slice::from_ref(&signed), &trusted, Utc::now());
+        let result = verify_chain(std::slice::from_ref(&signed), &trusted, Timestamp::now());
         assert!(result.is_err(), "SA9: expired PCA rejected at real time");
 
         // Simulated backward skew: pass a time 2 hours in the past.
         // The PCA expired 1 hour ago, so 2 hours ago it was still valid.
-        let skewed_time = Utc::now() - Duration::hours(2);
+        let skewed_time = Timestamp::now() - SignedDuration::from_hours(2);
         let result_skewed = verify_chain(&[signed], &trusted, skewed_time);
         // This WOULD succeed if the attacker controlled the clock.
         // The defense is that `now` comes from a monotonic/trusted source,

@@ -1059,7 +1059,7 @@ mod tests {
         use crate::models::authority::Operation;
         use crate::models::command::{Command, CommandAuthority};
         use crate::models::profile::{RobotProfile, SafeStopProfile, WorkspaceBounds};
-        use chrono::Utc;
+        use invariant_core::time::Timestamp;
         use std::collections::HashMap;
 
         let profile = RobotProfile {
@@ -1090,7 +1090,7 @@ mod tests {
         };
 
         let command = Command {
-            timestamp: Utc::now(),
+            timestamp: Timestamp::now(),
             source: "test".into(),
             sequence: 1,
             joint_states: vec![joint_state("j1", 0.0, 1.0, 5.0)],
@@ -1150,7 +1150,7 @@ mod tests {
         use crate::models::authority::Operation;
         use crate::models::command::{Command, CommandAuthority};
         use crate::models::profile::{RobotProfile, SafeStopProfile, WorkspaceBounds};
-        use chrono::Utc;
+        use invariant_core::time::Timestamp;
         use std::collections::HashMap;
 
         let profile = RobotProfile {
@@ -1186,7 +1186,7 @@ mod tests {
         };
 
         let command = Command {
-            timestamp: Utc::now(),
+            timestamp: Timestamp::now(),
             source: "test".into(),
             sequence: 1,
             joint_states: vec![joint_state("j1", 2.0, 6.0, 60.0)], // position, velocity, torque all bad
@@ -1247,7 +1247,7 @@ mod tests {
         use crate::models::authority::Operation;
         use crate::models::command::{Command, CommandAuthority, EndEffectorPosition};
         use crate::models::profile::{RobotProfile, SafeStopProfile, WorkspaceBounds};
-        use chrono::Utc;
+        use invariant_core::time::Timestamp;
         use std::collections::HashMap;
 
         let profile = RobotProfile {
@@ -1278,7 +1278,7 @@ mod tests {
         };
 
         let command = Command {
-            timestamp: Utc::now(),
+            timestamp: Timestamp::now(),
             source: "test".into(),
             sequence: 1,
             joint_states: vec![joint_state("j1", 0.0, 10.0, 0.0)], // velocity = 10 rad/s
@@ -1592,7 +1592,7 @@ mod tests {
 
     fn envelope_command(j1_vel: f64, ee_pos: [f64; 3]) -> Command {
         Command {
-            timestamp: chrono::Utc::now(),
+            timestamp: invariant_core::time::Timestamp::now(),
             source: "test".into(),
             sequence: 1,
             joint_states: vec![JointState {
@@ -2138,7 +2138,7 @@ mod tests {
 
     use crate::models::authority::Operation;
     use crate::models::command::{Command, CommandAuthority};
-    use chrono::Utc;
+    use invariant_core::time::Timestamp;
     use std::collections::HashMap;
 
     fn env_test_profile() -> RobotProfile {
@@ -2172,7 +2172,7 @@ mod tests {
 
     fn env_test_command() -> Command {
         Command {
-            timestamp: Utc::now(),
+            timestamp: Timestamp::now(),
             source: "test".into(),
             sequence: 1,
             joint_states: vec![joint_state("j1", 0.0, 1.0, 5.0)],
@@ -2549,7 +2549,7 @@ mod tests {
 
         // Command with environment state that has over-temperature actuator.
         let cmd = Command {
-            timestamp: chrono::Utc::now(),
+            timestamp: invariant_core::time::Timestamp::now(),
             source: "test".into(),
             sequence: 1,
             joint_states: vec![JointState {
@@ -2656,7 +2656,7 @@ mod tests {
         };
 
         let cmd = Command {
-            timestamp: chrono::Utc::now(),
+            timestamp: invariant_core::time::Timestamp::now(),
             source: "test".into(),
             sequence: 1,
             joint_states: vec![JointState {
@@ -2744,7 +2744,7 @@ mod tests {
         };
 
         let cmd = Command {
-            timestamp: chrono::Utc::now(),
+            timestamp: invariant_core::time::Timestamp::now(),
             source: "test".into(),
             sequence: 1,
             joint_states: vec![JointState {
@@ -3147,7 +3147,7 @@ mod tests {
         };
 
         let cmd = Command {
-            timestamp: chrono::Utc::now(),
+            timestamp: invariant_core::time::Timestamp::now(),
             source: "test".into(),
             sequence: 1,
             joint_states: vec![JointState {

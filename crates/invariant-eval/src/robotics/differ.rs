@@ -57,9 +57,9 @@ pub struct TraceDiff {
 /// use invariant_robotics::models::command::{Command, CommandAuthority, JointState};
 /// use invariant_robotics::models::verdict::{SignedVerdict, Verdict, CheckResult, AuthoritySummary};
 ///
-/// let ts = chrono::DateTime::parse_from_rfc3339("2024-06-01T12:00:00Z")
+/// let ts = invariant_core::time::Timestamp::parse_rfc3339("2024-06-01T12:00:00Z")
 ///     .unwrap()
-///     .with_timezone(&chrono::Utc);
+///     ;
 ///
 /// let make_step = |seq: u64, approved: bool| -> TraceStep {
 ///     let cmd = Command {
@@ -170,7 +170,7 @@ pub fn diff_traces(baseline: &Trace, candidate: &Trace) -> Vec<TraceDiff> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::{TimeZone, Utc};
+    use invariant_core::time::Timestamp;
     use invariant_robotics::models::command::{Command, CommandAuthority, JointState};
     use invariant_robotics::models::trace::{Trace, TraceStep};
     use invariant_robotics::models::verdict::{
@@ -180,11 +180,11 @@ mod tests {
 
     /// Returns a fixed, deterministic UTC timestamp for use in tests.
     ///
-    /// Using a constant avoids non-determinism from `Utc::now()` and makes
+    /// Using a constant avoids non-determinism from `Timestamp::now()` and makes
     /// timestamp-ordering tests reproducible across runs.
-    fn fixed_ts() -> chrono::DateTime<Utc> {
+    fn fixed_ts() -> invariant_core::time::Timestamp {
         // 2023-11-14 22:13:20 UTC — an arbitrary but stable reference point.
-        Utc.timestamp_opt(1_700_000_000, 0).unwrap()
+        Timestamp::from_unix(1_700_000_000, 0).unwrap()
     }
 
     fn make_verdict(approved: bool) -> SignedVerdict {
