@@ -2,6 +2,12 @@
 version = 2
 yanked = "warn"
 unmaintained = "workspace"
+ignore = [
+    # chrono is flagged unmaintained (informational, no patched version).
+    # It is used across the workspace; migrating to jiff or time is tracked
+    # as a follow-up. Remove this entry once chrono is gone.
+    { id = "RUSTSEC-2026-0543", reason = "chrono unmaintained; migration to jiff/time pending" },
+]
 
 [licenses]
 version = 2
