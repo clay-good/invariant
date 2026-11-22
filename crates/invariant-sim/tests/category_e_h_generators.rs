@@ -161,9 +161,9 @@ fn h_06_future_dated_sensor_has_timestamp_ahead_of_command() {
         let delta = r.reading.timestamp - c.timestamp;
         // 10s ahead, tolerance for sub-millisecond rounding.
         assert!(
-            delta.num_milliseconds() >= 9_999 && delta.num_milliseconds() <= 10_001,
+            delta.as_millis() >= 9_999 && delta.as_millis() <= 10_001,
             "sensor timestamp must be ~10s ahead of command (got {} ms)",
-            delta.num_milliseconds()
+            delta.as_millis()
         );
         assert_eq!(r.signer_kid, "h06-future-stub");
         assert!(!r.signature.is_empty());

@@ -21,11 +21,11 @@ pub fn canonical_hash(bundle: &SynthesisBundle) -> String {
 mod tests {
     use super::*;
     use crate::models::bundle::{BundleAuthority, SynthesisPayload};
-    use chrono::Utc;
+    use invariant_core::time::Timestamp;
 
     fn bundle() -> SynthesisBundle {
         SynthesisBundle {
-            timestamp: Utc::now(),
+            timestamp: Timestamp::now(),
             source: "t".into(),
             sequence: 1,
             payload: SynthesisPayload::Dna {

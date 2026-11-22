@@ -19,8 +19,8 @@
 //   flag), or `AcceptUnsigned` (backwards compatible, no signature check).
 
 use base64::{engine::general_purpose::STANDARD, Engine};
-use chrono::{DateTime, Utc};
 use ed25519_dalek::{SigningKey, VerifyingKey};
+use invariant_core::time::Timestamp;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -139,11 +139,11 @@ pub enum SensorPayload {
 ///
 /// ```
 /// use invariant_robotics::sensor::{SensorReading, SensorPayload};
-/// use chrono::Utc;
+/// use invariant_core::time::Timestamp;
 ///
 /// let reading = SensorReading {
 ///     sensor_name: "joint_0_encoder".to_string(),
-///     timestamp: Utc::now(),
+///     timestamp: Timestamp::now(),
 ///     payload: SensorPayload::JointEncoder { position: 0.5, velocity: 0.1 },
 ///     sequence: 0,
 /// };
@@ -156,7 +156,7 @@ pub struct SensorReading {
     /// Name identifying the sensor (e.g., "left_hand_fts", "joint_0_encoder").
     pub sensor_name: String,
     /// Timestamp when the reading was taken.
-    pub timestamp: DateTime<Utc>,
+    pub timestamp: Timestamp,
     /// The sensor data.
     pub payload: SensorPayload,
     /// Monotonic sequence number from the sensor driver.
@@ -218,13 +218,13 @@ pub enum SensorTrustPolicy {
 ///
 /// ```
 /// use invariant_robotics::sensor::{sign_sensor_reading, SensorReading, SensorPayload};
-/// use chrono::Utc;
+/// use invariant_core::time::Timestamp;
 /// use ed25519_dalek::SigningKey;
 ///
 /// let signing_key = SigningKey::from_bytes(&[5u8; 32]);
 /// let reading = SensorReading {
 ///     sensor_name: "left_hand_fts".to_string(),
-///     timestamp: Utc::now(),
+///     timestamp: Timestamp::now(),
 ///     payload: SensorPayload::Force { force: [0.0, 0.0, 10.0] },
 ///     sequence: 0,
 /// };
@@ -264,7 +264,7 @@ pub fn sign_sensor_reading(
 /// use invariant_robotics::sensor::{
 ///     sign_sensor_reading, verify_sensor_reading, SensorReading, SensorPayload,
 /// };
-/// use chrono::Utc;
+/// use invariant_core::time::Timestamp;
 /// use ed25519_dalek::SigningKey;
 ///
 /// let signing_key = SigningKey::from_bytes(&[6u8; 32]);
@@ -272,7 +272,7 @@ pub fn sign_sensor_reading(
 ///
 /// let reading = SensorReading {
 ///     sensor_name: "joint_0_encoder".to_string(),
-///     timestamp: Utc::now(),
+///     timestamp: Timestamp::now(),
 ///     payload: SensorPayload::JointEncoder { position: 1.2, velocity: 0.0 },
 ///     sequence: 1,
 /// };
@@ -329,12 +329,12 @@ pub fn verify_sensor_reading(
 ///
 /// ```
 /// use invariant_robotics::sensor::{check_sensor_freshness, SensorReading, SensorPayload};
-/// use chrono::{Duration, Utc};
+/// use invariant_core::time::{Timestamp, SignedDuration};
 ///
-/// let now = Utc::now();
+/// let now = Timestamp::now();
 /// let recent_reading = SensorReading {
 ///     sensor_name: "imu".to_string(),
-///     timestamp: now - Duration::milliseconds(50),
+///     timestamp: now - SignedDuration::from_millis(50),
 ///     payload: SensorPayload::Position { position: [0.0, 0.0, 0.0] },
 ///     sequence: 0,
 /// };
@@ -348,7 +348,7 @@ pub fn verify_sensor_reading(
 /// // Future-dated reading — should fail.
 /// let future_reading = SensorReading {
 ///     sensor_name: "imu".to_string(),
-///     timestamp: now + Duration::milliseconds(500),
+///     timestamp: now + SignedDuration::from_millis(500),
 ///     payload: SensorPayload::Position { position: [0.0, 0.0, 0.0] },
 ///     sequence: 1,
 /// };
@@ -356,11 +356,11 @@ pub fn verify_sensor_reading(
 /// ```
 pub fn check_sensor_freshness(
     reading: &SensorReading,
-    now: DateTime<Utc>,
+    now: Timestamp,
     max_age_ms: u64,
 ) -> Result<(), SensorError> {
     let delta = now - reading.timestamp;
-    let delta_ms = delta.num_milliseconds();
+    let delta_ms = delta.as_millis() as i64;
 
     // Reject future-dated readings (negative delta means reading is in the future).
     if delta_ms < 0 {
@@ -545,7 +545,7 @@ pub fn check_sensor_fusion(
 pub fn verify_sensor_batch(
     readings: &[SignedSensorReading],
     trusted_keys: &std::collections::HashMap<String, VerifyingKey>,
-    now: DateTime<Utc>,
+    now: Timestamp,
     max_age_ms: u64,
 ) -> Result<Vec<SensorReading>, SensorError> {
     let mut verified = Vec::with_capacity(readings.len());
@@ -583,14 +583,14 @@ pub fn verify_sensor_batch(
 mod tests {
     use super::*;
     use crate::authority::crypto::generate_keypair;
-    use chrono::Duration;
+    use invariant_core::time::SignedDuration;
     use rand::rngs::OsRng;
     use std::collections::HashMap;
 
     fn make_reading(name: &str, pos: [f64; 3]) -> SensorReading {
         SensorReading {
             sensor_name: name.to_string(),
-            timestamp: Utc::now(),
+            timestamp: Timestamp::now(),
             payload: SensorPayload::Position { position: pos },
             sequence: 1,
         }
@@ -599,7 +599,7 @@ mod tests {
     fn make_force_reading(name: &str, force: [f64; 3]) -> SensorReading {
         SensorReading {
             sensor_name: name.to_string(),
-            timestamp: Utc::now(),
+            timestamp: Timestamp::now(),
             payload: SensorPayload::Force { force },
             sequence: 1,
         }
@@ -639,7 +639,7 @@ mod tests {
 
         let reading = SensorReading {
             sensor_name: "joint_0_encoder".to_string(),
-            timestamp: Utc::now(),
+            timestamp: Timestamp::now(),
             payload: SensorPayload::JointEncoder {
                 position: 0.5,
                 velocity: 1.2,
@@ -657,7 +657,7 @@ mod tests {
 
         let reading = SensorReading {
             sensor_name: "imu".to_string(),
-            timestamp: Utc::now(),
+            timestamp: Timestamp::now(),
             payload: SensorPayload::CenterOfMass {
                 com: [0.0, 0.0, 0.9],
             },
@@ -674,7 +674,7 @@ mod tests {
 
         let reading = SensorReading {
             sensor_name: "left_foot_fts".to_string(),
-            timestamp: Utc::now(),
+            timestamp: Timestamp::now(),
             payload: SensorPayload::GroundReaction {
                 grf: [0.0, 0.0, 400.0],
             },
@@ -733,15 +733,15 @@ mod tests {
     #[test]
     fn fresh_reading_passes() {
         let reading = make_reading("sensor", [0.0, 0.0, 0.0]);
-        let now = Utc::now();
+        let now = Timestamp::now();
         assert!(check_sensor_freshness(&reading, now, 1000).is_ok());
     }
 
     #[test]
     fn stale_reading_rejected() {
         let mut reading = make_reading("sensor", [0.0, 0.0, 0.0]);
-        reading.timestamp = Utc::now() - Duration::seconds(5);
-        let now = Utc::now();
+        reading.timestamp = Timestamp::now() - SignedDuration::from_secs(5);
+        let now = Timestamp::now();
 
         let result = check_sensor_freshness(&reading, now, 100); // 100ms max
         assert!(result.is_err());
@@ -764,7 +764,7 @@ mod tests {
         let mut trusted = HashMap::new();
         trusted.insert("k".to_string(), vk);
 
-        let verified = verify_sensor_batch(&[s1, s2], &trusted, Utc::now(), 5000).unwrap();
+        let verified = verify_sensor_batch(&[s1, s2], &trusted, Timestamp::now(), 5000).unwrap();
         assert_eq!(verified.len(), 2);
         assert_eq!(verified[0].sensor_name, "sensor_a");
         assert_eq!(verified[1].sensor_name, "sensor_b");
@@ -779,7 +779,7 @@ mod tests {
 
         let trusted: HashMap<String, VerifyingKey> = HashMap::new(); // empty
 
-        let result = verify_sensor_batch(&[signed], &trusted, Utc::now(), 5000);
+        let result = verify_sensor_batch(&[signed], &trusted, Timestamp::now(), 5000);
         assert!(result.is_err());
         assert!(result
             .unwrap_err()
@@ -804,7 +804,7 @@ mod tests {
         let mut trusted = HashMap::new();
         trusted.insert("k".to_string(), vk);
 
-        let result = verify_sensor_batch(&[s1, s2], &trusted, Utc::now(), 5000);
+        let result = verify_sensor_batch(&[s1, s2], &trusted, Timestamp::now(), 5000);
         assert!(result.is_err());
     }
 
@@ -814,13 +814,13 @@ mod tests {
         let vk = sk.verifying_key();
 
         let mut reading = make_reading("sensor", [0.0, 0.0, 0.0]);
-        reading.timestamp = Utc::now() - Duration::seconds(10);
+        reading.timestamp = Timestamp::now() - SignedDuration::from_secs(10);
         let signed = sign_sensor_reading(&reading, &sk, "k").unwrap();
 
         let mut trusted = HashMap::new();
         trusted.insert("k".to_string(), vk);
 
-        let result = verify_sensor_batch(&[signed], &trusted, Utc::now(), 100);
+        let result = verify_sensor_batch(&[signed], &trusted, Timestamp::now(), 100);
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("expired"));
     }
@@ -861,8 +861,8 @@ mod tests {
     #[test]
     fn freshness_rejects_future_dated_reading() {
         let mut reading = make_reading("sensor_a", [0.0, 0.0, 0.0]);
-        reading.timestamp = Utc::now() + Duration::seconds(10);
-        let result = check_sensor_freshness(&reading, Utc::now(), 500);
+        reading.timestamp = Timestamp::now() + SignedDuration::from_secs(10);
+        let result = check_sensor_freshness(&reading, Timestamp::now(), 500);
         assert!(
             matches!(result, Err(SensorError::ReadingFromFuture { ahead_ms }) if ahead_ms >= 9000),
             "future-dated reading must be rejected, got {result:?}"
@@ -872,8 +872,8 @@ mod tests {
     #[test]
     fn freshness_accepts_recent_past_reading() {
         let mut reading = make_reading("sensor_a", [0.0, 0.0, 0.0]);
-        reading.timestamp = Utc::now() - Duration::milliseconds(100);
-        let result = check_sensor_freshness(&reading, Utc::now(), 500);
+        reading.timestamp = Timestamp::now() - SignedDuration::from_millis(100);
+        let result = check_sensor_freshness(&reading, Timestamp::now(), 500);
         assert!(
             result.is_ok(),
             "100ms old reading within 500ms window must pass"
@@ -883,8 +883,8 @@ mod tests {
     #[test]
     fn freshness_rejects_stale_reading() {
         let mut reading = make_reading("sensor_a", [0.0, 0.0, 0.0]);
-        reading.timestamp = Utc::now() - Duration::seconds(2);
-        let result = check_sensor_freshness(&reading, Utc::now(), 500);
+        reading.timestamp = Timestamp::now() - SignedDuration::from_secs(2);
+        let result = check_sensor_freshness(&reading, Timestamp::now(), 500);
         assert!(
             matches!(result, Err(SensorError::ReadingExpired { .. })),
             "2s old reading must be expired for 500ms window"
@@ -897,13 +897,13 @@ mod tests {
         let vk = sk.verifying_key();
 
         let mut reading = make_reading("sensor_a", [1.0, 0.0, 0.0]);
-        reading.timestamp = Utc::now() + Duration::seconds(60);
+        reading.timestamp = Timestamp::now() + SignedDuration::from_secs(60);
         let signed = sign_sensor_reading(&reading, &sk, "k1").unwrap();
 
         let mut keys = HashMap::new();
         keys.insert("k1".to_string(), vk);
 
-        let result = verify_sensor_batch(&[signed], &keys, Utc::now(), 500);
+        let result = verify_sensor_batch(&[signed], &keys, Timestamp::now(), 500);
         assert!(result.is_err(), "batch with future-dated reading must fail");
     }
 
@@ -912,7 +912,7 @@ mod tests {
     fn make_payload_reading(name: &str, payload: SensorPayload) -> SensorReading {
         SensorReading {
             sensor_name: name.to_string(),
-            timestamp: Utc::now(),
+            timestamp: Timestamp::now(),
             payload,
             sequence: 1,
         }

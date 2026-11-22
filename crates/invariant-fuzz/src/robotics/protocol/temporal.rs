@@ -3,7 +3,7 @@
 //! These attacks manipulate timestamps, PCA expiry windows, and command
 //! sequence numbers to probe the validator's temporal enforcement.
 
-use chrono::{Duration, Utc};
+use invariant_core::time::{SignedDuration, Timestamp};
 
 use invariant_robotics::models::command::Command;
 
@@ -23,12 +23,12 @@ impl TemporalAttacker {
 
         // PA6: Command with timestamp far in the past (stale command).
         let mut cmd = base.clone();
-        cmd.timestamp = Utc::now() - Duration::days(365);
+        cmd.timestamp = Timestamp::now() - SignedDuration::from_hours(24 * 365);
         results.push(("PA6-stale-timestamp".into(), cmd, false)); // may or may not reject
 
         // PA6: Command with timestamp far in the future.
         let mut cmd = base.clone();
-        cmd.timestamp = Utc::now() + Duration::days(365);
+        cmd.timestamp = Timestamp::now() + SignedDuration::from_hours(24 * 365);
         results.push(("PA6-future-timestamp".into(), cmd, false));
 
         // PA8: Sequence number = 0.
@@ -127,7 +127,7 @@ mod tests {
 
     fn base_command() -> Command {
         Command {
-            timestamp: Utc::now(),
+            timestamp: Timestamp::now(),
             source: "test".into(),
             sequence: 1,
             joint_states: vec![JointState {

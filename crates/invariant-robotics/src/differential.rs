@@ -14,7 +14,7 @@
 //! the robotics-specific [`VerdictView`] / [`CheckView`] impls plus the thin
 //! [`DifferentialValidator`] wrapper around two [`ValidatorConfig`]s.
 
-use chrono::{DateTime, Utc};
+use invariant_core::time::Timestamp;
 
 use crate::models::command::{Command, JointState};
 use crate::models::verdict::{CheckResult, Verdict};
@@ -91,7 +91,7 @@ impl<'a> DifferentialValidator<'a> {
     pub fn validate(
         &self,
         command: &Command,
-        now: DateTime<Utc>,
+        now: Timestamp,
         previous_joints: Option<&[JointState]>,
     ) -> Result<DifferentialResult, ValidatorError> {
         let result_a = self.instance_a.validate(command, now, previous_joints)?;
@@ -113,7 +113,7 @@ mod tests {
     use crate::models::profile::*;
     use crate::models::verdict::AuthoritySummary;
     use base64::{engine::general_purpose::STANDARD, Engine};
-    use chrono::Utc;
+    use invariant_core::time::Timestamp;
     use rand::rngs::OsRng;
     use std::collections::{BTreeSet, HashMap};
 
@@ -175,7 +175,7 @@ mod tests {
 
     fn make_command(chain_b64: &str, required_ops: Vec<Operation>) -> Command {
         Command {
-            timestamp: Utc::now(),
+            timestamp: Timestamp::now(),
             source: "test".into(),
             sequence: 1,
             joint_states: vec![JointState {
@@ -246,7 +246,7 @@ mod tests {
 
         let diff = DifferentialValidator::new(&config_a, &config_b);
         let cmd = make_command(&chain_b64, vec![op("actuate:j1")]);
-        let now = Utc::now();
+        let now = Timestamp::now();
 
         let result = diff.validate(&cmd, now, None).unwrap();
 
@@ -276,7 +276,7 @@ mod tests {
         // Command with position outside joint limits -> rejection.
         let mut cmd = make_command(&chain_b64, vec![op("actuate:j1")]);
         cmd.joint_states[0].position = 999.0;
-        let now = Utc::now();
+        let now = Timestamp::now();
 
         let result = diff.validate(&cmd, now, None).unwrap();
 
@@ -302,7 +302,7 @@ mod tests {
 
         let diff = DifferentialValidator::new(&config_a, &config_b);
         let cmd = make_command(&chain_b64, vec![op("actuate:j1")]);
-        let now = Utc::now();
+        let now = Timestamp::now();
 
         let result = diff.validate(&cmd, now, None).unwrap();
 
@@ -349,7 +349,7 @@ mod tests {
             approved: true,
             command_hash: "sha256:abc".into(),
             command_sequence: 1,
-            timestamp: Utc::now(),
+            timestamp: Timestamp::now(),
             checks: checks.clone(),
             profile_name: "test".into(),
             profile_hash: "sha256:xyz".into(),
@@ -371,7 +371,7 @@ mod tests {
 
     #[test]
     fn compare_verdicts_with_one_check_disagreement() {
-        let now = Utc::now();
+        let now = Timestamp::now();
         let base_summary = AuthoritySummary {
             origin_principal: "alice".into(),
             hop_count: 1,
@@ -446,7 +446,7 @@ mod tests {
 
     #[test]
     fn compare_verdicts_missing_check_in_one_instance() {
-        let now = Utc::now();
+        let now = Timestamp::now();
         let base_summary = AuthoritySummary {
             origin_principal: String::new(),
             hop_count: 0,
@@ -553,7 +553,7 @@ mod tests {
 
         let diff = DifferentialValidator::new(&config_a, &config_b);
         let cmd = make_command(&chain_b64, vec![op("actuate:j1")]);
-        let now = Utc::now();
+        let now = Timestamp::now();
 
         let result = diff.validate(&cmd, now, None).unwrap();
         assert!(result.fully_agrees());
@@ -580,7 +580,7 @@ mod tests {
             velocity: 0.0,
             effort: 0.0,
         }];
-        let now = Utc::now();
+        let now = Timestamp::now();
 
         let result = diff.validate(&cmd, now, Some(&prev)).unwrap();
         assert!(result.fully_agrees());

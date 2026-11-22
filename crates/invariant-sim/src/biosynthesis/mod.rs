@@ -19,8 +19,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Instant;
 
-use chrono::Utc;
 use ed25519_dalek::VerifyingKey;
+use invariant_core::time::Timestamp;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -262,7 +262,7 @@ fn run_one_inner(s: &CampaignScenario, base_dir: &Path) -> Result<bool, String> 
     .with_hazard_db(db_arc);
 
     let out = cfg
-        .validate(&bundle, Utc::now(), None)
+        .validate(&bundle, Timestamp::now(), None)
         .map_err(|e| format!("validate: {e}"))?;
     Ok(out.signed_verdict.verdict.approved)
 }

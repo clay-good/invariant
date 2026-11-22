@@ -1202,11 +1202,11 @@ impl Invariant for AssemblyCompatibilityScreen {
 mod tests {
     use super::*;
     use crate::models::bundle::{BundleAuthority, SynthesisPayload};
-    use chrono::Utc;
+    use invariant_core::time::Timestamp;
 
     fn dna(seq: &str) -> SynthesisBundle {
         SynthesisBundle {
-            timestamp: Utc::now(),
+            timestamp: Timestamp::now(),
             source: "t".into(),
             sequence: 0,
             payload: SynthesisPayload::Dna {
@@ -1322,7 +1322,7 @@ mod tests {
     fn d2_passes_for_non_dna_payload() {
         let p = profile();
         let bundle = SynthesisBundle {
-            timestamp: Utc::now(),
+            timestamp: Timestamp::now(),
             source: "t".into(),
             sequence: 0,
             payload: SynthesisPayload::Peptide {

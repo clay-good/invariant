@@ -10,12 +10,12 @@
 //! by a tunable `EPS` and asserts the merged plan is rejected with a
 //! separation check that names the offending pair.
 
-use chrono::{DateTime, Utc};
 use invariant_coordinator::monitor::{CoordinationConfig, EndEffectorState, StaleRobotPolicy};
 use invariant_coordinator::{
     CoordinationMonitor, CoordinationVerdict, RobotState, WorkspacePartition,
     WorkspacePartitionConfig,
 };
+use invariant_core::time::Timestamp;
 
 const MIN_SEPARATION_M: f64 = 0.5;
 /// Perturbation magnitude that pushes the merged plan just past the
@@ -72,7 +72,7 @@ fn ee(name: &str, position: [f64; 3]) -> EndEffectorState {
     }
 }
 
-fn robot_state(robot_id: &str, ts: DateTime<Utc>, position: [f64; 3]) -> RobotState {
+fn robot_state(robot_id: &str, ts: Timestamp, position: [f64; 3]) -> RobotState {
     RobotState {
         robot_id: robot_id.into(),
         timestamp: ts,
@@ -96,7 +96,7 @@ fn baseline_positions() -> [(&'static str, [f64; 3]); 4] {
     ]
 }
 
-fn build_monitor() -> (CoordinationMonitor, DateTime<Utc>) {
+fn build_monitor() -> (CoordinationMonitor, Timestamp) {
     let config = CoordinationConfig {
         min_separation_m: MIN_SEPARATION_M,
         stale_timeout_ms: 60_000,
@@ -104,10 +104,10 @@ fn build_monitor() -> (CoordinationMonitor, DateTime<Utc>) {
         max_robots: 8,
     };
     let monitor = CoordinationMonitor::new(config);
-    (monitor, Utc::now())
+    (monitor, Timestamp::now())
 }
 
-fn register_all(monitor: &mut CoordinationMonitor, ts: DateTime<Utc>) {
+fn register_all(monitor: &mut CoordinationMonitor, ts: Timestamp) {
     for (id, pos) in baseline_positions() {
         monitor
             .update_state(robot_state(id, ts, pos))
@@ -115,7 +115,7 @@ fn register_all(monitor: &mut CoordinationMonitor, ts: DateTime<Utc>) {
     }
 }
 
-fn assert_each_robot_safe(monitor: &CoordinationMonitor, ts: DateTime<Utc>) {
+fn assert_each_robot_safe(monitor: &CoordinationMonitor, ts: Timestamp) {
     for (id, pos) in baseline_positions() {
         let verdict: CoordinationVerdict = monitor.check(&robot_state(id, ts, pos), ts);
         assert!(

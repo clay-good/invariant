@@ -7,8 +7,8 @@
 // (monotonic millisecond timestamps). No threads, no I/O. The caller
 // (CLI/server layer) is responsible for calling `check()` on a timer.
 
-use chrono::{DateTime, Utc};
 use ed25519_dalek::SigningKey;
+use invariant_core::time::Timestamp;
 use thiserror::Error;
 
 use crate::actuator::build_signed_actuation_command;
@@ -172,7 +172,7 @@ impl Watchdog {
     /// use invariant_robotics::models::profile::{SafeStopProfile, SafeStopStrategy};
     /// use ed25519_dalek::SigningKey;
     /// use std::collections::HashMap;
-    /// use chrono::Utc;
+    /// use invariant_core::time::Timestamp;
     ///
     /// let signing_key = SigningKey::from_bytes(&[2u8; 32]);
     /// let safe_stop = SafeStopProfile {
@@ -186,7 +186,7 @@ impl Watchdog {
     /// wd.heartbeat(50).unwrap();
     ///
     /// // Checking at t=120 — only 70 ms since heartbeat — should NOT trigger.
-    /// let result = wd.check(120, Utc::now()).unwrap();
+    /// let result = wd.check(120, Timestamp::now()).unwrap();
     /// assert!(result.is_none());
     /// assert_eq!(wd.state(), WatchdogState::Armed);
     /// ```
@@ -215,7 +215,7 @@ impl Watchdog {
     /// use invariant_robotics::models::profile::{SafeStopProfile, SafeStopStrategy};
     /// use ed25519_dalek::SigningKey;
     /// use std::collections::HashMap;
-    /// use chrono::Utc;
+    /// use invariant_core::time::Timestamp;
     ///
     /// let signing_key = SigningKey::from_bytes(&[3u8; 32]);
     /// let safe_stop = SafeStopProfile {
@@ -226,18 +226,18 @@ impl Watchdog {
     /// let mut wd = Watchdog::new(50, safe_stop, signing_key, "kid".to_string(), 0);
     ///
     /// // No timeout yet — returns None.
-    /// let no_trigger = wd.check(30, Utc::now()).unwrap();
+    /// let no_trigger = wd.check(30, Timestamp::now()).unwrap();
     /// assert!(no_trigger.is_none());
     ///
     /// // Timeout elapsed — returns a signed safe-stop command.
-    /// let triggered = wd.check(60, Utc::now()).unwrap();
+    /// let triggered = wd.check(60, Timestamp::now()).unwrap();
     /// assert!(triggered.is_some());
     /// assert_eq!(wd.state(), WatchdogState::Triggered);
     /// ```
     pub fn check(
         &mut self,
         now_ms: u64,
-        now_utc: DateTime<Utc>,
+        now_utc: Timestamp,
     ) -> Result<Option<SignedActuationCommand>, WatchdogError> {
         if self.state == WatchdogState::Triggered {
             return Ok(None);
@@ -326,8 +326,8 @@ mod tests {
     use crate::authority::crypto::generate_keypair;
     use crate::models::profile::SafeStopStrategy;
     use base64::{engine::general_purpose::STANDARD, Engine};
-    use chrono::Utc;
     use ed25519_dalek::Verifier;
+    use invariant_core::time::Timestamp;
     use rand::rngs::OsRng;
     use serde::Serialize;
     use std::collections::HashMap;
@@ -382,7 +382,7 @@ mod tests {
         wd.heartbeat(30).unwrap();
 
         // Check at t=60 — only 30ms since last heartbeat, should NOT trigger.
-        let result = wd.check(60, Utc::now()).unwrap();
+        let result = wd.check(60, Timestamp::now()).unwrap();
         assert!(result.is_none());
         assert_eq!(wd.state(), WatchdogState::Armed);
     }
@@ -392,7 +392,7 @@ mod tests {
         let mut wd = make_watchdog(50, 0);
 
         // Force trigger by checking after timeout.
-        let cmd = wd.check(100, Utc::now()).unwrap();
+        let cmd = wd.check(100, Timestamp::now()).unwrap();
         assert!(cmd.is_some());
         assert_eq!(wd.state(), WatchdogState::Triggered);
 
@@ -410,7 +410,7 @@ mod tests {
         let mut wd = make_watchdog(50, 0);
 
         // Check at exactly the timeout boundary — should NOT trigger.
-        let result = wd.check(50, Utc::now()).unwrap();
+        let result = wd.check(50, Timestamp::now()).unwrap();
         assert!(result.is_none());
         assert_eq!(wd.state(), WatchdogState::Armed);
     }
@@ -420,7 +420,7 @@ mod tests {
         let mut wd = make_watchdog(50, 0);
 
         // Check at t=51 — 51ms since last heartbeat, exceeds 50ms timeout.
-        let result = wd.check(51, Utc::now()).unwrap();
+        let result = wd.check(51, Timestamp::now()).unwrap();
         assert!(result.is_some());
         assert_eq!(wd.state(), WatchdogState::Triggered);
     }
@@ -429,11 +429,11 @@ mod tests {
     fn second_check_after_trigger_returns_none() {
         let mut wd = make_watchdog(50, 0);
 
-        let first = wd.check(100, Utc::now()).unwrap();
+        let first = wd.check(100, Timestamp::now()).unwrap();
         assert!(first.is_some());
 
         // Subsequent checks return None (already triggered).
-        let second = wd.check(200, Utc::now()).unwrap();
+        let second = wd.check(200, Timestamp::now()).unwrap();
         assert!(second.is_none());
     }
 
@@ -446,7 +446,7 @@ mod tests {
         let mut wd = make_watchdog(50, 0);
 
         // Trigger.
-        wd.check(100, Utc::now()).unwrap();
+        wd.check(100, Timestamp::now()).unwrap();
         assert_eq!(wd.state(), WatchdogState::Triggered);
 
         // Operator reset.
@@ -463,16 +463,16 @@ mod tests {
         let mut wd = make_watchdog(50, 0);
 
         // Trigger and reset at t=200.
-        wd.check(100, Utc::now()).unwrap();
+        wd.check(100, Timestamp::now()).unwrap();
         wd.reset(200);
 
         // Check at t=230 — only 30ms since reset, should NOT trigger.
-        let result = wd.check(230, Utc::now()).unwrap();
+        let result = wd.check(230, Timestamp::now()).unwrap();
         assert!(result.is_none());
         assert_eq!(wd.state(), WatchdogState::Armed);
 
         // Check at t=260 — 60ms since reset, SHOULD trigger.
-        let result = wd.check(260, Utc::now()).unwrap();
+        let result = wd.check(260, Timestamp::now()).unwrap();
         assert!(result.is_some());
         assert_eq!(wd.state(), WatchdogState::Triggered);
     }
@@ -484,7 +484,7 @@ mod tests {
     #[test]
     fn safe_stop_command_has_watchdog_hash() {
         let mut wd = make_watchdog(50, 0);
-        let cmd = wd.check(100, Utc::now()).unwrap().unwrap();
+        let cmd = wd.check(100, Timestamp::now()).unwrap().unwrap();
         assert_eq!(cmd.command_hash, "watchdog:safe-stop");
     }
 
@@ -495,7 +495,7 @@ mod tests {
 
         let mut wd = Watchdog::new(50, default_safe_stop(), sk, "test-kid".into(), 0);
 
-        let now_utc = Utc::now();
+        let now_utc = Timestamp::now();
         let cmd = wd.check(100, now_utc).unwrap().unwrap();
 
         // Reconstruct the payload the actuator would have signed.
@@ -504,7 +504,7 @@ mod tests {
             command_hash: &'a str,
             command_sequence: u64,
             joint_states: &'a [JointState],
-            timestamp: DateTime<Utc>,
+            timestamp: Timestamp,
             signer_kid: &'a str,
         }
 
@@ -525,7 +525,7 @@ mod tests {
     #[test]
     fn controlled_crouch_generates_sorted_joints() {
         let mut wd = make_watchdog(50, 0);
-        let cmd = wd.check(100, Utc::now()).unwrap().unwrap();
+        let cmd = wd.check(100, Timestamp::now()).unwrap().unwrap();
 
         // Should have 4 joints, sorted alphabetically.
         assert_eq!(cmd.joint_states.len(), 4);
@@ -557,7 +557,7 @@ mod tests {
 
         let mut wd = Watchdog::new(50, profile, make_signing_key(), "kid".into(), 0);
 
-        let cmd = wd.check(100, Utc::now()).unwrap().unwrap();
+        let cmd = wd.check(100, Timestamp::now()).unwrap().unwrap();
         assert!(cmd.joint_states.is_empty());
     }
 
@@ -577,7 +577,7 @@ mod tests {
 
         // Simulate a clock regression: check at t=50, which is before the
         // heartbeat baseline of t=100.
-        let result = wd.check(50, Utc::now()).unwrap();
+        let result = wd.check(50, Timestamp::now()).unwrap();
         assert!(
             result.is_none(),
             "clock regression must not trigger the watchdog"
@@ -610,7 +610,7 @@ mod tests {
         // Even at now_ms=0 (no elapsed time), elapsed = 0, which is NOT > 0
         // (the check is strict: elapsed > timeout_ms), so the watchdog does
         // NOT trigger at exactly t=0 with timeout_ms=0.
-        let result = wd.check(0, Utc::now()).unwrap();
+        let result = wd.check(0, Timestamp::now()).unwrap();
         assert!(
             result.is_none(),
             "at t=0 with timeout_ms=0 elapsed==0 which is NOT > 0, so no trigger"
@@ -618,7 +618,7 @@ mod tests {
         assert_eq!(wd.state(), WatchdogState::Armed);
 
         // At t=1 (elapsed=1 > timeout_ms=0), it must trigger.
-        let result = wd.check(1, Utc::now()).unwrap();
+        let result = wd.check(1, Timestamp::now()).unwrap();
         assert!(
             result.is_some(),
             "timeout_ms=0 must trigger on first check with now_ms=1 (elapsed=1 > 0)"
@@ -640,7 +640,7 @@ mod tests {
 
         let mut wd = Watchdog::new(100, profile, make_signing_key(), "kid".into(), 0);
 
-        let cmd = wd.check(200, Utc::now()).unwrap().unwrap();
+        let cmd = wd.check(200, Timestamp::now()).unwrap().unwrap();
         assert_eq!(cmd.joint_states.len(), 2);
         assert_eq!(cmd.joint_states[0].name, "j1");
         assert_eq!(cmd.joint_states[0].position, 0.0);
@@ -655,7 +655,7 @@ mod tests {
         // The safe-stop latch must be one-way: once Triggered, heartbeat()
         // must return AlreadyTriggered and state must remain Triggered.
         let mut wd = make_watchdog(50, 0);
-        wd.check(100, Utc::now()).unwrap(); // trigger
+        wd.check(100, Timestamp::now()).unwrap(); // trigger
         assert_eq!(wd.state(), WatchdogState::Triggered);
 
         // Multiple heartbeat attempts must all fail.
@@ -673,7 +673,7 @@ mod tests {
         wd.heartbeat(200).unwrap();
 
         // Trigger at t=300.
-        wd.check(300, Utc::now()).unwrap();
+        wd.check(300, Timestamp::now()).unwrap();
         assert_eq!(wd.state(), WatchdogState::Triggered);
 
         // Reset with stale timestamp t=100 (before the last heartbeat).
@@ -682,7 +682,7 @@ mod tests {
         assert_eq!(wd.state(), WatchdogState::Armed);
 
         // Check at t=210: only 10ms since baseline(200), should NOT trigger.
-        let result = wd.check(210, Utc::now()).unwrap();
+        let result = wd.check(210, Timestamp::now()).unwrap();
         assert!(
             result.is_none(),
             "stale reset must not regress baseline — should NOT trigger at t=210"
@@ -698,7 +698,7 @@ mod tests {
         wd.heartbeat(50).unwrap(); // should be silently ignored
 
         // Check at t=120: only 20ms since last real heartbeat(100).
-        let result = wd.check(120, Utc::now()).unwrap();
+        let result = wd.check(120, Timestamp::now()).unwrap();
         assert!(
             result.is_none(),
             "backwards heartbeat must not regress timer"
@@ -712,7 +712,7 @@ mod tests {
         wd.heartbeat(1000).unwrap();
 
         // saturating_sub(1000, 1000) = 0, which is <= u64::MAX. No trigger.
-        let result = wd.check(1000, Utc::now()).unwrap();
+        let result = wd.check(1000, Timestamp::now()).unwrap();
         assert!(result.is_none());
         assert_eq!(wd.state(), WatchdogState::Armed);
     }
@@ -727,7 +727,7 @@ mod tests {
         wd.heartbeat(200).unwrap();
 
         // Check at t=100 — earlier than the heartbeat at t=200.
-        let result = wd.check(100, Utc::now()).unwrap();
+        let result = wd.check(100, Timestamp::now()).unwrap();
         assert!(
             result.is_none(),
             "backwards check clock must NOT trigger watchdog"
@@ -741,7 +741,7 @@ mod tests {
         let mut wd = make_watchdog(50, 0);
         wd.heartbeat(100).unwrap();
 
-        let result = wd.check(100, Utc::now()).unwrap();
+        let result = wd.check(100, Timestamp::now()).unwrap();
         assert!(
             result.is_none(),
             "check at exact heartbeat time (elapsed=0) must not trigger"
@@ -756,7 +756,7 @@ mod tests {
         // the motor controller identifies watchdog-originated commands by this
         // sentinel.
         let mut wd = make_watchdog(50, 0);
-        let cmd = wd.check(100, Utc::now()).unwrap().unwrap();
+        let cmd = wd.check(100, Timestamp::now()).unwrap().unwrap();
         assert_eq!(cmd.command_hash, "watchdog:safe-stop");
         assert!(!cmd.command_hash.starts_with("sha256:"));
     }

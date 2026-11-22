@@ -95,7 +95,7 @@ impl CommandGenerator {
             .collect();
 
         Command {
-            timestamp: chrono::Utc::now(),
+            timestamp: invariant_core::time::Timestamp::now(),
             source: "command-gen".to_string(),
             sequence: rng.gen_range(1..=u64::MAX),
             joint_states,

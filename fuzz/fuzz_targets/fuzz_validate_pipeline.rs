@@ -16,7 +16,7 @@
 
 use libfuzzer_sys::fuzz_target;
 
-use chrono::Utc;
+use invariant_core::time::Timestamp;
 use ed25519_dalek::SigningKey;
 use invariant_robotics::models::command::Command;
 use invariant_robotics::validator::ValidatorConfig;
@@ -54,5 +54,5 @@ fuzz_target!(|data: &[u8]| {
 
     // Run the full validation pipeline.  We don't care about the result —
     // we care that it doesn't panic, hang, or corrupt memory.
-    let _ = VALIDATOR.validate(&command, Utc::now(), None);
+    let _ = VALIDATOR.validate(&command, Timestamp::now(), None);
 });

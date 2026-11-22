@@ -18,7 +18,7 @@
 
 use std::collections::HashMap;
 
-use chrono::Utc;
+use invariant_core::time::Timestamp;
 use invariant_robotics::models::command::{
     ActuatorTemperature, Command, CommandAuthority, EndEffectorForce, EndEffectorPosition,
     EnvironmentState, JointState,
@@ -61,7 +61,7 @@ fn empty_env() -> EnvironmentState {
 
 fn empty_command() -> Command {
     Command {
-        timestamp: Utc::now(),
+        timestamp: Timestamp::now(),
         source: "test".into(),
         sequence: 1,
         joint_states: Vec::new(),

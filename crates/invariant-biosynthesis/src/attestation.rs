@@ -21,8 +21,8 @@ use std::io::{BufRead, BufReader, Write};
 use std::time::Duration;
 
 use base64::{engine::general_purpose::STANDARD, Engine};
-use chrono::{DateTime, Utc};
 use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
+use invariant_core::time::Timestamp;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -43,7 +43,7 @@ pub struct AttestedInput {
     /// Name of the attesting source (e.g. `"securedna-screening-v2"`).
     pub source: String,
     /// Freshness timestamp.
-    pub timestamp: DateTime<Utc>,
+    pub timestamp: Timestamp,
     /// Opaque, single-use nonce provided by the firewall to defeat replay.
     pub nonce: String,
     /// Opaque attested payload (JSON-encoded by the source).
@@ -61,7 +61,7 @@ pub struct AttestedReading {
     /// Name of the instrument or telemetry source.
     pub source: String,
     /// Freshness timestamp.
-    pub timestamp: DateTime<Utc>,
+    pub timestamp: Timestamp,
     /// Opaque, single-use nonce.
     pub nonce: String,
     /// Floating-point reading (e.g. dispensed volume in µL, pH, temperature).
@@ -82,7 +82,7 @@ pub struct AttestedReading {
 #[derive(Debug, Serialize)]
 struct InputCanonical<'a> {
     source: &'a str,
-    timestamp: DateTime<Utc>,
+    timestamp: Timestamp,
     nonce: &'a str,
     payload: &'a str,
     signer_kid: &'a str,
@@ -104,7 +104,7 @@ impl<'a> From<&'a AttestedInput> for InputCanonical<'a> {
 #[derive(Debug, Serialize)]
 struct ReadingCanonical<'a> {
     source: &'a str,
-    timestamp: DateTime<Utc>,
+    timestamp: Timestamp,
     nonce: &'a str,
     value: f64,
     unit: &'a str,
@@ -248,8 +248,9 @@ impl AttestationVerifier {
         // Read back existing entries and seed the in-memory cache with those
         // that are still within the freshness window.
         let cutoff_duration =
-            chrono::Duration::from_std(self.max_age + self.skew).unwrap_or(chrono::Duration::MAX);
-        let now = Utc::now();
+            invariant_core::time::SignedDuration::try_from(self.max_age + self.skew)
+                .unwrap_or(invariant_core::time::SignedDuration::MAX);
+        let now = Timestamp::now();
 
         let mut lines_buf = Vec::new();
         {
@@ -261,8 +262,8 @@ impl AttestationVerifier {
                     continue;
                 }
                 if let Ok(entry) = serde_json::from_str::<NonceLogEntry>(trimmed) {
-                    if let Ok(ts) = entry.ts.parse::<DateTime<Utc>>() {
-                        let age = now.signed_duration_since(ts);
+                    if let Ok(ts) = entry.ts.parse::<Timestamp>() {
+                        let age = now.duration_since(ts);
                         if age <= cutoff_duration {
                             lines_buf.push(entry.nonce);
                         }
@@ -311,7 +312,7 @@ impl AttestationVerifier {
     pub fn verify_input(
         &mut self,
         input: &AttestedInput,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<(), AttestationError> {
         let canonical = sha256_hex_json(&InputCanonical::from(input))
             .map_err(|e| AttestationError::Serialization(e.to_string()))?;
@@ -329,7 +330,7 @@ impl AttestationVerifier {
     pub fn verify_reading(
         &mut self,
         reading: &AttestedReading,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<(), AttestationError> {
         let canonical = sha256_hex_json(&ReadingCanonical::from(reading))
             .map_err(|e| AttestationError::Serialization(e.to_string()))?;
@@ -348,9 +349,9 @@ impl AttestationVerifier {
         kid: &str,
         signature_b64: &str,
         signed_bytes: &[u8],
-        timestamp: DateTime<Utc>,
+        timestamp: Timestamp,
         nonce: &str,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<(), AttestationError> {
         // 1. Resolve key.
         let key = self
@@ -375,8 +376,8 @@ impl AttestationVerifier {
             .map_err(|_| AttestationError::BadSignature)?;
 
         // 4. Freshness.
-        let delta = now.signed_duration_since(timestamp);
-        let age_ms = delta.num_milliseconds();
+        let delta = now.duration_since(timestamp);
+        let age_ms = delta.as_millis() as i64;
         if age_ms < -(self.skew.as_millis() as i64) {
             return Err(AttestationError::FutureTimestamp { skew_ms: -age_ms });
         }
@@ -419,7 +420,7 @@ impl AttestationVerifier {
             let entry = NonceLogEntry {
                 kid: kid.to_string(),
                 nonce: nonce.to_string(),
-                ts: Utc::now().to_rfc3339(),
+                ts: Timestamp::now().to_rfc3339(),
             };
             if let Ok(mut line) = serde_json::to_string(&entry) {
                 line.push('\n');
@@ -446,8 +447,9 @@ impl AttestationVerifier {
         };
         self.nonce_writes_since_rotation = 0;
         let cutoff_duration =
-            chrono::Duration::from_std(self.max_age + self.skew).unwrap_or(chrono::Duration::MAX);
-        let now = Utc::now();
+            invariant_core::time::SignedDuration::try_from(self.max_age + self.skew)
+                .unwrap_or(invariant_core::time::SignedDuration::MAX);
+        let now = Timestamp::now();
 
         // Collect surviving entries from the current in-memory cache.
         let mut surviving: Vec<NonceLogEntry> = Vec::new();
@@ -468,8 +470,8 @@ impl AttestationVerifier {
                     continue;
                 }
                 if let Ok(entry) = serde_json::from_str::<NonceLogEntry>(trimmed) {
-                    if let Ok(ts) = entry.ts.parse::<DateTime<Utc>>() {
-                        let age = now.signed_duration_since(ts);
+                    if let Ok(ts) = entry.ts.parse::<Timestamp>() {
+                        let age = now.duration_since(ts);
                         if age <= cutoff_duration && !self.seen.contains(&entry.nonce) {
                             surviving.push(entry);
                         }
@@ -504,7 +506,7 @@ impl AttestationVerifier {
 /// by callers building attested data for the validator.
 pub fn sign_attested_input(
     source: &str,
-    timestamp: DateTime<Utc>,
+    timestamp: Timestamp,
     nonce: &str,
     payload: &str,
     signer_kid: &str,
@@ -532,7 +534,7 @@ pub fn sign_attested_input(
 /// Sign an [`AttestedReading`] envelope.
 pub fn sign_attested_reading(
     source: &str,
-    timestamp: DateTime<Utc>,
+    timestamp: Timestamp,
     nonce: &str,
     value: f64,
     unit: &str,
@@ -578,7 +580,7 @@ mod tests {
     fn happy_path_input_verifies() {
         let (sk, keys) = key_pair_in_map("kid-1");
         let mut v = AttestationVerifier::new(keys);
-        let now = Utc::now();
+        let now = Timestamp::now();
         let input = sign_attested_input("src", now, "n1", "{}", "kid-1", &sk);
         v.verify_input(&input, now).unwrap();
     }
@@ -587,7 +589,7 @@ mod tests {
     fn happy_path_reading_verifies() {
         let (sk, keys) = key_pair_in_map("kid-1");
         let mut v = AttestationVerifier::new(keys);
-        let now = Utc::now();
+        let now = Timestamp::now();
         let reading = sign_attested_reading("instr", now, "n2", 37.0, "degC", "kid-1", &sk);
         v.verify_reading(&reading, now).unwrap();
     }
@@ -596,7 +598,7 @@ mod tests {
     fn unknown_kid_rejected() {
         let (sk, _) = key_pair_in_map("kid-1");
         let mut v = AttestationVerifier::new(HashMap::new());
-        let now = Utc::now();
+        let now = Timestamp::now();
         let input = sign_attested_input("src", now, "n", "{}", "kid-1", &sk);
         let err = v.verify_input(&input, now).unwrap_err();
         assert!(matches!(err, AttestationError::UnknownKid { .. }));
@@ -609,7 +611,7 @@ mod tests {
         let mut keys = HashMap::new();
         keys.insert("kid-1".to_string(), attacker.verifying_key());
         let mut v = AttestationVerifier::new(keys);
-        let now = Utc::now();
+        let now = Timestamp::now();
         let input = sign_attested_input("src", now, "n", "{}", "kid-1", &signer);
         let err = v.verify_input(&input, now).unwrap_err();
         assert_eq!(err, AttestationError::BadSignature);
@@ -619,7 +621,7 @@ mod tests {
     fn malformed_signature_rejected() {
         let (_sk, keys) = key_pair_in_map("kid-1");
         let mut v = AttestationVerifier::new(keys);
-        let now = Utc::now();
+        let now = Timestamp::now();
         let mut input = sign_attested_input(
             "src",
             now,
@@ -637,7 +639,7 @@ mod tests {
     fn tampered_payload_rejected() {
         let (sk, keys) = key_pair_in_map("kid-1");
         let mut v = AttestationVerifier::new(keys);
-        let now = Utc::now();
+        let now = Timestamp::now();
         let mut input = sign_attested_input("src", now, "n", "original", "kid-1", &sk);
         input.payload = "tampered".into();
         let err = v.verify_input(&input, now).unwrap_err();
@@ -648,9 +650,9 @@ mod tests {
     fn stale_timestamp_rejected() {
         let (sk, keys) = key_pair_in_map("kid-1");
         let mut v = AttestationVerifier::new(keys).with_max_age(Duration::from_secs(60));
-        let stamped = Utc::now() - chrono::Duration::seconds(120);
+        let stamped = Timestamp::now() - invariant_core::time::SignedDuration::from_secs(120);
         let input = sign_attested_input("src", stamped, "n", "{}", "kid-1", &sk);
-        let err = v.verify_input(&input, Utc::now()).unwrap_err();
+        let err = v.verify_input(&input, Timestamp::now()).unwrap_err();
         assert!(matches!(err, AttestationError::Stale { .. }));
     }
 
@@ -658,9 +660,9 @@ mod tests {
     fn future_timestamp_rejected_beyond_skew() {
         let (sk, keys) = key_pair_in_map("kid-1");
         let mut v = AttestationVerifier::new(keys).with_clock_skew(Duration::from_secs(5));
-        let stamped = Utc::now() + chrono::Duration::seconds(60);
+        let stamped = Timestamp::now() + invariant_core::time::SignedDuration::from_secs(60);
         let input = sign_attested_input("src", stamped, "n", "{}", "kid-1", &sk);
-        let err = v.verify_input(&input, Utc::now()).unwrap_err();
+        let err = v.verify_input(&input, Timestamp::now()).unwrap_err();
         assert!(matches!(err, AttestationError::FutureTimestamp { .. }));
     }
 
@@ -668,7 +670,7 @@ mod tests {
     fn replay_rejected() {
         let (sk, keys) = key_pair_in_map("kid-1");
         let mut v = AttestationVerifier::new(keys);
-        let now = Utc::now();
+        let now = Timestamp::now();
         let input = sign_attested_input("src", now, "nonce-A", "{}", "kid-1", &sk);
         v.verify_input(&input, now).unwrap();
         let err = v.verify_input(&input, now).unwrap_err();
@@ -679,7 +681,7 @@ mod tests {
     fn nonce_cache_evicts_oldest() {
         let (sk, keys) = key_pair_in_map("kid-1");
         let mut v = AttestationVerifier::new(keys).with_nonce_cache_cap(2);
-        let now = Utc::now();
+        let now = Timestamp::now();
         for n in &["a", "b", "c"] {
             let input = sign_attested_input("src", now, n, "{}", "kid-1", &sk);
             v.verify_input(&input, now).unwrap();
@@ -719,7 +721,7 @@ mod tests {
         let mut v = AttestationVerifier::new(keys)
             .with_persistent_log(&path)
             .expect("open log");
-        let now = Utc::now();
+        let now = Timestamp::now();
         let input = sign_attested_input("src", now, "nonce-empty", "{}", "kid-1", &sk);
         // Normal operation works when starting from an empty log.
         v.verify_input(&input, now).unwrap();
@@ -730,7 +732,7 @@ mod tests {
     fn persistent_nonce_replay_rejected_across_restart() {
         let path = temp_log_path();
         let (sk, keys) = key_pair_in_map("kid-1");
-        let now = Utc::now();
+        let now = Timestamp::now();
         let input = sign_attested_input("src", now, "nonce-restart", "{}", "kid-1", &sk);
 
         // First "process": verify and persist.
@@ -764,7 +766,8 @@ mod tests {
 
         // Write a log entry whose timestamp is far in the past (outside any
         // reasonable freshness window).
-        let stale_ts = (Utc::now() - chrono::Duration::hours(2)).to_rfc3339();
+        let stale_ts =
+            (Timestamp::now() - invariant_core::time::SignedDuration::from_hours(2)).to_rfc3339();
         let entry = NonceLogEntry {
             kid: "kid-1".to_string(),
             nonce: "stale-nonce".to_string(),
@@ -809,7 +812,7 @@ mod tests {
     fn persistent_nonce_entries_appended() {
         let path = temp_log_path();
         let (sk, keys) = key_pair_in_map("kid-1");
-        let now = Utc::now();
+        let now = Timestamp::now();
         let input = sign_attested_input("src", now, "nonce-append", "{}", "kid-1", &sk);
 
         {

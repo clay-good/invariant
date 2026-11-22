@@ -16,7 +16,7 @@
 
 use libfuzzer_sys::fuzz_target;
 
-use chrono::Utc;
+use invariant_core::time::Timestamp;
 use ed25519_dalek::SigningKey;
 use invariant_robotics::authority::chain::verify_chain;
 use invariant_robotics::models::authority::SignedPca;
@@ -40,5 +40,5 @@ fuzz_target!(|data: &[u8]| {
     let mut trusted = HashMap::new();
     trusted.insert("fuzz-kid".to_string(), sk.verifying_key());
 
-    let _ = verify_chain(&hops, &trusted, Utc::now());
+    let _ = verify_chain(&hops, &trusted, Timestamp::now());
 });

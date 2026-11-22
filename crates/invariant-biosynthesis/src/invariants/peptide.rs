@@ -618,11 +618,11 @@ mod tests {
     use crate::models::bundle::{BundleAuthority, SynthesisPayload};
     use crate::models::profile::BioProfile;
     use crate::screening::{HazardEntry, HazardHit};
-    use chrono::Utc;
+    use invariant_core::time::Timestamp;
 
     fn pep(seq: &str) -> SynthesisBundle {
         SynthesisBundle {
-            timestamp: Utc::now(),
+            timestamp: Timestamp::now(),
             source: "t".into(),
             sequence: 0,
             payload: SynthesisPayload::Peptide {
@@ -957,7 +957,7 @@ mod tests {
     fn peptide_invariants_pass_for_dna_payload() {
         let p = profile();
         let bundle = SynthesisBundle {
-            timestamp: Utc::now(),
+            timestamp: Timestamp::now(),
             source: "t".into(),
             sequence: 0,
             payload: SynthesisPayload::Dna {

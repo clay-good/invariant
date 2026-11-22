@@ -13,7 +13,7 @@
 //! The responder is a one-way latch: once triggered, only an explicit
 //! operator reset can return to normal operation.
 
-use chrono::{DateTime, Utc};
+use crate::time::Timestamp;
 use serde::{Deserialize, Serialize};
 
 use crate::monitors::{MonitorAction, MonitorResult};
@@ -47,13 +47,13 @@ pub enum IncidentState {
 ///
 /// ```
 /// use invariant_core::incident::IncidentTrigger;
-/// use chrono::Utc;
+/// use invariant_core::time::Timestamp;
 ///
 /// let trigger = IncidentTrigger {
 ///     source: "binary_hash_monitor".to_string(),
 ///     description: "Binary hash mismatch detected".to_string(),
 ///     action: "Shutdown".to_string(),
-///     timestamp: Utc::now(),
+///     timestamp: Timestamp::now(),
 /// };
 ///
 /// assert_eq!(trigger.source, "binary_hash_monitor");
@@ -68,7 +68,7 @@ pub struct IncidentTrigger {
     /// Recommended action from the monitor.
     pub action: String,
     /// Timestamp of detection.
-    pub timestamp: DateTime<Utc>,
+    pub timestamp: Timestamp,
 }
 
 /// Record of a completed incident response for audit/reporting.
@@ -77,14 +77,14 @@ pub struct IncidentTrigger {
 ///
 /// ```
 /// use invariant_core::incident::{IncidentRecord, IncidentTrigger};
-/// use chrono::Utc;
+/// use invariant_core::time::Timestamp;
 ///
 /// let record = IncidentRecord {
 ///     trigger: IncidentTrigger {
 ///         source: "threat_scorer".to_string(),
 ///         description: "Composite threat score exceeded threshold".to_string(),
 ///         action: "RejectAll".to_string(),
-///         timestamp: Utc::now(),
+///         timestamp: Timestamp::now(),
 ///     },
 ///     steps_completed: vec!["reject_all_commands".to_string(), "safe_stop_issued".to_string()],
 ///     state: "lockdown".to_string(),
@@ -448,7 +448,7 @@ impl SyslogAlertSink {
     /// facility and severity = Alert (1).
     fn format_message(&self, message: &str) -> String {
         let pri = (self.facility.code() as u16) * 8 + 1; // severity = Alert
-        let ts = chrono::Utc::now().to_rfc3339();
+        let ts = crate::time::Timestamp::now().to_rfc3339();
         let pid = std::process::id();
         // Replace embedded newlines with spaces; UDP datagram = one message.
         let one_line: String = message
@@ -546,7 +546,7 @@ impl IncidentResponder {
     /// use invariant_core::incident::{
     ///     IncidentResponder, IncidentState, IncidentTrigger, LogAlertSink,
     /// };
-    /// use chrono::Utc;
+    /// use invariant_core::time::Timestamp;
     ///
     /// let mut responder = IncidentResponder::new(Box::new(LogAlertSink));
     /// assert_eq!(responder.state(), IncidentState::Normal);
@@ -557,7 +557,7 @@ impl IncidentResponder {
     ///     source: "doc-test".to_string(),
     ///     description: "test incident".to_string(),
     ///     action: "Shutdown".to_string(),
-    ///     timestamp: Utc::now(),
+    ///     timestamp: Timestamp::now(),
     /// });
     /// assert_eq!(responder.state(), IncidentState::Lockdown);
     /// assert!(responder.is_locked_down());
@@ -605,7 +605,7 @@ impl IncidentResponder {
             source: monitor.monitor.to_string(),
             description: monitor.detail.clone(),
             action: format!("{:?}", monitor.action),
-            timestamp: Utc::now(),
+            timestamp: Timestamp::now(),
         };
 
         Some(self.respond(trigger))
@@ -739,7 +739,7 @@ mod tests {
             source: "test".into(),
             description: "test incident".into(),
             action: "Shutdown".into(),
-            timestamp: Utc::now(),
+            timestamp: Timestamp::now(),
         };
         r.respond(trigger);
         assert_eq!(r.state(), IncidentState::Lockdown);
@@ -753,13 +753,13 @@ mod tests {
             source: "a".into(),
             description: "first".into(),
             action: "Shutdown".into(),
-            timestamp: Utc::now(),
+            timestamp: Timestamp::now(),
         };
         let t2 = IncidentTrigger {
             source: "b".into(),
             description: "second".into(),
             action: "Shutdown".into(),
-            timestamp: Utc::now(),
+            timestamp: Timestamp::now(),
         };
         r.respond(t1);
         r.respond(t2);
@@ -774,7 +774,7 @@ mod tests {
             source: "test".into(),
             description: "x".into(),
             action: "Shutdown".into(),
-            timestamp: Utc::now(),
+            timestamp: Timestamp::now(),
         });
         assert_eq!(r.state(), IncidentState::Lockdown);
 
@@ -792,7 +792,7 @@ mod tests {
             source: "binary_hash".into(),
             description: "binary modified".into(),
             action: "Shutdown".into(),
-            timestamp: Utc::now(),
+            timestamp: Timestamp::now(),
         });
         assert_eq!(record.steps_completed.len(), 6);
         assert_eq!(record.steps_completed[0], "reject_all_commands");
@@ -811,7 +811,7 @@ mod tests {
             source: "test".into(),
             description: "test".into(),
             action: "Shutdown".into(),
-            timestamp: Utc::now(),
+            timestamp: Timestamp::now(),
         });
         assert!(
             record.steps_completed[3].contains("memory"),
@@ -1034,7 +1034,7 @@ mod tests {
             source: "a".into(),
             description: "first".into(),
             action: "Shutdown".into(),
-            timestamp: Utc::now(),
+            timestamp: Timestamp::now(),
         });
         assert_eq!(r.history().len(), 1);
 
@@ -1043,7 +1043,7 @@ mod tests {
             source: "b".into(),
             description: "second".into(),
             action: "RejectAll".into(),
-            timestamp: Utc::now(),
+            timestamp: Timestamp::now(),
         });
         assert_eq!(r.history().len(), 2);
         assert_eq!(r.history()[0].trigger.source, "a");
@@ -1059,7 +1059,7 @@ mod tests {
                 source: "binary_hash".into(),
                 description: "modified".into(),
                 action: "Shutdown".into(),
-                timestamp: Utc::now(),
+                timestamp: Timestamp::now(),
             },
             steps_completed: vec!["step1".into(), "step2".into()],
             state: "lockdown".into(),
@@ -1081,7 +1081,7 @@ mod tests {
             source: "test".into(),
             description: "test".into(),
             action: "Shutdown".into(),
-            timestamp: Utc::now(),
+            timestamp: Timestamp::now(),
         });
         // Alert step should record the failure.
         assert!(

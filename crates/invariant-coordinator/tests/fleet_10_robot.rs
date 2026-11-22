@@ -20,11 +20,11 @@
 //! deterministically from the tick index so the test is reproducible on
 //! every CI run.
 
-use chrono::{DateTime, TimeZone, Utc};
 use invariant_coordinator::monitor::{
     CoordinationConfig, CoordinationMonitor, EndEffectorState, StaleRobotPolicy,
 };
 use invariant_coordinator::{FleetSnapshot, RobotState};
+use invariant_core::time::Timestamp;
 
 const TICK_HZ: u32 = 10;
 const DURATION_SECS: u32 = 60;
@@ -39,12 +39,13 @@ const SNAPSHOT_TICK: u32 = 50 * TICK_HZ;
 
 /// Base epoch for derived timestamps. Frozen so the test snapshot is
 /// reproducible.
-fn epoch() -> DateTime<Utc> {
-    Utc.with_ymd_and_hms(2026, 5, 16, 12, 0, 0).unwrap()
+fn epoch() -> Timestamp {
+    Timestamp::parse_rfc3339("2026-05-16T12:00:00Z").unwrap()
 }
 
-fn tick_to_time(tick: u32) -> DateTime<Utc> {
-    epoch() + chrono::Duration::milliseconds((tick as i64) * (1000 / TICK_HZ as i64))
+fn tick_to_time(tick: u32) -> Timestamp {
+    epoch()
+        + invariant_core::time::SignedDuration::from_millis((tick as i64) * (1000 / TICK_HZ as i64))
 }
 
 /// Returns the scripted state of robot `id` at the given tick.

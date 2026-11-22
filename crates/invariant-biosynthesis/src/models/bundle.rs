@@ -9,7 +9,7 @@
 //! envelope shape is preserved so the [`crate::audit`] logger and
 //! [`crate::authority`] pipeline can stay substrate-agnostic.
 
-use chrono::{DateTime, Utc};
+use invariant_core::time::Timestamp;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -40,7 +40,7 @@ pub const DEFAULT_MAX_SMILES_LENGTH_CHARS: u64 = 100_000;
 #[serde(deny_unknown_fields)]
 pub struct SynthesisBundle {
     /// RFC 3339 / ISO 8601 timestamp.
-    pub timestamp: DateTime<Utc>,
+    pub timestamp: Timestamp,
     /// Identifier of the cognitive layer or planner that issued this bundle.
     pub source: String,
     /// Monotonic sequence number. Out-of-order or duplicate bundles are rejected.
@@ -216,7 +216,7 @@ impl SynthesisBundle {
 #[allow(clippy::items_after_test_module)]
 mod tests {
     use super::*;
-    use chrono::Utc;
+    use invariant_core::time::Timestamp;
 
     fn base_profile() -> BioProfile {
         BioProfile {
@@ -244,7 +244,7 @@ mod tests {
 
     fn base_bundle() -> SynthesisBundle {
         SynthesisBundle {
-            timestamp: Utc::now(),
+            timestamp: Timestamp::now(),
             source: "test-source".into(),
             sequence: 1,
             payload: SynthesisPayload::Dna {

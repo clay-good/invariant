@@ -12,9 +12,9 @@ use axum::http::{HeaderMap, StatusCode};
 use axum::response::IntoResponse;
 use axum::routing::{get, post};
 use axum::{BoxError, Json, Router};
-use chrono::Utc;
 use clap::Args;
 use ed25519_dalek::SigningKey;
+use invariant_core::time::Timestamp;
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 use tower::limit::ConcurrencyLimitLayer;
@@ -171,7 +171,7 @@ struct AppState {
 }
 
 /// v12 N-14 B4 — maximum permitted wall-clock skew between the
-/// `X-Invariant-Wall-Clock` header and the server's `Utc::now()`. Captured
+/// `X-Invariant-Wall-Clock` header and the server's `Timestamp::now()`. Captured
 /// requests replayed outside this window are rejected.
 const B4_MAX_WALL_CLOCK_SKEW_SECS: i64 = 300;
 
@@ -192,7 +192,7 @@ fn refresh_audit_binding(
     session_id: &str,
     executor_id: &str,
     boot_instant: Instant,
-    now: chrono::DateTime<Utc>,
+    now: invariant_core::time::Timestamp,
 ) -> invariant_core::models::audit::BindingContext {
     let monotonic_nanos = boot_instant.elapsed().as_nanos().min(u64::MAX as u128) as u64;
     let ctx = invariant_core::models::audit::BindingContext {
@@ -511,7 +511,7 @@ async fn handle_validate(
     // v12 N-14 B4 — optional wall-clock skew rejection.
     //
     // If the client supplies `X-Invariant-Wall-Clock` (RFC 3339), reject
-    // when the absolute skew from the server's `Utc::now()` exceeds
+    // when the absolute skew from the server's `Timestamp::now()` exceeds
     // B4_MAX_WALL_CLOCK_SKEW_SECS. A request captured today and replayed
     // tomorrow is rejected at the HTTP boundary regardless of signature
     // freshness.
@@ -519,8 +519,8 @@ async fn handle_validate(
         .get("x-invariant-wall-clock")
         .and_then(|v| v.to_str().ok())
     {
-        let parsed = match chrono::DateTime::parse_from_rfc3339(raw) {
-            Ok(dt) => dt.with_timezone(&Utc),
+        let parsed = match invariant_core::time::Timestamp::parse_rfc3339(raw) {
+            Ok(dt) => dt,
             Err(_) => {
                 return Err((
                     StatusCode::BAD_REQUEST,
@@ -532,8 +532,8 @@ async fn handle_validate(
                 ));
             }
         };
-        let now = Utc::now();
-        let skew = (now - parsed).num_seconds().abs();
+        let now = Timestamp::now();
+        let skew = (now - parsed).as_secs().abs();
         if skew > B4_MAX_WALL_CLOCK_SKEW_SECS {
             return Err((
                 StatusCode::BAD_REQUEST,
@@ -608,7 +608,7 @@ async fn handle_validate(
         })?;
     }
 
-    let now = Utc::now();
+    let now = Timestamp::now();
 
     // Clone command for audit logging, digital twin observation, and tracking
     // previous joint/force state for P4/P13 checks (the original moves into
@@ -1149,7 +1149,7 @@ async fn run_server(args: &ServeArgs) -> i32 {
                     let mut inner = wd_rwlock.write().await;
                     let now_ms = inner.now_ms();
                     inner.last_checked_ms = Some(now_ms);
-                    let now_utc = Utc::now();
+                    let now_utc = Timestamp::now();
                     match inner.watchdog.check(now_ms, now_utc) {
                         Ok(Some(cmd)) => {
                             // Serialize and deliver the safe-stop command.
@@ -1193,7 +1193,7 @@ async fn run_server(args: &ServeArgs) -> i32 {
             if let Some(ref wd_rwlock) = supervisor_state.watchdog {
                 let mut inner = wd_rwlock.write().await;
                 let now_ms = inner.now_ms();
-                let now_utc = Utc::now();
+                let now_utc = Timestamp::now();
                 // Drive a final check at current time to force Triggered.
                 let _ = inner.watchdog.check(now_ms, now_utc);
             }
@@ -1217,7 +1217,7 @@ async fn run_server(args: &ServeArgs) -> i32 {
             .unwrap_or_default();
         // Initialize monitors.
         let memory_canary = invariant_robotics::monitors::MemoryCanary::new();
-        let wall_now_ms = Utc::now().timestamp_millis();
+        let wall_now_ms = Timestamp::now().as_unix_millis();
         let clock_monitor = invariant_robotics::monitors::ClockMonitor::new(wall_now_ms, 500);
 
         tokio::spawn(async move {
@@ -1228,7 +1228,7 @@ async fn run_server(args: &ServeArgs) -> i32 {
                     invariant_robotics::monitors::check_binary_hash(&binary_hash),
                     invariant_robotics::monitors::check_profile_hash(&profile_hash, &profile_path),
                     memory_canary.check(),
-                    clock_monitor.check(chrono::Utc::now().timestamp_millis()),
+                    clock_monitor.check(invariant_core::time::Timestamp::now().as_unix_millis()),
                 ];
 
                 let suite = invariant_robotics::monitors::MonitorSuiteResults { results };
@@ -1541,7 +1541,7 @@ mod tests {
 
     fn make_test_command() -> Command {
         Command {
-            timestamp: Utc::now(),
+            timestamp: Timestamp::now(),
             source: "test".to_string(),
             sequence: 1,
             joint_states: vec![JointState {
@@ -3052,7 +3052,7 @@ mod tests {
                 .get("wall_clock_rfc3339")
                 .and_then(|x| x.as_str())
                 .unwrap_or_else(|| panic!("B4 wall_clock_rfc3339 missing on line {i}: {line}"));
-            chrono::DateTime::parse_from_rfc3339(wall)
+            invariant_core::time::Timestamp::parse_rfc3339(wall)
                 .unwrap_or_else(|e| panic!("B4 wall_clock not RFC3339 on line {i}: {e}"));
         }
 
@@ -3323,7 +3323,7 @@ mod tests {
     }
 
     /// B4: a wall-clock header more than `B4_MAX_WALL_CLOCK_SKEW_SECS`
-    /// away from `Utc::now()` is rejected.
+    /// away from `Timestamp::now()` is rejected.
     #[tokio::test]
     async fn stale_wall_clock_rejected_by_b4_header() {
         let state = make_test_state(true, 0);
@@ -3332,7 +3332,8 @@ mod tests {
         cmd.sequence = 1;
         let body = serde_json::to_string(&ValidateRequest { command: cmd }).unwrap();
         // One hour in the past — well outside the 300 s window.
-        let stale = (Utc::now() - chrono::Duration::seconds(3600)).to_rfc3339();
+        let stale =
+            (Timestamp::now() - invariant_core::time::SignedDuration::from_secs(3600)).to_rfc3339();
         let resp = app
             .oneshot(
                 Request::builder()
@@ -3363,7 +3364,7 @@ mod tests {
         let mut cmd = make_test_command();
         cmd.sequence = 1;
         let body = serde_json::to_string(&ValidateRequest { command: cmd }).unwrap();
-        let fresh = Utc::now().to_rfc3339();
+        let fresh = Timestamp::now().to_rfc3339();
         let resp = app
             .oneshot(
                 Request::builder()

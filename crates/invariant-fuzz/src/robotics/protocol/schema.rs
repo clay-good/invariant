@@ -188,7 +188,7 @@ mod tests {
     fn base_command() -> Command {
         use invariant_robotics::models::command::{CommandAuthority, JointState};
         Command {
-            timestamp: chrono::Utc::now(),
+            timestamp: invariant_core::time::Timestamp::now(),
             source: "test".into(),
             sequence: 1,
             joint_states: vec![JointState {

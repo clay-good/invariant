@@ -15,9 +15,9 @@ use std::fs;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-use chrono::Utc;
 use clap::Args;
 use ed25519_dalek::VerifyingKey;
+use invariant_core::time::Timestamp;
 use rand::rngs::OsRng;
 
 use invariant_biosynthesis::authority::crypto::generate_keypair;
@@ -156,7 +156,7 @@ fn run_inner(args: &ValidateArgs) -> Result<i32, String> {
 
     // ---- Run validator ----
     let out = cfg
-        .validate(&bundle, Utc::now(), None)
+        .validate(&bundle, Timestamp::now(), None)
         .map_err(|e| format!("validate: {e}"))?;
 
     // ---- Render summary to stderr ----

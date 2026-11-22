@@ -313,10 +313,10 @@ fn regression_rubrics(trace: &ParsedTrace, golden: &ParsedTrace) -> Vec<RubricRe
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::Utc;
     use invariant_biosynthesis::models::verdict::{
         AuthoritySummary, CheckResult, SignedVerdict, Verdict,
     };
+    use invariant_core::time::Timestamp;
     use std::io::Write;
     use tempfile::NamedTempFile;
 
@@ -326,7 +326,7 @@ mod tests {
                 approved,
                 command_hash: format!("sha256:{seq:x}"),
                 command_sequence: seq,
-                timestamp: Utc::now(),
+                timestamp: Timestamp::now(),
                 checks,
                 profile_name: "p".into(),
                 profile_hash: "sha256:p".into(),

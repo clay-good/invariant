@@ -19,7 +19,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use chrono::Utc;
+use invariant_core::time::Timestamp;
 use serde::{Deserialize, Serialize};
 
 use invariant_biosynthesis::authority::crypto::generate_keypair;
@@ -137,7 +137,7 @@ pub fn generate(suite: Suite) -> Vec<AttackCase> {
 
 fn dna_bundle(seq: u64, sequence: &str) -> SynthesisBundle {
     SynthesisBundle {
-        timestamp: Utc::now(),
+        timestamp: Timestamp::now(),
         source: "fuzz".into(),
         sequence: seq,
         payload: SynthesisPayload::Dna {
@@ -179,7 +179,8 @@ fn protocol_cases() -> Vec<AttackCase> {
         expected: ExpectedVerdict::Rejected,
     });
     let mut future = dna_bundle(4, "ATGCGT");
-    future.timestamp = Utc::now() + chrono::Duration::days(365);
+    future.timestamp =
+        Timestamp::now() + invariant_core::time::SignedDuration::from_hours(24 * 365);
     out.push(AttackCase {
         id: "protocol/timestamp-far-future".into(),
         suite: Suite::Protocol,
@@ -236,7 +237,7 @@ fn system_cases() -> Vec<AttackCase> {
         expected: ExpectedVerdict::Rejected,
     });
     let mut clock = dna_bundle(20, "ATGCGT");
-    clock.timestamp = Utc::now() - chrono::Duration::days(365);
+    clock.timestamp = Timestamp::now() - invariant_core::time::SignedDuration::from_hours(24 * 365);
     out.push(AttackCase {
         id: "system/timestamp-far-past".into(),
         suite: Suite::System,
@@ -389,7 +390,7 @@ fn run_cases(cfg: &ValidatorConfig, cases: &[AttackCase]) -> FuzzReport {
         errors: 0,
     };
     for c in cases {
-        match cfg.validate(&c.bundle, Utc::now(), None) {
+        match cfg.validate(&c.bundle, Timestamp::now(), None) {
             Ok(v) => {
                 let approved = v.signed_verdict.verdict.approved;
                 let matched = match c.expected {

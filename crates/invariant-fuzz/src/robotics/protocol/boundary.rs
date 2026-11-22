@@ -206,7 +206,7 @@ fn make_command(profile: &RobotProfile, target_joint: &str, position: f64) -> Co
         });
 
     Command {
-        timestamp: chrono::Utc::now(),
+        timestamp: invariant_core::time::Timestamp::now(),
         source: "boundary-prober".to_string(),
         sequence: 1,
         joint_states,

@@ -5,7 +5,7 @@
 //! The cryptographic shape is identical: a bundle hash, a verdict reference,
 //! and an Ed25519 signature over the canonical bytes.
 
-use chrono::{DateTime, Utc};
+use invariant_core::time::Timestamp;
 use serde::{Deserialize, Serialize};
 
 /// An Ed25519-signed token permitting a synthesis platform to execute a bundle.
@@ -21,7 +21,7 @@ pub struct ExecutionToken {
     /// SHA-256 hash of the signed verdict that approved the bundle.
     pub verdict_hash: String,
     /// Issuance timestamp.
-    pub issued_at: DateTime<Utc>,
+    pub issued_at: Timestamp,
     /// Monotonic sequence number from the approving verdict.
     pub sequence: u64,
     /// Base64-encoded Ed25519 signature over the canonical JSON of this token

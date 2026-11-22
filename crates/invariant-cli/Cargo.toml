@@ -38,7 +38,6 @@ base64.workspace = true
 ed25519-dalek.workspace = true
 sha2.workspace = true
 rand.workspace = true
-chrono.workspace = true
 axum.workspace = true
 tower = { version = "0.5", features = ["timeout", "util", "limit"] }
 tempfile = "3"

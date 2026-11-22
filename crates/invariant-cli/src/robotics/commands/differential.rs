@@ -12,8 +12,8 @@ use std::collections::HashMap;
 use std::io::{BufRead, Read, Write};
 use std::path::PathBuf;
 
-use chrono::Utc;
 use ed25519_dalek::SigningKey;
+use invariant_core::time::Timestamp;
 use serde::Serialize;
 
 use invariant_robotics::differential::{DifferentialResult, DifferentialValidator};
@@ -259,7 +259,7 @@ fn process_one(
         }
     }
 
-    let now = Utc::now();
+    let now = Timestamp::now();
     match diff.validate(cmd, now, None) {
         Ok(result) => {
             if !result.fully_agrees() {

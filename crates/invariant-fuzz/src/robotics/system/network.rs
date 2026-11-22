@@ -5,7 +5,7 @@
 
 #[cfg(test)]
 mod tests {
-    use chrono::Utc;
+    use invariant_core::time::Timestamp;
     use invariant_robotics::authority::crypto::generate_keypair;
     use invariant_robotics::models::command::{Command, CommandAuthority, JointState};
     use invariant_robotics::validator::ValidatorConfig;
@@ -25,7 +25,7 @@ mod tests {
 
     fn minimal_command(_profile_name: &str) -> Command {
         Command {
-            timestamp: Utc::now(),
+            timestamp: Timestamp::now(),
             source: "impersonator".into(),
             sequence: 1,
             joint_states: vec![JointState {
@@ -56,7 +56,7 @@ mod tests {
     fn sa13_no_pca_chain_rejected() {
         let config = setup_validator();
         let cmd = minimal_command("test");
-        let result = config.validate(&cmd, Utc::now(), None);
+        let result = config.validate(&cmd, Timestamp::now(), None);
         // Validator error = also a rejection, which is correct
         if let Ok(r) = result {
             assert!(
@@ -73,7 +73,7 @@ mod tests {
         let mut cmd = minimal_command("test");
         cmd.authority.pca_chain = "AAAA_this_is_garbage_base64_that_decodes_to_nonsense".into();
 
-        let result = config.validate(&cmd, Utc::now(), None);
+        let result = config.validate(&cmd, Timestamp::now(), None);
         // Also correct — validator error
         if let Ok(r) = result {
             assert!(

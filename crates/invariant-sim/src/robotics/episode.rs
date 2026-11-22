@@ -198,7 +198,7 @@ impl VerdictChainBuilder {
     ///
     /// ```
     /// use std::collections::HashMap;
-    /// use chrono::Utc;
+    /// use invariant_core::time::Timestamp;
     /// use ed25519_dalek::SigningKey;
     /// use rand::rngs::OsRng;
     /// use invariant_sim::robotics::episode::VerdictChainBuilder;
@@ -209,7 +209,7 @@ impl VerdictChainBuilder {
     /// let mut builder = VerdictChainBuilder::new(signing_key, "kid".to_string());
     ///
     /// let cmd = Command {
-    ///     timestamp: Utc::now(),
+    ///     timestamp: Timestamp::now(),
     ///     source: "sim".to_string(),
     ///     sequence: 0,
     ///     joint_states: vec![],
@@ -230,7 +230,7 @@ impl VerdictChainBuilder {
     ///         approved: true,
     ///         command_hash: "sha256:abc".to_string(),
     ///         command_sequence: 0,
-    ///         timestamp: Utc::now(),
+    ///         timestamp: Timestamp::now(),
     ///         checks: vec![],
     ///         profile_name: "franka_panda".to_string(),
     ///         profile_hash: "sha256:def".to_string(),
@@ -337,8 +337,8 @@ fn hex_encode_seed(seed: [u8; 32]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::Utc;
     use ed25519_dalek::SigningKey;
+    use invariant_core::time::Timestamp;
     use invariant_robotics::models::command::{Command, CommandAuthority};
     use invariant_robotics::models::verdict::{AuthoritySummary, SignedVerdict, Verdict};
     use rand::rngs::OsRng;
@@ -352,7 +352,7 @@ mod tests {
 
     fn make_command(seq: u64) -> Command {
         Command {
-            timestamp: Utc::now(),
+            timestamp: Timestamp::now(),
             source: "test".into(),
             sequence: seq,
             joint_states: vec![],
@@ -379,7 +379,7 @@ mod tests {
                 approved,
                 command_hash: format!("sha256:{seq:064x}"),
                 command_sequence: seq,
-                timestamp: Utc::now(),
+                timestamp: Timestamp::now(),
                 checks: vec![],
                 profile_name: "franka_panda".into(),
                 profile_hash: "sha256:abc".into(),

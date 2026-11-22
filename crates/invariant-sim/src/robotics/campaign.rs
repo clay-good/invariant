@@ -1,7 +1,7 @@
 // Campaign configuration: YAML-driven campaign definition for dry-run and
 // Isaac Lab simulation campaigns.
 
-use chrono::{DateTime, Utc};
+use invariant_core::time::Timestamp;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -871,7 +871,7 @@ pub mod data_outputs {
     /// # Examples
     ///
     /// ```
-    /// use chrono::Utc;
+    /// use invariant_core::time::Timestamp;
     /// use invariant_sim::robotics::campaign::data_outputs::EpisodeOutput;
     ///
     /// let output = EpisodeOutput {
@@ -881,8 +881,8 @@ pub mod data_outputs {
     ///     profile_name: "franka_panda".to_string(),
     ///     scenario_type: "baseline".to_string(),
     ///     step_count: 200,
-    ///     started_at: Utc::now(),
-    ///     completed_at: Utc::now(),
+    ///     started_at: Timestamp::now(),
+    ///     completed_at: Timestamp::now(),
     ///     verdict_chain_hash: "sha256:abc123".to_string(),
     ///     verdict_chain_signature: "ed25519:sig".to_string(),
     ///     signer_kid: "validator-key-1".to_string(),
@@ -916,9 +916,9 @@ pub mod data_outputs {
         /// Number of steps (command + verdict pairs) in this episode.
         pub step_count: u64,
         /// When the episode started executing.
-        pub started_at: DateTime<Utc>,
+        pub started_at: Timestamp,
         /// When the episode finished executing.
-        pub completed_at: DateTime<Utc>,
+        pub completed_at: Timestamp,
         /// SHA-256 hash of the final entry in the verdict chain.
         ///
         /// This is the terminal hash that commits the entire chain: verifying
@@ -950,8 +950,8 @@ pub mod data_outputs {
         }
 
         /// Returns the episode duration.
-        pub fn duration(&self) -> chrono::Duration {
-            self.completed_at.signed_duration_since(self.started_at)
+        pub fn duration(&self) -> invariant_core::time::SignedDuration {
+            self.completed_at.duration_since(self.started_at)
         }
 
         /// Returns the approval rate for this episode.
@@ -972,7 +972,7 @@ pub mod data_outputs {
     /// # Examples
     ///
     /// ```
-    /// use chrono::Utc;
+    /// use invariant_core::time::Timestamp;
     /// use invariant_sim::robotics::campaign::data_outputs::ShardOutputSummary;
     ///
     /// let summary = ShardOutputSummary {
@@ -983,8 +983,8 @@ pub mod data_outputs {
     ///     total_commands_rejected: 5_000_000,
     ///     total_violation_escapes: 0,
     ///     total_false_rejections: 100,
-    ///     started_at: Utc::now(),
-    ///     completed_at: Utc::now(),
+    ///     started_at: Timestamp::now(),
+    ///     completed_at: Timestamp::now(),
     ///     output_size_bytes: 20_000_000_000,
     ///     final_chain_hash: "sha256:shard0final".to_string(),
     /// };
@@ -1009,9 +1009,9 @@ pub mod data_outputs {
         /// Total false rejections across all episodes.
         pub total_false_rejections: u64,
         /// When this shard started.
-        pub started_at: DateTime<Utc>,
+        pub started_at: Timestamp,
         /// When this shard finished.
-        pub completed_at: DateTime<Utc>,
+        pub completed_at: Timestamp,
         /// Total output size in bytes (compressed).
         pub output_size_bytes: u64,
         /// SHA-256 hash of the last verdict chain entry on this shard.
@@ -1025,8 +1025,8 @@ pub mod data_outputs {
         }
 
         /// Returns the shard duration.
-        pub fn duration(&self) -> chrono::Duration {
-            self.completed_at.signed_duration_since(self.started_at)
+        pub fn duration(&self) -> invariant_core::time::SignedDuration {
+            self.completed_at.duration_since(self.started_at)
         }
     }
 
@@ -1039,7 +1039,7 @@ pub mod data_outputs {
     /// # Examples
     ///
     /// ```
-    /// use chrono::Utc;
+    /// use invariant_core::time::Timestamp;
     /// use invariant_sim::robotics::campaign::data_outputs::{CampaignOutputManifest, ShardOutputSummary};
     ///
     /// let shards: Vec<ShardOutputSummary> = (0..8u32).map(|i| ShardOutputSummary {
@@ -1050,8 +1050,8 @@ pub mod data_outputs {
     ///     total_commands_rejected: 1_000,
     ///     total_violation_escapes: 0,
     ///     total_false_rejections: 5,
-    ///     started_at: Utc::now(),
-    ///     completed_at: Utc::now(),
+    ///     started_at: Timestamp::now(),
+    ///     completed_at: Timestamp::now(),
     ///     output_size_bytes: 1_000_000,
     ///     final_chain_hash: format!("sha256:shard{i}"),
     /// }).collect();
@@ -4095,7 +4095,7 @@ scenarios:
     #[test]
     fn push_signed_verdict_produces_verifiable_chain() {
         use super::data_outputs::VerdictChainBuilder;
-        use chrono::Utc;
+        use invariant_core::time::Timestamp;
         use invariant_robotics::models::verdict::{
             AuthoritySummary, CheckResult, SignedVerdict, Verdict,
         };
@@ -4105,7 +4105,7 @@ scenarios:
                 approved,
                 command_hash: format!("sha256:{seq:064x}"),
                 command_sequence: seq,
-                timestamp: Utc::now(),
+                timestamp: Timestamp::now(),
                 checks: vec![CheckResult {
                     name: "joint_limits".into(),
                     category: "physics".into(),
@@ -4287,8 +4287,8 @@ scenarios:
             profile_name: "franka_panda".into(),
             scenario_type: "baseline".into(),
             step_count: 200,
-            started_at: chrono::Utc::now(),
-            completed_at: chrono::Utc::now(),
+            started_at: invariant_core::time::Timestamp::now(),
+            completed_at: invariant_core::time::Timestamp::now(),
             verdict_chain_hash: "sha256:abc".into(),
             verdict_chain_signature: "sig".into(),
             signer_kid: "kid-1".into(),
@@ -4312,8 +4312,8 @@ scenarios:
             profile_name: "ur10".into(),
             scenario_type: "authority_escalation".into(),
             step_count: 200,
-            started_at: chrono::Utc::now(),
-            completed_at: chrono::Utc::now(),
+            started_at: invariant_core::time::Timestamp::now(),
+            completed_at: invariant_core::time::Timestamp::now(),
             verdict_chain_hash: "sha256:def".into(),
             verdict_chain_signature: "sig2".into(),
             signer_kid: "kid-1".into(),
@@ -4337,8 +4337,8 @@ scenarios:
             profile_name: "franka_panda".into(),
             scenario_type: "baseline".into(),
             step_count: 100,
-            started_at: chrono::Utc::now(),
-            completed_at: chrono::Utc::now(),
+            started_at: invariant_core::time::Timestamp::now(),
+            completed_at: invariant_core::time::Timestamp::now(),
             verdict_chain_hash: "sha256:x".into(),
             verdict_chain_signature: "sig".into(),
             signer_kid: "kid".into(),
@@ -4362,8 +4362,8 @@ scenarios:
             profile_name: "franka_panda".into(),
             scenario_type: "baseline".into(),
             step_count: 0,
-            started_at: chrono::Utc::now(),
-            completed_at: chrono::Utc::now(),
+            started_at: invariant_core::time::Timestamp::now(),
+            completed_at: invariant_core::time::Timestamp::now(),
             verdict_chain_hash: String::new(),
             verdict_chain_signature: String::new(),
             signer_kid: String::new(),
@@ -4387,8 +4387,8 @@ scenarios:
             profile_name: "humanoid_28dof".into(),
             scenario_type: "compound_authority_physics".into(),
             step_count: 500,
-            started_at: chrono::Utc::now(),
-            completed_at: chrono::Utc::now(),
+            started_at: invariant_core::time::Timestamp::now(),
+            completed_at: invariant_core::time::Timestamp::now(),
             verdict_chain_hash: "sha256:terminal".into(),
             verdict_chain_signature: "ed25519:final_sig".into(),
             signer_kid: "validator-key-2".into(),
@@ -4421,8 +4421,8 @@ scenarios:
             total_commands_rejected: 5_000_000,
             total_violation_escapes: 0,
             total_false_rejections: 100,
-            started_at: chrono::Utc::now(),
-            completed_at: chrono::Utc::now(),
+            started_at: invariant_core::time::Timestamp::now(),
+            completed_at: invariant_core::time::Timestamp::now(),
             output_size_bytes: 20_000_000_000,
             final_chain_hash: "sha256:shard0".into(),
         };
@@ -4440,8 +4440,8 @@ scenarios:
             total_commands_rejected: 4_999_999,
             total_violation_escapes: 1,
             total_false_rejections: 0,
-            started_at: chrono::Utc::now(),
-            completed_at: chrono::Utc::now(),
+            started_at: invariant_core::time::Timestamp::now(),
+            completed_at: invariant_core::time::Timestamp::now(),
             output_size_bytes: 20_000_000_000,
             final_chain_hash: "sha256:shard1".into(),
         };
@@ -4504,8 +4504,8 @@ scenarios:
             total_commands_rejected: episodes * 5,
             total_violation_escapes: escapes,
             total_false_rejections: 0,
-            started_at: chrono::Utc::now(),
-            completed_at: chrono::Utc::now(),
+            started_at: invariant_core::time::Timestamp::now(),
+            completed_at: invariant_core::time::Timestamp::now(),
             output_size_bytes: episodes * 12_000,
             final_chain_hash: format!("sha256:shard{shard_id}"),
         }

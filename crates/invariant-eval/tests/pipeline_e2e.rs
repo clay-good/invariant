@@ -16,7 +16,7 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use chrono::{DateTime, TimeZone, Utc};
+use invariant_core::time::Timestamp;
 use invariant_eval::robotics::presets::{run_preset, EvalReport, Severity};
 use invariant_robotics::models::authority::Operation;
 use invariant_robotics::models::command::{Command, CommandAuthority, JointState};
@@ -38,10 +38,12 @@ fn fixtures_dir() -> PathBuf {
         .join("fixtures")
 }
 
-fn fixed_timestamp(step: u64) -> DateTime<Utc> {
-    Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0)
+fn fixed_timestamp(step: u64) -> Timestamp {
+    Timestamp::parse_rfc3339("2026-01-01T00:00:00Z")
         .unwrap()
-        .checked_add_signed(chrono::Duration::milliseconds(step as i64 * 20))
+        .checked_add(invariant_core::time::SignedDuration::from_millis(
+            step as i64 * 20,
+        ))
         .unwrap()
 }
 

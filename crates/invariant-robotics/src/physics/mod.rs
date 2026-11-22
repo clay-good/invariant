@@ -71,7 +71,7 @@ use crate::models::verdict::CheckResult;
 /// use invariant_robotics::models::command::{
 ///     Command, CommandAuthority, EndEffectorPosition, JointState,
 /// };
-/// use chrono::Utc;
+/// use invariant_core::time::Timestamp;
 /// use std::collections::HashMap;
 ///
 /// let profile = load_builtin("ur10").unwrap();
@@ -79,7 +79,7 @@ use crate::models::verdict::CheckResult;
 /// // Build a command with all 6 UR10 joints at zero and an end-effector
 /// // inside the workspace bounds. delta_time must be ≤ max_delta_time (0.008 s).
 /// let command = Command {
-///     timestamp: Utc::now(),
+///     timestamp: Timestamp::now(),
 ///     source: "test".to_string(),
 ///     sequence: 0,
 ///     joint_states: vec![

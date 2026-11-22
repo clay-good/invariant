@@ -21,7 +21,7 @@
 
 use std::collections::BTreeSet;
 
-use chrono::{DateTime, Duration, Utc};
+use invariant_core::time::{SignedDuration, Timestamp};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -205,7 +205,7 @@ pub struct ResolvedIntent {
     /// Key identifier for signing.
     pub kid: String,
     /// Expiry time (None = no expiry).
-    pub expiry: Option<DateTime<Utc>>,
+    pub expiry: Option<Timestamp>,
     /// How this intent was resolved.
     pub source: IntentSource,
 }
@@ -354,14 +354,20 @@ pub fn intent_to_pca(intent: &ResolvedIntent) -> Result<Pca, IntentError> {
 // Helpers
 // ---------------------------------------------------------------------------
 
-fn make_expiry(duration_s: f64) -> Result<Option<DateTime<Utc>>, IntentError> {
+fn make_expiry(duration_s: f64) -> Result<Option<Timestamp>, IntentError> {
     if !duration_s.is_finite() || duration_s <= 0.0 {
         return Err(IntentError::InvalidDuration {
             seconds: duration_s,
         });
     }
     let millis = (duration_s * 1000.0) as i64;
-    Ok(Some(Utc::now() + Duration::milliseconds(millis)))
+    // Expiries past the representable range (year 9999) are rejected, not panicked on.
+    Timestamp::now()
+        .checked_add(SignedDuration::from_millis(millis))
+        .map(Some)
+        .ok_or(IntentError::InvalidDuration {
+            seconds: duration_s,
+        })
 }
 
 // ---------------------------------------------------------------------------
@@ -372,6 +378,18 @@ fn make_expiry(duration_s: f64) -> Result<Option<DateTime<Utc>>, IntentError> {
 mod tests {
     use super::*;
     use std::collections::HashMap;
+
+    // -- make_expiry --
+
+    #[test]
+    fn make_expiry_rejects_out_of_range_duration() {
+        // ~31,700 years: past jiff's year-9999 limit. Must error, not panic.
+        assert!(matches!(
+            make_expiry(1e12),
+            Err(IntentError::InvalidDuration { .. })
+        ));
+        assert!(make_expiry(60.0).unwrap().unwrap() > Timestamp::now());
+    }
 
     // -- builtin_templates --
 
@@ -441,8 +459,8 @@ mod tests {
         let result = resolve_template(&template, &params, "alice", "key-1", Some(10.0)).unwrap();
         // Expiry should be ~10s from now, not 3600s.
         let expiry = result.expiry.unwrap();
-        let now = Utc::now();
-        let diff = (expiry - now).num_seconds();
+        let now = Timestamp::now();
+        let diff = (expiry - now).as_secs();
         assert!(
             (8..=12).contains(&diff),
             "expiry should be ~10s from now, got {diff}s"

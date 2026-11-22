@@ -483,16 +483,16 @@ mod tests {
     #[test]
     fn inspect_verdict_with_tampered_signature_reports_invalid() {
         // Build a real signed verdict and then mangle the signature.
-        use chrono::Utc;
         use ed25519_dalek::SigningKey;
         use invariant_biosynthesis::models::verdict::{AuthoritySummary, SignedVerdict, Verdict};
+        use invariant_core::time::Timestamp;
         use rand::rngs::OsRng;
         let dir = TempDir::new().unwrap();
         let v = Verdict {
             approved: true,
             command_hash: "sha256:abc".into(),
             command_sequence: 1,
-            timestamp: Utc::now(),
+            timestamp: Timestamp::now(),
             checks: vec![],
             profile_name: "p".into(),
             profile_hash: "sha256:p".into(),
@@ -539,16 +539,16 @@ mod tests {
     #[test]
     fn inspect_verdict_unverified_when_no_pub_key_provided() {
         // Build a real signed verdict and inspect without --verify-with.
-        use chrono::Utc;
         use ed25519_dalek::SigningKey;
         use invariant_biosynthesis::models::verdict::{AuthoritySummary, SignedVerdict, Verdict};
+        use invariant_core::time::Timestamp;
         use rand::rngs::OsRng;
         let dir = TempDir::new().unwrap();
         let v = Verdict {
             approved: true,
             command_hash: "sha256:abc".into(),
             command_sequence: 1,
-            timestamp: Utc::now(),
+            timestamp: Timestamp::now(),
             checks: vec![],
             profile_name: "p".into(),
             profile_hash: "sha256:p".into(),

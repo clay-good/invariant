@@ -4,8 +4,8 @@
 // controller verifies the Ed25519 signature before executing any movement.
 
 use base64::{engine::general_purpose::STANDARD, Engine};
-use chrono::{DateTime, Utc};
 use ed25519_dalek::SigningKey;
+use invariant_core::time::Timestamp;
 use serde::Serialize;
 
 use crate::models::actuation::SignedActuationCommand;
@@ -19,7 +19,7 @@ struct ActuationPayload<'a> {
     command_hash: &'a str,
     command_sequence: u64,
     joint_states: &'a [JointState],
-    timestamp: DateTime<Utc>,
+    timestamp: Timestamp,
     signer_kid: &'a str,
 }
 
@@ -33,7 +33,7 @@ pub fn build_signed_actuation_command(
     command_hash: &str,
     command_sequence: u64,
     joint_states: &[JointState],
-    timestamp: DateTime<Utc>,
+    timestamp: Timestamp,
     signing_key: &SigningKey,
     signer_kid: &str,
 ) -> Result<SignedActuationCommand, ValidatorError> {
@@ -66,8 +66,8 @@ pub fn build_signed_actuation_command(
 mod tests {
     use super::*;
     use crate::authority::crypto::generate_keypair;
-    use chrono::Utc;
     use ed25519_dalek::Verifier;
+    use invariant_core::time::Timestamp;
     use rand::rngs::OsRng;
 
     #[test]
@@ -82,7 +82,7 @@ mod tests {
             effort: 10.0,
         }];
 
-        let now = Utc::now();
+        let now = Timestamp::now();
         let cmd =
             build_signed_actuation_command("sha256:abc123", 42, &joints, now, &sk, "test-kid")
                 .unwrap();
@@ -119,7 +119,7 @@ mod tests {
             effort: 10.0,
         }];
 
-        let now = Utc::now();
+        let now = Timestamp::now();
         let cmd =
             build_signed_actuation_command("sha256:abc123", 42, &joints, now, &sk, "real-kid")
                 .unwrap();
@@ -151,7 +151,7 @@ mod tests {
         // Use a fixed timestamp so that this test is fully deterministic and
         // cannot produce different signatures across invocations due to clock
         // drift between the two build_signed_actuation_command calls.
-        let fixed_ts = chrono::DateTime::from_timestamp(1_000_000_000, 0).unwrap();
+        let fixed_ts = invariant_core::time::Timestamp::from_unix(1_000_000_000, 0).unwrap();
 
         let cmd1 =
             build_signed_actuation_command("sha256:x", 1, &joints, fixed_ts, &sk, "k").unwrap();
@@ -168,7 +168,7 @@ mod tests {
         let sk = generate_keypair(&mut OsRng);
         let vk = sk.verifying_key();
 
-        let fixed_ts = chrono::DateTime::from_timestamp(1_000_000_000, 0).unwrap();
+        let fixed_ts = invariant_core::time::Timestamp::from_unix(1_000_000_000, 0).unwrap();
         let cmd =
             build_signed_actuation_command("sha256:empty", 0, &[], fixed_ts, &sk, "kid-empty")
                 .unwrap();

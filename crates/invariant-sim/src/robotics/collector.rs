@@ -4,7 +4,7 @@
 // appended via `record_step`, and `finalize` consumes the collector and
 // returns a `Trace` suitable for replay or evaluation.
 
-use chrono::Utc;
+use invariant_core::time::Timestamp;
 use invariant_robotics::models::command::Command;
 use invariant_robotics::models::trace::{Trace, TraceStep};
 use invariant_robotics::models::verdict::SignedVerdict;
@@ -85,7 +85,7 @@ impl TraceCollector {
     ///
     /// ```
     /// use std::collections::HashMap;
-    /// use chrono::Utc;
+    /// use invariant_core::time::Timestamp;
     /// use invariant_sim::robotics::collector::TraceCollector;
     /// use invariant_robotics::models::command::{Command, CommandAuthority, JointState};
     /// use invariant_robotics::models::verdict::{AuthoritySummary, CheckResult, SignedVerdict, Verdict};
@@ -96,7 +96,7 @@ impl TraceCollector {
     /// );
     ///
     /// let cmd = Command {
-    ///     timestamp: Utc::now(),
+    ///     timestamp: Timestamp::now(),
     ///     source: "llm-agent".to_string(),
     ///     sequence: 0,
     ///     joint_states: vec![JointState {
@@ -126,7 +126,7 @@ impl TraceCollector {
     ///         approved: true,
     ///         command_hash: "sha256:abc".to_string(),
     ///         command_sequence: 0,
-    ///         timestamp: Utc::now(),
+    ///         timestamp: Timestamp::now(),
     ///         checks: vec![CheckResult {
     ///             name: "velocity".to_string(),
     ///             category: "physics".to_string(),
@@ -158,7 +158,7 @@ impl TraceCollector {
     pub fn record_step(&mut self, step: u64, command: Command, verdict: SignedVerdict) {
         self.steps.push(TraceStep {
             step,
-            timestamp: Utc::now(),
+            timestamp: Timestamp::now(),
             command,
             verdict,
             simulation_state: None,
@@ -213,7 +213,7 @@ impl TraceCollector {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::Utc;
+    use invariant_core::time::Timestamp;
     use invariant_robotics::models::command::{Command, CommandAuthority, JointState};
     use invariant_robotics::models::verdict::{
         AuthoritySummary, CheckResult, SignedVerdict, Verdict,
@@ -221,7 +221,7 @@ mod tests {
 
     fn make_command(seq: u64) -> Command {
         Command {
-            timestamp: Utc::now(),
+            timestamp: Timestamp::now(),
             source: "test".into(),
             sequence: seq,
             joint_states: vec![JointState {
@@ -253,7 +253,7 @@ mod tests {
                 approved,
                 command_hash: format!("sha256:{:064x}", seq),
                 command_sequence: seq,
-                timestamp: Utc::now(),
+                timestamp: Timestamp::now(),
                 checks: vec![CheckResult {
                     name: "authority".into(),
                     category: "authority".into(),

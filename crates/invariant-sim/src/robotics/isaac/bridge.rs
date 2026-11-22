@@ -24,7 +24,7 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use chrono::Utc;
+use invariant_core::time::Timestamp;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
@@ -321,7 +321,7 @@ async fn handle_message(
             BridgeResponse::error("heartbeat field must be true".into())
         }
         IncomingMessage::Command(cmd) => {
-            let now = Utc::now();
+            let now = Timestamp::now();
             match validator.validate(&cmd, now, previous_joints.as_deref()) {
                 Ok(result) => {
                     if result.signed_verdict.verdict.approved {
@@ -574,7 +574,7 @@ mod tests {
 
     fn make_command_json(chain_b64: &str, j1_pos: f64) -> String {
         let cmd = Command {
-            timestamp: Utc::now(),
+            timestamp: Timestamp::now(),
             source: "isaac".into(),
             sequence: 1,
             joint_states: vec![JointState {
@@ -879,7 +879,7 @@ mod tests {
         sequence: u64,
     ) -> String {
         let cmd = Command {
-            timestamp: Utc::now(),
+            timestamp: Timestamp::now(),
             source: "isaac".into(),
             sequence,
             joint_states: vec![JointState {

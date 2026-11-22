@@ -6,12 +6,12 @@
 
 use std::collections::HashMap;
 
-use chrono::TimeZone;
 use ed25519_dalek::{SigningKey, VerifyingKey};
 use invariant_core::proof_package::{
     sign_manifest, verify_manifest, CampaignSummary, ProofPackageError, ProofPackageManifest,
     CURRENT_FORMAT_VERSION,
 };
+use invariant_core::time::Timestamp;
 
 fn deterministic_keypair() -> (SigningKey, VerifyingKey) {
     // Deterministic key — test is reproducible across CI runs.
@@ -35,7 +35,7 @@ fn fixture_manifest() -> ProofPackageManifest {
     ProofPackageManifest {
         format_version: CURRENT_FORMAT_VERSION,
         version: "1.0.0".into(),
-        generated_at: chrono::Utc.with_ymd_and_hms(2026, 5, 16, 12, 0, 0).unwrap(),
+        generated_at: Timestamp::parse_rfc3339("2026-05-16T12:00:00Z").unwrap(),
         campaign_name: "tamper_test".into(),
         profile_name: "ur10e".into(),
         profile_hash: "sha256:profile".into(),

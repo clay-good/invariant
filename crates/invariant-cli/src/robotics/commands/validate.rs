@@ -3,8 +3,8 @@ use std::collections::HashMap;
 use std::io::{BufRead, Read, Write};
 use std::path::{Path, PathBuf};
 
-use chrono::Utc;
 use ed25519_dalek::SigningKey;
+use invariant_core::time::Timestamp;
 use serde::Serialize;
 
 use invariant_robotics::models::actuation::SignedActuationCommand;
@@ -311,7 +311,7 @@ fn process_one_command(
         }
     }
 
-    let now = Utc::now();
+    let now = Timestamp::now();
     match config.validate(cmd, now, None) {
         Ok(result) => {
             // Write audit log.
@@ -434,7 +434,7 @@ mod tests {
         let pca_chain = STANDARD.encode(&chain_json);
 
         let cmd = Command {
-            timestamp: chrono::Utc::now(),
+            timestamp: invariant_core::time::Timestamp::now(),
             source: "test".to_string(),
             sequence: 1,
             joint_states: vec![JointState {
@@ -465,7 +465,7 @@ mod tests {
     fn command_without_chain_json() -> String {
         let op = Operation::new("actuate:humanoid_28dof:joint_0:position").unwrap();
         let cmd = Command {
-            timestamp: chrono::Utc::now(),
+            timestamp: invariant_core::time::Timestamp::now(),
             source: "test".to_string(),
             sequence: 1,
             joint_states: vec![JointState {
@@ -530,7 +530,7 @@ mod tests {
         let op = Operation::new(format!("actuate:{profile_name}:{joint_name}:position")).unwrap();
         use invariant_robotics::models::command::EndEffectorPosition;
         let cmd = Command {
-            timestamp: chrono::Utc::now(),
+            timestamp: invariant_core::time::Timestamp::now(),
             source: "test".to_string(),
             sequence: 1,
             joint_states: vec![JointState {
@@ -772,7 +772,7 @@ mod tests {
         let op = Operation::new(format!("actuate:{profile_name}:{joint_name}:position")).unwrap();
         use invariant_robotics::models::command::EndEffectorPosition;
         let cmd = Command {
-            timestamp: chrono::Utc::now(),
+            timestamp: invariant_core::time::Timestamp::now(),
             source: "test".to_string(),
             sequence: 1,
             joint_states: vec![JointState {
@@ -861,7 +861,7 @@ mod tests {
         let op = Operation::new(format!("actuate:{profile_name}:{joint_name}:position")).unwrap();
         use invariant_robotics::models::command::EndEffectorPosition;
         let cmd = Command {
-            timestamp: chrono::Utc::now(),
+            timestamp: invariant_core::time::Timestamp::now(),
             source: "test".to_string(),
             sequence: 1,
             joint_states: vec![JointState {
@@ -954,7 +954,7 @@ mod tests {
 
         let op = Operation::new("actuate:humanoid_28dof:joint_0:position").unwrap();
         let cmd = Command {
-            timestamp: chrono::Utc::now(),
+            timestamp: invariant_core::time::Timestamp::now(),
             source: "test".to_string(),
             sequence: 1,
             joint_states: vec![JointState {

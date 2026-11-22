@@ -120,8 +120,8 @@ mod tests {
     use super::*;
 
     use base64::{engine::general_purpose::STANDARD, Engine};
-    use chrono::Utc;
     use ed25519_dalek::Signer;
+    use invariant_core::time::Timestamp;
     use invariant_robotics::audit::AuditLogger;
     use invariant_robotics::authority::crypto::generate_keypair;
     use invariant_robotics::models::authority::Operation;
@@ -140,7 +140,7 @@ mod tests {
 
     fn make_test_command() -> Command {
         Command {
-            timestamp: Utc::now(),
+            timestamp: Timestamp::now(),
             source: "test".into(),
             sequence: 1,
             joint_states: vec![JointState {
@@ -171,7 +171,7 @@ mod tests {
             approved: true,
             command_hash: "sha256:abc".into(),
             command_sequence: 1,
-            timestamp: Utc::now(),
+            timestamp: Timestamp::now(),
             checks: vec![CheckResult {
                 name: "authority".into(),
                 category: "authority".into(),

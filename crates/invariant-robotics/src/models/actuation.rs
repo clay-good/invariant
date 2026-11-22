@@ -1,4 +1,4 @@
-use chrono::{DateTime, Utc};
+use invariant_core::time::Timestamp;
 use serde::{Deserialize, Serialize};
 
 use super::command::JointState;
@@ -14,7 +14,7 @@ pub struct SignedActuationCommand {
     /// Joint states the motor controller should execute.
     pub joint_states: Vec<JointState>,
     /// Typed timestamp (P1-3).
-    pub timestamp: DateTime<Utc>,
+    pub timestamp: Timestamp,
     /// Base64-encoded Ed25519 signature over the canonical actuation payload.
     pub actuation_signature: String,
     /// Key identifier of the signing key.

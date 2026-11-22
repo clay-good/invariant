@@ -38,8 +38,8 @@ mod tests {
     use crate::models::verdict::{AuthoritySummary, CheckResult, SignedVerdict, Verdict};
     use base64::engine::general_purpose::STANDARD;
     use base64::Engine;
-    use chrono::Utc;
     use ed25519_dalek::SigningKey;
+    use invariant_core::time::Timestamp;
     use rand::rngs::OsRng;
     use std::collections::HashMap;
 
@@ -51,7 +51,7 @@ mod tests {
 
     fn make_simple_bundle() -> SynthesisBundle {
         SynthesisBundle {
-            timestamp: Utc::now(),
+            timestamp: Timestamp::now(),
             source: "test".into(),
             sequence: 1,
             payload: SynthesisPayload::Dna {
@@ -68,9 +68,8 @@ mod tests {
 
     fn make_simple_signed_verdict() -> (SignedVerdict, SigningKey) {
         let (sign_sk, _) = make_keypair();
-        let fixed_ts = chrono::DateTime::parse_from_rfc3339("2024-01-01T00:00:00Z")
-            .unwrap()
-            .with_timezone(&Utc);
+        let fixed_ts =
+            invariant_core::time::Timestamp::parse_rfc3339("2024-01-01T00:00:00Z").unwrap();
         let verdict = Verdict {
             approved: true,
             command_hash: "sha256:abc123".into(),

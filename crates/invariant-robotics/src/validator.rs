@@ -14,8 +14,8 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use base64::{engine::general_purpose::STANDARD, Engine};
-use chrono::{DateTime, Utc};
 use ed25519_dalek::{SigningKey, VerifyingKey};
+use invariant_core::time::Timestamp;
 use thiserror::Error;
 
 use crate::actuator;
@@ -178,7 +178,7 @@ impl ValidatorConfig {
     pub fn validate(
         &self,
         command: &Command,
-        now: DateTime<Utc>,
+        now: Timestamp,
         previous_joints: Option<&[JointState]>,
     ) -> Result<ValidationResult, ValidatorError> {
         self.validate_with_forces(command, now, previous_joints, None)
@@ -192,7 +192,7 @@ impl ValidatorConfig {
     pub fn validate_with_forces(
         &self,
         command: &Command,
-        now: DateTime<Utc>,
+        now: Timestamp,
         previous_joints: Option<&[JointState]>,
         previous_forces: Option<&[EndEffectorForce]>,
     ) -> Result<ValidationResult, ValidatorError> {
@@ -333,7 +333,7 @@ impl ValidatorConfig {
         &self,
         pca_chain_b64: &str,
         required_ops: &[Operation],
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> (CheckResult, Option<AuthorityChain>) {
         // Reject empty required_ops — a command must declare at least one
         // operation it intends to perform. Empty ops would pass via vacuous
@@ -420,7 +420,7 @@ impl ValidatorConfig {
     /// - `PreferSigned`: passes but warns if unsigned data is present.
     /// - `RequireSigned`: fails if the command has no signed sensor readings,
     ///   or if any reading fails signature/freshness verification.
-    fn run_sensor_check(&self, command: &Command, now: DateTime<Utc>) -> CheckResult {
+    fn run_sensor_check(&self, command: &Command, now: Timestamp) -> CheckResult {
         let readings = &command.signed_sensor_readings;
 
         match self.sensor_policy {
@@ -652,7 +652,7 @@ mod tests {
     use crate::models::authority::{Operation, Pca};
     use crate::models::command::{CommandAuthority, EndEffectorPosition, JointState};
     use crate::models::profile::*;
-    use chrono::Utc;
+    use invariant_core::time::Timestamp;
     use rand::rngs::OsRng;
     use std::collections::BTreeSet;
 
@@ -714,7 +714,7 @@ mod tests {
 
     fn make_command(chain_b64: &str, required_ops: Vec<Operation>) -> Command {
         Command {
-            timestamp: Utc::now(),
+            timestamp: Timestamp::now(),
             source: "test".into(),
             sequence: 1,
             joint_states: vec![JointState {
@@ -770,7 +770,7 @@ mod tests {
         trusted.insert("key-1".to_string(), pca_vk);
 
         let config = make_config(trusted, sign_sk);
-        let now = Utc::now();
+        let now = Timestamp::now();
         let cmd = make_command(&chain_b64, vec![op("actuate:j1")]);
 
         let result = config.validate(&cmd, now, None).unwrap();
@@ -794,7 +794,7 @@ mod tests {
 
         let config = make_config(HashMap::new(), sign_sk);
         let cmd = make_command(&chain_b64, vec![op("actuate:j1")]);
-        let result = config.validate(&cmd, Utc::now(), None).unwrap();
+        let result = config.validate(&cmd, Timestamp::now(), None).unwrap();
 
         assert!(!result.signed_verdict.verdict.approved);
         assert!(result.actuation_command.is_none());
@@ -830,7 +830,7 @@ mod tests {
         let mut cmd = make_command(&chain_b64, vec![op("actuate:j1")]);
         cmd.joint_states[0].position = 999.0;
 
-        let result = config.validate(&cmd, Utc::now(), None).unwrap();
+        let result = config.validate(&cmd, Timestamp::now(), None).unwrap();
         assert!(!result.signed_verdict.verdict.approved);
         assert!(result.actuation_command.is_none());
         // Authority passed.
@@ -843,7 +843,7 @@ mod tests {
         let config = make_config(HashMap::new(), sign_sk);
 
         let cmd = make_command("not-valid-base64!!!", vec![op("actuate:j1")]);
-        let result = config.validate(&cmd, Utc::now(), None).unwrap();
+        let result = config.validate(&cmd, Timestamp::now(), None).unwrap();
 
         assert!(!result.signed_verdict.verdict.approved);
         assert!(!result.signed_verdict.verdict.checks[0].passed);
@@ -874,7 +874,7 @@ mod tests {
         let config = make_config(trusted, sign_sk);
 
         let cmd = make_command(&chain_b64, vec![op("actuate:j1")]);
-        let result = config.validate(&cmd, Utc::now(), None).unwrap();
+        let result = config.validate(&cmd, Timestamp::now(), None).unwrap();
 
         assert!(!result.signed_verdict.verdict.approved);
         let auth = &result.signed_verdict.verdict.checks[0];
@@ -915,7 +915,7 @@ mod tests {
         trusted.insert("key-1".to_string(), pca_vk);
         let config = make_config(trusted, sign_sk);
 
-        let now = Utc::now();
+        let now = Timestamp::now();
         let cmd = make_command(&chain_b64, vec![op("actuate:j1")]);
 
         let r1 = config.validate(&cmd, now, None).unwrap();
@@ -957,7 +957,7 @@ mod tests {
         let config = make_config(trusted, sign_sk);
 
         let cmd = make_command(&chain_b64, vec![op("actuate:j1")]);
-        let result = config.validate(&cmd, Utc::now(), None).unwrap();
+        let result = config.validate(&cmd, Timestamp::now(), None).unwrap();
 
         // Re-serialize the verdict and verify the signature.
         let verdict_json = serde_json::to_vec(&result.signed_verdict.verdict).unwrap();
@@ -996,7 +996,7 @@ mod tests {
 
         let huge_b64 = "A".repeat(MAX_PCA_CHAIN_B64_BYTES + 1);
         let cmd = make_command(&huge_b64, vec![op("actuate:j1")]);
-        let result = config.validate(&cmd, Utc::now(), None).unwrap();
+        let result = config.validate(&cmd, Timestamp::now(), None).unwrap();
 
         assert!(!result.signed_verdict.verdict.approved);
         let auth = &result.signed_verdict.verdict.checks[0];
@@ -1026,7 +1026,7 @@ mod tests {
         let config = make_config(trusted, sign_sk);
 
         let cmd = make_command(&chain_b64, vec![]); // empty required_ops
-        let result = config.validate(&cmd, Utc::now(), None).unwrap();
+        let result = config.validate(&cmd, Timestamp::now(), None).unwrap();
 
         assert!(!result.signed_verdict.verdict.approved);
         let auth = &result.signed_verdict.verdict.checks[0];
@@ -1056,7 +1056,7 @@ mod tests {
         trusted.insert("key-1".to_string(), pca_vk);
         let config = make_config(trusted, sign_sk);
 
-        let now = Utc::now();
+        let now = Timestamp::now();
 
         // Two commands with the same required ops in different order.
         let cmd1 = make_command(&chain_b64, vec![op("actuate:j1"), op("actuate:j2")]);
@@ -1102,7 +1102,7 @@ mod tests {
         assert_eq!(at_limit.len(), MAX_PCA_CHAIN_B64_BYTES);
 
         let cmd = make_command(&at_limit, vec![op("actuate:j1")]);
-        let result = config.validate(&cmd, Utc::now(), None).unwrap();
+        let result = config.validate(&cmd, Timestamp::now(), None).unwrap();
 
         assert!(!result.signed_verdict.verdict.approved);
         let auth = &result.signed_verdict.verdict.checks[0];
@@ -1162,7 +1162,7 @@ mod tests {
         }];
 
         let result = config
-            .validate(&cmd, Utc::now(), Some(&prev_joints))
+            .validate(&cmd, Timestamp::now(), Some(&prev_joints))
             .unwrap();
 
         assert!(
@@ -1229,7 +1229,7 @@ mod tests {
 
         let config = make_config(trusted, sign_sk);
         let cmd = make_command(&chain_b64, vec![op("actuate:j1")]);
-        let result = config.validate(&cmd, Utc::now(), None).unwrap();
+        let result = config.validate(&cmd, Timestamp::now(), None).unwrap();
 
         assert!(result.signed_verdict.verdict.approved);
         assert_eq!(result.signed_verdict.verdict.authority_summary.hop_count, 2);
@@ -1265,7 +1265,7 @@ mod tests {
         let (sign_sk, _) = make_keypair();
         let config = make_config(trusted, sign_sk); // default: AcceptUnsigned
 
-        let result = config.validate(&cmd, Utc::now(), None).unwrap();
+        let result = config.validate(&cmd, Timestamp::now(), None).unwrap();
 
         assert!(result.signed_verdict.verdict.approved);
         let sensor_check = result
@@ -1289,7 +1289,7 @@ mod tests {
             500,
         );
 
-        let result = config.validate(&cmd, Utc::now(), None).unwrap();
+        let result = config.validate(&cmd, Timestamp::now(), None).unwrap();
 
         assert!(!result.signed_verdict.verdict.approved);
         assert!(result.actuation_command.is_none());
@@ -1312,7 +1312,7 @@ mod tests {
 
         let reading = SensorReading {
             sensor_name: "left_hand".into(),
-            timestamp: Utc::now(),
+            timestamp: Timestamp::now(),
             payload: SensorPayload::Position {
                 position: [0.0, 0.0, 1.0],
             },
@@ -1329,7 +1329,7 @@ mod tests {
             5000,
         );
 
-        let result = config.validate(&cmd, Utc::now(), None).unwrap();
+        let result = config.validate(&cmd, Timestamp::now(), None).unwrap();
 
         assert!(result.signed_verdict.verdict.approved);
         let sensor_check = result
@@ -1351,7 +1351,7 @@ mod tests {
 
         let reading = SensorReading {
             sensor_name: "left_hand".into(),
-            timestamp: Utc::now(),
+            timestamp: Timestamp::now(),
             payload: SensorPayload::Position {
                 position: [0.0, 0.0, 1.0],
             },
@@ -1372,7 +1372,7 @@ mod tests {
             5000,
         );
 
-        let result = config.validate(&cmd, Utc::now(), None).unwrap();
+        let result = config.validate(&cmd, Timestamp::now(), None).unwrap();
 
         assert!(!result.signed_verdict.verdict.approved);
         let sensor_check = result
@@ -1394,7 +1394,7 @@ mod tests {
 
         let reading = SensorReading {
             sensor_name: "left_hand".into(),
-            timestamp: Utc::now() - chrono::Duration::seconds(10),
+            timestamp: Timestamp::now() - invariant_core::time::SignedDuration::from_secs(10),
             payload: SensorPayload::Position {
                 position: [0.0, 0.0, 1.0],
             },
@@ -1412,7 +1412,7 @@ mod tests {
             100,
         );
 
-        let result = config.validate(&cmd, Utc::now(), None).unwrap();
+        let result = config.validate(&cmd, Timestamp::now(), None).unwrap();
 
         assert!(!result.signed_verdict.verdict.approved);
         let sensor_check = result
@@ -1436,7 +1436,7 @@ mod tests {
             500,
         );
 
-        let result = config.validate(&cmd, Utc::now(), None).unwrap();
+        let result = config.validate(&cmd, Timestamp::now(), None).unwrap();
 
         // Still approved (prefer_signed doesn't block on missing readings).
         assert!(result.signed_verdict.verdict.approved);
@@ -1459,7 +1459,7 @@ mod tests {
 
         let reading = SensorReading {
             sensor_name: "sensor_a".into(),
-            timestamp: Utc::now(),
+            timestamp: Timestamp::now(),
             payload: SensorPayload::Force {
                 force: [10.0, 0.0, 0.0],
             },
@@ -1479,7 +1479,7 @@ mod tests {
             5000,
         );
 
-        let result = config.validate(&cmd, Utc::now(), None).unwrap();
+        let result = config.validate(&cmd, Timestamp::now(), None).unwrap();
 
         assert!(!result.signed_verdict.verdict.approved);
         let sensor_check = result
@@ -1499,7 +1499,7 @@ mod tests {
         let (sign_sk, _) = make_keypair();
         let config = make_config(trusted, sign_sk);
 
-        let result = config.validate(&cmd, Utc::now(), None).unwrap();
+        let result = config.validate(&cmd, Timestamp::now(), None).unwrap();
 
         let sensor_checks: Vec<_> = result
             .signed_verdict
@@ -1520,7 +1520,7 @@ mod tests {
 
         let reading = SensorReading {
             sensor_name: "imu".into(),
-            timestamp: Utc::now(),
+            timestamp: Timestamp::now(),
             payload: SensorPayload::CenterOfMass {
                 com: [0.0, 0.0, 0.9],
             },
@@ -1536,7 +1536,7 @@ mod tests {
             5000,
         );
 
-        let result = config.validate(&cmd, Utc::now(), None).unwrap();
+        let result = config.validate(&cmd, Timestamp::now(), None).unwrap();
 
         assert!(!result.signed_verdict.verdict.approved);
         let sensor_check = result
@@ -1562,7 +1562,7 @@ mod tests {
         let (sign_sk, _) = make_keypair();
         let config = make_config(trusted, sign_sk);
 
-        let result = config.validate(&cmd, Utc::now(), None).unwrap();
+        let result = config.validate(&cmd, Timestamp::now(), None).unwrap();
         assert!(result.signed_verdict.verdict.threat_analysis.is_none());
     }
 
@@ -1573,7 +1573,7 @@ mod tests {
         let config =
             make_config(trusted, sign_sk).with_threat_scorer(ThreatScorer::with_defaults());
 
-        let result = config.validate(&cmd, Utc::now(), None).unwrap();
+        let result = config.validate(&cmd, Timestamp::now(), None).unwrap();
         let ta = result
             .signed_verdict
             .verdict
@@ -1594,7 +1594,7 @@ mod tests {
 
         // Multiple validate calls should accumulate state in the scorer.
         for _ in 0..5 {
-            let result = config.validate(&cmd, Utc::now(), None).unwrap();
+            let result = config.validate(&cmd, Timestamp::now(), None).unwrap();
             assert!(result.signed_verdict.verdict.threat_analysis.is_some());
         }
     }
@@ -1612,10 +1612,10 @@ mod tests {
 
         // Feed some commands to build history, then check.
         for _ in 0..15 {
-            config.validate(&cmd, Utc::now(), None).unwrap();
+            config.validate(&cmd, Timestamp::now(), None).unwrap();
         }
 
-        let result = config.validate(&cmd, Utc::now(), None).unwrap();
+        let result = config.validate(&cmd, Timestamp::now(), None).unwrap();
         // With threshold 0.0, alert may or may not trigger depending on scores.
         // The important thing is that threat_analysis is present.
         assert!(result.signed_verdict.verdict.threat_analysis.is_some());
@@ -1753,7 +1753,7 @@ mod tests {
         let first_joint_op = op(&format!("actuate:{}", profile.joints[0].name));
 
         Command {
-            timestamp: Utc::now(),
+            timestamp: Timestamp::now(),
             source: "builtin-profile-test".into(),
             sequence: 1,
             joint_states,
@@ -1796,7 +1796,7 @@ mod tests {
             cmd.authority.pca_chain = chain_b64;
 
             let result = config
-                .validate(&cmd, Utc::now(), None)
+                .validate(&cmd, Timestamp::now(), None)
                 .unwrap_or_else(|e| panic!("validate() returned Err for {name}: {e}"));
 
             // Print failing checks to aid diagnosis.
@@ -1847,7 +1847,7 @@ mod tests {
             }
 
             let result = config
-                .validate(&cmd, Utc::now(), None)
+                .validate(&cmd, Timestamp::now(), None)
                 .unwrap_or_else(|e| panic!("validate() returned Err for {name}: {e}"));
 
             assert!(
@@ -1884,7 +1884,7 @@ mod tests {
             cmd.joint_states[0].velocity = f64::NAN;
 
             let result = config
-                .validate(&cmd, Utc::now(), None)
+                .validate(&cmd, Timestamp::now(), None)
                 .unwrap_or_else(|e| panic!("validate() returned Err for {name}: {e}"));
 
             assert!(
@@ -1921,7 +1921,7 @@ mod tests {
             cmd.joint_states[0].effort = f64::INFINITY;
 
             let result = config
-                .validate(&cmd, Utc::now(), None)
+                .validate(&cmd, Timestamp::now(), None)
                 .unwrap_or_else(|e| panic!("validate() returned Err for {name}: {e}"));
 
             assert!(
@@ -1958,7 +1958,7 @@ mod tests {
         let mut cmd = make_safe_command_for_profile(&profile);
         cmd.authority.pca_chain = chain_b64;
 
-        let result = config.validate(&cmd, Utc::now(), None).unwrap();
+        let result = config.validate(&cmd, Timestamp::now(), None).unwrap();
         assert!(
             result.signed_verdict.verdict.approved,
             "safe command must be approved"
@@ -2011,7 +2011,7 @@ mod tests {
         cmd.authority.pca_chain = chain_b64;
         cmd.signed_sensor_readings = vec![]; // empty — triggers rejection
 
-        let result = config.validate(&cmd, Utc::now(), None).unwrap();
+        let result = config.validate(&cmd, Timestamp::now(), None).unwrap();
         assert!(
             !result.signed_verdict.verdict.approved,
             "RequireSigned with no readings must reject"
@@ -2052,7 +2052,7 @@ mod tests {
             })
             .collect();
 
-        let result = config.validate(&cmd, Utc::now(), None).unwrap();
+        let result = config.validate(&cmd, Timestamp::now(), None).unwrap();
         assert!(
             !result.signed_verdict.verdict.approved,
             "command with 300 joints must be rejected"
@@ -2089,7 +2089,7 @@ mod tests {
             })
             .collect();
 
-        let result = config.validate(&cmd, Utc::now(), None).unwrap();
+        let result = config.validate(&cmd, Timestamp::now(), None).unwrap();
         assert!(
             !result.signed_verdict.verdict.approved,
             "command with 300 EE positions must be rejected"
@@ -2108,7 +2108,7 @@ mod tests {
         let mut cmd = make_safe_command_for_profile(&profile);
         cmd.authority.pca_chain = chain_b64;
 
-        let result = config.validate(&cmd, Utc::now(), None).unwrap();
+        let result = config.validate(&cmd, Timestamp::now(), None).unwrap();
         assert!(
             result.signed_verdict.verdict.approved,
             "normal command must pass; failed: {:?}",
@@ -2148,7 +2148,7 @@ mod tests {
             effort: 999.0,
         });
 
-        let result = config.validate(&cmd, Utc::now(), None).unwrap();
+        let result = config.validate(&cmd, Timestamp::now(), None).unwrap();
         assert!(
             !result.signed_verdict.verdict.approved,
             "command with extra joints beyond profile should be rejected"
@@ -2193,7 +2193,7 @@ mod tests {
             })
             .collect();
 
-        let result = config.validate(&cmd, Utc::now(), None).unwrap();
+        let result = config.validate(&cmd, Timestamp::now(), None).unwrap();
         assert!(
             !result.signed_verdict.verdict.approved,
             "command with 300 EE forces must be rejected"
@@ -2229,7 +2229,7 @@ mod tests {
             .map(|i| SignedSensorReading {
                 reading: SensorReading {
                     sensor_name: format!("sensor_{i}"),
-                    timestamp: Utc::now(),
+                    timestamp: Timestamp::now(),
                     payload: SensorPayload::Position {
                         position: [0.0, 0.0, 0.0],
                     },
@@ -2240,7 +2240,7 @@ mod tests {
             })
             .collect();
 
-        let result = config.validate(&cmd, Utc::now(), None).unwrap();
+        let result = config.validate(&cmd, Timestamp::now(), None).unwrap();
         assert!(
             !result.signed_verdict.verdict.approved,
             "command with 300 sensor readings must be rejected"
@@ -2289,7 +2289,7 @@ mod tests {
             step_length: 0.0,
         });
 
-        let result = config.validate(&cmd, Utc::now(), None).unwrap();
+        let result = config.validate(&cmd, Timestamp::now(), None).unwrap();
         assert!(
             !result.signed_verdict.verdict.approved,
             "command with 100 feet must be rejected (cap is 64)"
@@ -2324,7 +2324,7 @@ mod tests {
         let mut cmd = make_safe_command_for_profile(&profile);
         cmd.authority.pca_chain = chain_b64;
 
-        let now = Utc::now();
+        let now = Timestamp::now();
         let r1 = config.validate(&cmd, now, None).unwrap();
         let r2 = config.validate(&cmd, now, None).unwrap();
 
@@ -2367,7 +2367,7 @@ mod tests {
         let mut cmd = make_safe_command_for_profile(&profile);
         cmd.authority.pca_chain = chain_b64;
 
-        let result = config.validate(&cmd, Utc::now(), None);
+        let result = config.validate(&cmd, Timestamp::now(), None);
         assert!(
             result.is_ok(),
             "validation must succeed even with poisoned threat scorer: {:?}",

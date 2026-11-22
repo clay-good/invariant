@@ -1,4 +1,4 @@
-use chrono::{DateTime, Utc};
+use invariant_core::time::Timestamp;
 use serde::{Deserialize, Serialize};
 
 /// A safety decision produced by the validator for a single synthesis bundle.
@@ -12,9 +12,9 @@ use serde::{Deserialize, Serialize};
 ///     approved: true,
 ///     command_hash: "sha256:abcdef1234567890".into(),
 ///     command_sequence: 42,
-///     timestamp: chrono::DateTime::parse_from_rfc3339("2024-01-01T00:00:00Z")
+///     timestamp: invariant_core::time::Timestamp::parse_rfc3339("2024-01-01T00:00:00Z")
 ///         .unwrap()
-///         .with_timezone(&chrono::Utc),
+///         ,
 ///     checks: vec![
 ///         CheckResult::new("dna_screening", "invariant", true, "no hazardous motifs"),
 ///         CheckResult::new("authority", "authority", true, "PCA chain valid"),
@@ -42,7 +42,7 @@ pub struct Verdict {
     /// Monotonic sequence number copied from the bundle.
     pub command_sequence: u64,
     /// Typed timestamp for precise ordering and replay-prevention.
-    pub timestamp: DateTime<Utc>,
+    pub timestamp: Timestamp,
     /// Results of all individual safety checks (invariants + authority).
     pub checks: Vec<CheckResult>,
     /// Name of the bio profile used for validation.

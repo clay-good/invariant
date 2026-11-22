@@ -843,7 +843,7 @@ mod tests {
     fn protocol_bundle_runs_pr_pipeline() {
         use crate::models::bundle::{BundleAuthority, SynthesisPayload};
         let bundle = SynthesisBundle {
-            timestamp: chrono::Utc::now(),
+            timestamp: invariant_core::time::Timestamp::now(),
             source: "t".into(),
             sequence: 0,
             payload: SynthesisPayload::Protocol {
@@ -872,7 +872,7 @@ mod tests {
     fn sample_dna_bundle() -> SynthesisBundle {
         use crate::models::bundle::{BundleAuthority, SynthesisPayload};
         SynthesisBundle {
-            timestamp: chrono::Utc::now(),
+            timestamp: invariant_core::time::Timestamp::now(),
             source: "test".into(),
             sequence: 1,
             payload: SynthesisPayload::Dna {
